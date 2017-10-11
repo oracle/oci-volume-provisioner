@@ -1,0 +1,20 @@
+kind: Pod
+apiVersion: v1
+metadata:
+  name: ocidemo
+spec:
+
+  volumes:
+    - name: task-pv-storage
+      persistentVolumeClaim:
+       claimName: demooci
+
+  containers:
+    - name: task-pv-container
+      image: nginx
+      ports:
+        - containerPort: 80
+          name: "http-server"
+      volumeMounts:
+      - mountPath: "/usr/share/nginx/html"
+        name: task-pv-storage

@@ -1,0 +1,15 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: demooci
+spec:
+  storageClassName: "oci"
+  selector: 
+    matchLabels:
+      oci-availability-domain: "PHX-AD-1"
+      oci-compartment: "bristol-cloud"
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
