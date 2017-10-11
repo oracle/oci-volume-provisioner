@@ -1,3 +1,0 @@
-FROM oraclelinux:7.3
-COPY dist/bin/oci-provisioner /
-CMD ["/oci-provisioner"]
