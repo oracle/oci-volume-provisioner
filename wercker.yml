@@ -29,23 +29,35 @@ push:
     id: oraclelinux:7.3
   steps:
     - script:
-        name: set ENV vars
-        code: |
-          export VERSION=$(cat VERSION.txt)
-          echo "${VERSION}"
+      name: set ENV vars
+      code: |
+        export VERSION=$(cat VERSION.txt)
+        echo "${VERSION}"
 
     - script:
-        name: prepare
-        code: |
-          mv ./oci-volume-provisioner /oci-volume-provisioner
-          chmod +x /oci-volume-provisioner
+      name: prepare
+      code: |
+        mv ./oci-volume-provisioner /oci-volume-provisioner
+        chmod +x /oci-volume-provisioner
 
     - internal/docker-push:
-        repository: registry.oracledx.com/skeppare/oci-volume-provisioner
-        registry: https://registry.oracledx.com/v2
-        username: $DOCKER_REGISTRY_USERNAME
-        password: $DOCKER_REGISTRY_PASSWORD
-        tag: $VERSION
-        entrypoint: /oci-volume-provisioner
-        user: 65534 # nobody
-        
+      repository: registry.oracledx.com/skeppare/oci-volume-provisioner
+      registry: https://registry.oracledx.com/v2
+      username: $DOCKER_REGISTRY_USERNAME
+      password: $DOCKER_REGISTRY_PASSWORD
+      tag: $VERSION
+      entrypoint: /oci-volume-provisioner
+      user: 65534 # nobody
+
+system-test:
+  box:
+    id: registry.oracledx.com/skeppare/oci-volume-provisioner-system-test:1.0.0
+    registry: https://registry.oracledx.com/v2
+    username: $DOCKER_REGISTRY_USERNAME
+    password: $DOCKER_REGISTRY_PASSWORD
+  steps:
+    - script:
+        name: system test
+        code: |
+          cd test/system
+          ./runner.py  
