@@ -6,8 +6,8 @@ GOOS ?= linux
 BUILD_DIR:=dist
 BIN_NAME:=oci-volume-provisioner
 GO_SRC:=$(shell find . -name "*.go")
-DOCKER_REPO ?= registry.oracledx.com
-DOCKER_USER ?= skeppare
+DOCKER_REPO ?= wcr.io
+DOCKER_USER ?= oracle
 DOCKER_IMAGE_NAME ?= oci-volume-provisioner
 DOCKER_IMAGE_TAG ?= ${VERSION}
 
