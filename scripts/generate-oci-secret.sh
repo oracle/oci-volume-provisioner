@@ -16,7 +16,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: ocisapikey
-  namespace: oci
+  namespace: kube-system
 type: Opaque
 data:
   apikey.pem: $(openssl enc -A -base64 -in $FILE)

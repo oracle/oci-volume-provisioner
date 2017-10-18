@@ -21,8 +21,7 @@ import (
 	gcfg "gopkg.in/gcfg.v1"
 )
 
-// Config holds the OCI cloud-provider config passed to Kubernetes compontents
-// via the --cloud-config option.
+// Config holds the OCI volume provisioner config passed to Kubernetes compontents
 type Config struct {
 	Global struct {
 		UserOCID       string `gcfg:"user"`
@@ -32,6 +31,8 @@ type Config struct {
 	}
 }
 
+// LoadClientConfig returns a Config structure representing the given
+// configuration file
 func LoadClientConfig(path string) (cfg *Config, err error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -45,6 +46,7 @@ func LoadClientConfig(path string) (cfg *Config, err error) {
 	return cfg, nil
 }
 
+// ClientFromConfig creates a baremetal client from the given configuration
 func ClientFromConfig(cfg *Config) (client *baremetal.Client, err error) {
 	privateKeyFile := baremetal.PrivateKeyFilePath(cfg.Global.PrivateKeyFile)
 	ociClient, err := baremetal.NewClient(

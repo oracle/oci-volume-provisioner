@@ -13,7 +13,7 @@ kind: ConfigMap
 apiVersion: v1
 metadata:
   name: oci-volume-provisioner
-  namespace: oci
+  namespace: kube-system
   labels:
     k8s-app: oci-provisioner
 data:

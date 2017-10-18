@@ -2,7 +2,7 @@ kind: Pod
 apiVersion: v1
 metadata:
   name: oci-provisioner
-  namespace: oci
+  namespace: kube-system
 spec:
   serviceAccountName: oci-provisioner
   imagePullSecrets:

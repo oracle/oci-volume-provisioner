@@ -275,8 +275,6 @@ def _main():
     if not args['no_setup']:
         _log("Setting up the volume provisioner", as_banner=True)
 
-        _kubectl("create -f ../../dist/namespace.yaml",
-                 kubectl_env, exit_on_error=False)
         _kubectl("create -f ../../manifests/auth/serviceaccount.yaml",
                  kubectl_env, exit_on_error=False)
         _kubectl("create -f../../manifests/auth/clusterrole.yaml",
@@ -295,7 +293,7 @@ def _main():
                                    "test-user@oracle.com", ".", verbose=False)
         _kubectl("create -f ../../dist/oci-volume-provisioner.yaml",
                  kubectl_env, exit_on_error=False)
-        _kubectl("create -f ../../dist/storage-class.yaml",
+        _kubectl("create -f ../../manifests/storage-class.yaml",
                  kubectl_env, exit_on_error=False)
 
         _wait_for_pod_status(kubectl_env, "Running")
@@ -304,7 +302,7 @@ def _main():
         _log("Running system test: ", as_banner=True)
 
         _log("Creating the volume claim")
-        _kubectl("create -f ../../dist/example-claim.yaml",
+        _kubectl("create -f ../../manifests/example-claim.yaml",
                  kubectl_env, exit_on_error=False)
 
         volume = _get_volume_and_wait(kubectl_env)
@@ -317,7 +315,7 @@ def _main():
         _log("Volume: " + volume + " is present and available")
 
         _log("Delete the volume claim")
-        _kubectl("delete -f ../../dist/example-claim.yaml",
+        _kubectl("delete -f ../../manifests/example-claim.yaml",
                  kubectl_env, exit_on_error=False)
 
         _log("Querying the OCI api to make sure a volume with this name now doesnt exist...")
@@ -329,7 +327,7 @@ def _main():
     if not args['no_teardown']:
         _log("Tearing down the volume provisioner", as_banner=True)
 
-        _kubectl("delete -f ../../dist/storage-class.yaml",
+        _kubectl("delete -f ../../manifests/storage-class.yaml",
                  kubectl_env, exit_on_error=False)
         _kubectl("delete -f ../../dist/oci-volume-provisioner.yaml",
                  kubectl_env, exit_on_error=False)
@@ -344,8 +342,6 @@ def _main():
         _kubectl("delete -f../../manifests/auth/clusterrole.yaml",
                  kubectl_env, exit_on_error=False)
         _kubectl("delete -f ../../manifests/auth/serviceaccount.yaml",
-                 kubectl_env, exit_on_error=False)
-        _kubectl("delete -f ../../dist/namespace.yaml",
                  kubectl_env, exit_on_error=False)
 
     _destroy_key_files()

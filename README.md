@@ -33,13 +33,6 @@ Make and push the image
 make push
 ```
 
-Create the oci namespace:
-
-```
-kubectl create -f manifest/namespace.yaml
-
-```
-
 Configure the RBAC roles: 
 
 ```

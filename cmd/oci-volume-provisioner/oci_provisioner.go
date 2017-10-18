@@ -17,21 +17,21 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"os"
+	"strings"
+	"syscall"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
+	baremetal "github.com/oracle/bmcs-go-sdk"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/rest"
-	"syscall"
-
-	"fmt"
-	"github.com/golang/glog"
-	baremetal "github.com/oracle/bmcs-go-sdk"
-	"strings"
 )
 
 const (
@@ -43,6 +43,10 @@ const (
 	retryPeriod               = controller.DefaultRetryPeriod
 	renewDeadline             = controller.DefaultRenewDeadline
 	termLimit                 = controller.DefaultTermLimit
+	ociProvisionerIdentity    = "ociProvisionerIdentity"
+	ociVolumeID               = "ociVolumeID"
+	ociAvailabilityDomain     = "ociAvailabilityDomain"
+	ociCompartment            = "ociCompartment"
 )
 
 type ociProvisioner struct {
@@ -51,11 +55,11 @@ type ociProvisioner struct {
 	// Identity of this ociProvisioner, set to node's name. Used to identify "this" provisioner's PVs.
 	identity string
 
-	tenancyId string
+	tenancyID string
 }
 
-// NewOciProvisioner creates a new oci provisioner
-func NewOciProvisioner() controller.Provisioner {
+// NewOCIProvisioner creates a new oci provisioner.
+func NewOCIProvisioner() controller.Provisioner {
 	nodeName := os.Getenv("NODE_NAME")
 	if nodeName == "" {
 		glog.Fatal("env variable NODE_NAME must be set so that this provisioner can identify itself")
@@ -63,17 +67,17 @@ func NewOciProvisioner() controller.Provisioner {
 
 	cfg, err := LoadClientConfig("/etc/oci/config.cfg")
 	if err != nil {
-		glog.Fatalf("Unable to load volume provisioner client:%v", err)
+		glog.Fatalf("Unable to load volume provisioner client: %v", err)
 	}
 
 	client, err := ClientFromConfig(cfg)
 	if err != nil {
-		glog.Fatalf("Unable to load volume provisioner client:%v", err)
+		glog.Fatalf("Unable to load volume provisioner client: %v", err)
 	}
 	return &ociProvisioner{
 		client:    *client,
 		identity:  nodeName,
-		tenancyId: cfg.Global.TenancyOCID,
+		tenancyID: cfg.Global.TenancyOCID,
 	}
 }
 
@@ -84,7 +88,7 @@ func RoundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
 }
 
 func (p *ociProvisioner) findCompartmentIdByName(name string) (*baremetal.Compartment, error) {
-	compartments, err := p.client.ListCompartments(nil)
+	compartments, err := p.client.ListCompartments(&baremetal.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -93,42 +97,44 @@ func (p *ociProvisioner) findCompartmentIdByName(name string) (*baremetal.Compar
 			return &compartment, nil
 		}
 	}
-	return nil, fmt.Errorf("Unable to find OCI comparment named '%s'", name)
+	return nil, fmt.Errorf("unable to find OCI compartment named '%s'", name)
 }
 
 func (p *ociProvisioner) findADByName(name string) (*baremetal.AvailabilityDomain, error) {
-	ADs, err := p.client.ListAvailabilityDomains(p.tenancyId)
+	ads, err := p.client.ListAvailabilityDomains(p.tenancyID)
 	if err != nil {
 		return nil, err
 	}
-	for _, AD := range ADs.AvailabilityDomains {
-		if strings.HasSuffix(AD.Name, name) {
-			return &AD, nil
+	for _, ad := range ads.AvailabilityDomains {
+		if strings.HasSuffix(ad.Name, name) {
+			return &ad, nil
 		}
 	}
-	return nil, fmt.Errorf("Error looking up availability domain '%s'", name)
+	return nil, fmt.Errorf("error looking up availability domain '%s'", name)
+}
+
+func mapVolumeIDToName(volumeID string) string {
+	return strings.Split(volumeID, ".")[4]
 }
 
 // Provision creates a storage asset and returns a PV object representing it.
 func (p *ociProvisioner) Provision(options controller.VolumeOptions) (*v1.PersistentVolume, error) {
-	glog.Infof("Provision:OCI: VolumeOptions %#v", options)
-
 	for _, accessMode := range options.PVC.Spec.AccessModes {
 		if accessMode != v1.ReadWriteOnce {
-			return nil, fmt.Errorf("Invalid access mode %v specified. Only %v is supported",
+			return nil, fmt.Errorf("invalid access mode %v specified. Only %v is supported",
 				accessMode,
 				v1.ReadWriteOnce)
 		}
 	}
 
 	if options.PVC.Spec.Selector == nil {
-		return nil, fmt.Errorf("OCI: claim Selector must be specified")
+		return nil, fmt.Errorf("claim Selector must be specified")
 	}
-	glog.Infof("Provision:OCI: VolumeOptions.PVC.Spec.Selector %#v", *options.PVC.Spec.Selector)
+	glog.Infof("VolumeOptions.PVC.Spec.Selector %#v", *options.PVC.Spec.Selector)
 
 	compartmentName, ok := options.PVC.Spec.Selector.MatchLabels["oci-compartment"]
 	if !ok {
-		return nil, fmt.Errorf("OCI: claim Selector must specify 'oci-compartment'")
+		return nil, fmt.Errorf("claim Selector must specify 'oci-compartment'")
 	}
 
 	compartment, err := p.findCompartmentIdByName(compartmentName)
@@ -138,7 +144,7 @@ func (p *ociProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 
 	availabilityDomainName, ok := options.PVC.Spec.Selector.MatchLabels["oci-availability-domain"]
 	if !ok {
-		return nil, fmt.Errorf("OCI: claim Selector must specify 'oci-availability-domain'")
+		return nil, fmt.Errorf("claim Selector must specify 'oci-availability-domain'")
 	}
 
 	availabilityDomain, err := p.findADByName(availabilityDomainName)
@@ -152,30 +158,28 @@ func (p *ociProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 	glog.Infof("Volume size %#v", volSizeBytes)
 
 	volSizeMB := int(RoundUpSize(volSizeBytes, 1024*1024))
-	glog.Infof("Creating volume of size %v in AD %s in compartment %s(%#v)", volSizeMB,
+	glog.Infof("Creating volume size=%v AD=%s compartment=%q compartmentID=%q", volSizeMB,
 		availabilityDomain.Name,
 		compartmentName,
 		compartment.ID)
 
 	newVolume, err := p.client.CreateVolume(availabilityDomain.Name,
 		compartment.ID,
-		&baremetal.CreateVolumeOptions{
-			SizeInMBs: volSizeMB,
-		})
+		&baremetal.CreateVolumeOptions{SizeInMBs: volSizeMB})
 	if err != nil {
 		return nil, err
 	}
 
-	volumeName := strings.Split(newVolume.ID, ".")[4]
+	volumeName := mapVolumeIDToName(newVolume.ID)
 
 	pv := &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: volumeName,
 			Annotations: map[string]string{
-				"ociProvisionerIdentity": p.identity,
-				"ociVolumeId":            newVolume.ID,
-				"ociAvailabilityDomain":  availabilityDomain.Name,
-				"ociCompartment":         compartment.CompartmentID,
+				ociProvisionerIdentity: p.identity,
+				ociVolumeID:            newVolume.ID,
+				ociAvailabilityDomain:  availabilityDomain.Name,
+				ociCompartment:         compartment.CompartmentID,
 			},
 		},
 		Spec: v1.PersistentVolumeSpec{
@@ -192,17 +196,15 @@ func (p *ociProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 			},
 		},
 	}
-	glog.Infof("PV:%#v", pv)
 	return pv, nil
 }
 
 // Delete removes the storage asset that was created by Provision represented
 // by the given PV.
 func (p *ociProvisioner) Delete(volume *v1.PersistentVolume) error {
-	glog.Infof("Delete:OCI: volume %#v ", volume)
-	glog.Infof("Delete:OCI: VolumeId %#v ", volume.Annotations["ociVolumeId"])
+	glog.Infof("Deleting volume %v with volumeId %v", volume, volume.Annotations[ociVolumeID])
 
-	ann, ok := volume.Annotations["ociProvisionerIdentity"]
+	ann, ok := volume.Annotations[ociProvisionerIdentity]
 	if !ok {
 		return errors.New("identity annotation not found on PV")
 	}
@@ -210,13 +212,12 @@ func (p *ociProvisioner) Delete(volume *v1.PersistentVolume) error {
 		return &controller.IgnoredError{Reason: "identity annotation on PV does not match ours"}
 	}
 
-	ann, ok = volume.Annotations["ociVolumeId"]
+	ann, ok = volume.Annotations[ociVolumeID]
 	if !ok {
 		return errors.New("volumeid annotation not found on PV")
 	}
-	glog.Infof("Deleting Volume: %#v", volume)
 
-	return p.client.DeleteVolume(volume.Annotations["ociVolumeId"], nil)
+	return p.client.DeleteVolume(volume.Annotations[ociVolumeID], nil)
 }
 
 func main() {
@@ -245,10 +246,14 @@ func main() {
 
 	// Create the provisioner: it implements the Provisioner interface expected by
 	// the controller
-	ociProvisioner := NewOciProvisioner()
+	ociProvisioner := NewOCIProvisioner()
 
 	// Start the provision controller which will dynamically provision oci
 	// PVs
-	pc := controller.NewProvisionController(clientset, resyncPeriod, provisionerName, ociProvisioner, serverVersion.GitVersion, exponentialBackOffOnError, failedRetryThreshold, leasePeriod, renewDeadline, retryPeriod, termLimit)
+	pc := controller.NewProvisionController(
+		clientset, resyncPeriod, provisionerName, ociProvisioner,
+		serverVersion.GitVersion, exponentialBackOffOnError,
+		failedRetryThreshold, leasePeriod, renewDeadline,
+		retryPeriod, termLimit)
 	pc.Run(wait.NeverStop)
 }
