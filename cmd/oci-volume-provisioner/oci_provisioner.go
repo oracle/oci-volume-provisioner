@@ -83,11 +83,11 @@ func NewOCIProvisioner() controller.Provisioner {
 
 var _ controller.Provisioner = &ociProvisioner{}
 
-func RoundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
+func roundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
 	return (volumeSizeBytes + allocationUnitBytes - 1) / allocationUnitBytes
 }
 
-func (p *ociProvisioner) findCompartmentIdByName(name string) (*baremetal.Compartment, error) {
+func (p *ociProvisioner) findCompartmentIDByName(name string) (*baremetal.Compartment, error) {
 	compartments, err := p.client.ListCompartments(&baremetal.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -137,7 +137,7 @@ func (p *ociProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 		return nil, fmt.Errorf("claim Selector must specify 'oci-compartment'")
 	}
 
-	compartment, err := p.findCompartmentIdByName(compartmentName)
+	compartment, err := p.findCompartmentIDByName(compartmentName)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +157,7 @@ func (p *ociProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 	volSizeBytes := volSize.Value()
 	glog.Infof("Volume size %#v", volSizeBytes)
 
-	volSizeMB := int(RoundUpSize(volSizeBytes, 1024*1024))
+	volSizeMB := int(roundUpSize(volSizeBytes, 1024*1024))
 	glog.Infof("Creating volume size=%v AD=%s compartment=%q compartmentID=%q", volSizeMB,
 		availabilityDomain.Name,
 		compartmentName,

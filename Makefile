@@ -5,26 +5,29 @@ BIN := oci-volume-provisioner
 REGISTRY ?= wcr.io
 USER ?= oracle
 IMAGE ?= $(REGISTRY)/$(USER)/$(BIN)
-GOOS ?= linux
 
-.PHONY: all fmt lint vet build image push deploy clean
+GOOS ?= linux
+GOARCH ?= amd64
+SRC_DIRS := cmd # directories which hold app source (not vendored)
+
+.PHONY: all gofmt golint govet build image push deploy clean
 
 all: build
 
-fmt:
-	go fmt $(shell go list ./... | grep -v /vendor/)
+gofmt:
+	@./hack/check-gofmt.sh ${SRC_DIRS}
 
-lint:
-	golint $(shell go list ./... | grep -v /vendor/)
+golint:
+	@./hack/check-golint.sh ${SRC_DIRS}
 
-vet:
-	go vet $(shell go list ./... | grep -v /vendor/)
+govet:
+	@./hack/check-govet.sh ${SRC_DIRS}
 
 build: ${DIR}/${BIN}
 
 ${DIR}/${BIN}: ${GO_SRC}
 	mkdir -p ${DIR}
-	GOOS=$(GOOS) CGO_ENABLED=0 go build -i -v -ldflags '-extldflags "-static"' -o $@ ./cmd/oci-volume-provisioner/
+	GOOS=${GOOS} GOARCH=${GOARCH} CGO_ENABLED=0 go build -i -v -ldflags '-extldflags "-static"' -o $@ ./cmd/oci-volume-provisioner/
 
 image: ${DIR}/${BIN}
 	sed "s/{{VERSION}}/$(VERSION)/g" manifests/oci-volume-provisioner.yaml > $(DIR)/oci-volume-provisioner.yaml
