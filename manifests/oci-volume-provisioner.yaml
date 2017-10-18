@@ -9,7 +9,7 @@ spec:
     - name: odx-docker-pull-secret
   containers:
     - name: oci-provisioner
-      image: registry.oracledx.com/skeppare/bristol-oci-volume-provisioner:{{VERSION}}
+      image: wcr.io/oracle/oci-volume-provisioner:{{VERSION}}
       imagePullPolicy: "Always"
       env:
         - name: NODE_NAME

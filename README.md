@@ -78,7 +78,7 @@ spec:
     matchLabels:
       oci-availability-domain: "PHX-AD-1"
       # optional compartment name
-      oci-compartment: "bristol-cloud"
+      oci-compartment: "kubernetes-test"
   accessModes:
     - ReadWriteOnce
   resources:

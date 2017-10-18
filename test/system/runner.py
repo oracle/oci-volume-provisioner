@@ -18,7 +18,7 @@ TMP_KUBECONFIG = "/tmp/kubeconfig.conf"
 USER_OCID = "ocid1.user.oc1..aaaaaaaao235lbcxvdrrqlrpwv4qvil2xzs4544h3lof4go3wz2ett6arpeq"
 TENNANCY_OCID = "ocid1.tenancy.oc1..aaaaaaaatyn7scrtwtqedvgrxgr2xunzeo6uanvyhzxqblctwkrpisvke4kq"
 FINGERPRINT = "4d:f5:ff:0e:a9:10:e8:5a:d3:52:6a:f8:1e:99:a3:47"
-COMPARTMENT_ID = "ocid1.compartment.oc1..aaaaaaaa3um2atybwhder4qttfhgon4j3hcxgmsvnyvx4flfjyewkkwfzwnq"
+COMPARTMENT_ID = "ocid1.compartment.oc1..aaaaaaaa6yrzvtwcumheirxtmbrbrya5lqkr7k7lxi34q3egeseqwlq2l5aq"
 REGION = "us-phoenix-1"
 TIMEOUT = 600
 
@@ -149,7 +149,7 @@ def _kubectl(action, kubectl_env, exit_on_error=True):
 
 
 def _get_pod_infos(kubectl_env):
-    stdout = _kubectl("-n oci get pods -o wide", kubectl_env)
+    stdout = _kubectl("-n kube-system get pods -o wide", kubectl_env)
     infos = []
     for line in stdout.split("\n"):
         line_array = line.split()
@@ -331,11 +331,11 @@ def _main():
                  kubectl_env, exit_on_error=False)
         _kubectl("delete -f ../../dist/oci-volume-provisioner.yaml",
                  kubectl_env, exit_on_error=False)
-        _kubectl("-n oci delete secret odx-docker-pull-secret",
+        _kubectl("-n kube-system delete secret odx-docker-pull-secret",
                  kubectl_env, exit_on_error=False)
-        _kubectl("-n oci delete secret ocisapikey",
+        _kubectl("-n kube-system delete secret ocisapikey",
                  kubectl_env, exit_on_error=False)
-        _kubectl("-n oci delete configmap oci-volume-provisioner",
+        _kubectl("-n kube-system delete configmap oci-volume-provisioner",
                  kubectl_env, exit_on_error=False)
         _kubectl("delete -f ../../manifests/auth/clusterrolebinding.yaml",
                  kubectl_env, exit_on_error=False)
