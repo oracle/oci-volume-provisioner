@@ -1,0 +1,15 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: demooci
+spec:
+  storageClassName: "oci"
+  selector: 
+    matchLabels:
+      oci-availability-domain: "PHX-AD-2"
+      oci-compartment: "kubernetes-test"
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
