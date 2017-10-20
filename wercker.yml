@@ -20,9 +20,16 @@ build:
         make gofmt golint govet build
 
     - script:
-      name: copy binary
+      name: copy build artifacts
       code: |
-        cp dist/oci-volume-provisioner ${WERCKER_OUTPUT_DIR}
+        cp -R dist ${WERCKER_OUTPUT_DIR}/
+
+    - script:
+      name: copy test artifacts
+      code: |
+        cp -R manifests ${WERCKER_OUTPUT_DIR}/
+        mkdir -p ${WERCKER_OUTPUT_DIR}/test
+        cp -R test/system ${WERCKER_OUTPUT_DIR}/test/
 
 push:
   box:
@@ -37,12 +44,12 @@ push:
     - script:
       name: prepare
       code: |
-        mv ./oci-volume-provisioner /oci-volume-provisioner
+        mv ./dist/oci-volume-provisioner /oci-volume-provisioner
         chmod +x /oci-volume-provisioner
 
     - internal/docker-push:
-      repository: wcr.io/oracle/oci-volume-provisioner
-      registry: https://registry.oracledx.com/v2
+      repository: oracle/oci-volume-provisioner
+      registry: https://wcr.io/v2
       username: $DOCKER_REGISTRY_USERNAME
       password: $DOCKER_REGISTRY_PASSWORD
       tag: $VERSION
@@ -52,7 +59,7 @@ push:
 system-test:
   box:
     id: wcr.io/oracle/oci-volume-provisioner-system-test:1.0.0
-    registry: https://registry.oracledx.com/v2
+    registry: https://wcr.io/v2
     username: $DOCKER_REGISTRY_USERNAME
     password: $DOCKER_REGISTRY_PASSWORD
   steps:
