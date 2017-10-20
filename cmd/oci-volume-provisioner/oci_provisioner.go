@@ -65,7 +65,7 @@ func NewOCIProvisioner() controller.Provisioner {
 		glog.Fatal("env variable NODE_NAME must be set so that this provisioner can identify itself")
 	}
 
-	cfg, err := LoadClientConfig("/etc/oci/config.cfg")
+	cfg, err := LoadClientConfig("/etc/oci/config.yaml")
 	if err != nil {
 		glog.Fatalf("Unable to load volume provisioner client: %v", err)
 	}
@@ -74,10 +74,11 @@ func NewOCIProvisioner() controller.Provisioner {
 	if err != nil {
 		glog.Fatalf("Unable to load volume provisioner client: %v", err)
 	}
+
 	return &ociProvisioner{
 		client:    *client,
 		identity:  nodeName,
-		tenancyID: cfg.Global.TenancyOCID,
+		tenancyID: cfg.Auth.TenancyOCID,
 	}
 }
 

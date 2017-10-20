@@ -1,4 +1,4 @@
-// Copyright 2017 The OCI Volume Provisioner Authors
+// Copyright 2017 The OCI Cloud Controller Manager Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,31 +15,45 @@
 package main
 
 import (
+	"io/ioutil"
 	"os"
 
 	baremetal "github.com/oracle/bmcs-go-sdk"
-	gcfg "gopkg.in/gcfg.v1"
+	"gopkg.in/yaml.v2"
 )
 
-// Config holds the OCI volume provisioner config passed to Kubernetes compontents
-type Config struct {
-	Global struct {
-		UserOCID       string `gcfg:"user"`
-		TenancyOCID    string `gcfg:"tenancy"`
-		Fingerprint    string `gcfg:"fingerprint"`
-		PrivateKeyFile string `gcfg:"key-file"`
-	}
+// AuthConfig holds the configuration required for communicating with the OCI
+// API.
+type AuthConfig struct {
+	TenancyOCID string `yaml:"tenancy"`
+	UserOCID    string `yaml:"user"`
+	PrivateKey  string `yaml:"key"`
+	Fingerprint string `yaml:"fingerprint"`
+	Region      string `yaml:"region"`
 }
 
-// LoadClientConfig returns a Config structure representing the given
-// configuration file
-func LoadClientConfig(path string) (cfg *Config, err error) {
+// Config holds the OCI cloud-provider config passed to Kubernetes compontents.
+type Config struct {
+	Auth AuthConfig `yaml:"auth"`
+}
+
+// Validate validates the OCI config.
+func (c *Config) Validate() error {
+	return ValidateConfig(c).ToAggregate()
+}
+
+// ReadConfig consumes the config and constructs a Config object.
+func LoadClientConfig(path string) (*Config, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	cfg = &Config{}
-	err = gcfg.ReadInto(cfg, f)
+	cfg := &Config{}
+	b, err := ioutil.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
+	err = yaml.Unmarshal(b, &cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -48,12 +62,12 @@ func LoadClientConfig(path string) (cfg *Config, err error) {
 
 // ClientFromConfig creates a baremetal client from the given configuration
 func ClientFromConfig(cfg *Config) (client *baremetal.Client, err error) {
-	privateKeyFile := baremetal.PrivateKeyFilePath(cfg.Global.PrivateKeyFile)
 	ociClient, err := baremetal.NewClient(
-		cfg.Global.UserOCID,
-		cfg.Global.TenancyOCID,
-		cfg.Global.Fingerprint,
-		privateKeyFile)
+		cfg.Auth.UserOCID,
+		cfg.Auth.TenancyOCID,
+		cfg.Auth.Fingerprint,
+		baremetal.PrivateKeyBytes([]byte(cfg.Auth.PrivateKey)),
+		baremetal.Region(cfg.Auth.Region))
 	if err != nil {
 		return nil, err
 	}

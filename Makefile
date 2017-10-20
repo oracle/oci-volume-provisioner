@@ -3,8 +3,8 @@ VERSION := $(shell git describe --always --dirty)
 DIR := dist
 BIN := oci-volume-provisioner
 REGISTRY ?= wcr.io
-USER ?= oracle
-IMAGE ?= $(REGISTRY)/$(USER)/$(BIN)
+DOCKER_REGISTRY_USERNAME ?= oracle
+IMAGE ?= $(REGISTRY)/$(DOCKER_REGISTRY_USERNAME)/$(BIN)
 
 GOOS ?= linux
 GOARCH ?= amd64
@@ -36,10 +36,6 @@ image: ${DIR}/${BIN}
 push: image
 	docker login -u '$(DOCKER_REGISTRY_USERNAME)' -p '$(DOCKER_REGISTRY_PASSWORD)' $(REGISTRY)
 	docker push ${IMAGE}:${VERSION}
-
-deploy:
-	kubectl delete pod oci-volume-provisioner -n oci || true
-	kubectl create -f ${DIR}/oci-volume-provisioner.yaml
 
 clean:
 	rm -rf ${DIR}
