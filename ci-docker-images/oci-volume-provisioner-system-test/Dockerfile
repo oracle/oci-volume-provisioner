@@ -11,6 +11,7 @@ RUN http_proxy=$PROXY apt-get update && apt-get install -y \
     openssh-client \
     python \
     python-pip \
+    python-yaml \
     unzip \
     wget \
     curl
