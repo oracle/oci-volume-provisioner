@@ -47,6 +47,7 @@ const (
 	ociVolumeID               = "ociVolumeID"
 	ociAvailabilityDomain     = "ociAvailabilityDomain"
 	ociCompartment            = "ociCompartment"
+	configFilePath            = "/etc/oci/config.yaml"
 )
 
 type ociProvisioner struct {
@@ -65,7 +66,13 @@ func NewOCIProvisioner() controller.Provisioner {
 		glog.Fatal("env variable NODE_NAME must be set so that this provisioner can identify itself")
 	}
 
-	cfg, err := LoadClientConfig("/etc/oci/config.yaml")
+	f, err := os.Open(configFilePath)
+	if err != nil {
+		glog.Fatalf("Unable to load volume provisioner configuration file: %v", configFilePath)
+	}
+	defer f.Close()
+
+	cfg, err := LoadClientConfig(f)
 	if err != nil {
 		glog.Fatalf("Unable to load volume provisioner client: %v", err)
 	}

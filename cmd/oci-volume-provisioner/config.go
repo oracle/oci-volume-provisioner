@@ -15,8 +15,9 @@
 package main
 
 import (
+	"errors"
+	"io"
 	"io/ioutil"
-	"os"
 
 	baremetal "github.com/oracle/bmcs-go-sdk"
 	"gopkg.in/yaml.v2"
@@ -43,13 +44,12 @@ func (c *Config) Validate() error {
 }
 
 // ReadConfig consumes the config and constructs a Config object.
-func LoadClientConfig(path string) (*Config, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
+func LoadClientConfig(r io.Reader) (*Config, error) {
+	if r == nil {
+		return nil, errors.New("no configuration file given")
 	}
 	cfg := &Config{}
-	b, err := ioutil.ReadAll(f)
+	b, err := ioutil.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}

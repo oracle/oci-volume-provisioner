@@ -19,8 +19,8 @@ import (
 	"testing"
 )
 
-func TestReadConfigShouldFailWhenNoConfigProvided(t *testing.T) {
-	_, err := ReadConfig(nil)
+func TestLoadClientConfigShouldFailWhenNoConfigProvided(t *testing.T) {
+	_, err := LoadClientConfig(nil)
 	if err == nil {
 		t.Fatalf("should fail with when given no config")
 	}
@@ -95,39 +95,21 @@ auth:
     D/yEDdXVK/lIzNt7kIMFhtoYGrwv1JQGfK5Wh2bi+AwbBDZ45/17
     -----END RSA PRIVATE KEY-----
   fingerprint: 97:84:f7:26:a3:7b:74:d0:bd:4e:08:a7:79:c9:d0:1d
-
-loadBalancer:
-  disableSecurityListManagement: false
-  subnet1: ocid1.subnet.oc1.phx.aaaaaaaasa53hlkzk6nzksqfccegk2qnkxmphkblst3riclzs4rhwg7rg57q
-  subnet2: ocid1.subnet.oc1.phx.aaaaaaaahuxrgvs65iwdz7ekwgg3l5gyah7ww5klkwjcso74u3e4i64hvtvq
 `
 
-func TestReadConfigShouldSucceedWhenProvidedValidConfig(t *testing.T) {
-	_, err := ReadConfig(strings.NewReader(validConfig))
+func TestLoadClientConfigShouldSucceedWhenProvidedValidConfig(t *testing.T) {
+	_, err := LoadClientConfig(strings.NewReader(validConfig))
 	if err != nil {
 		t.Fatalf("expected no error but got '%+v'", err)
 	}
 }
 
-func TestReadConfigShouldHaveNoDefaultRegionIfNoneSpecified(t *testing.T) {
-	config, err := ReadConfig(strings.NewReader(validConfigNoRegion))
+func TestLoadClientConfigShouldHaveNoDefaultRegionIfNoneSpecified(t *testing.T) {
+	config, err := LoadClientConfig(strings.NewReader(validConfigNoRegion))
 	if err != nil {
 		t.Fatalf("expected no error but got '%+v'", err)
 	}
 	if config.Auth.Region != "" {
 		t.Errorf("expected no region but got %s", config.Auth.Region)
-	}
-}
-
-func TestReadConfigShouldSetCompartmentOCIDWhenProvidedValidConfig(t *testing.T) {
-	cfg, err := ReadConfig(strings.NewReader(validConfig))
-	if err != nil {
-		t.Fatalf("expected no error but got '%+v'", err)
-	}
-	expected := "ocid1.compartment.oc1..aaaaaaaa3um2atybwhder4qttfhgon4j3hcxgmsvnyvx4flfjyewkkwfzwnq"
-
-	if cfg.Auth.CompartmentOCID != expected {
-		t.Errorf("Got Auth.CompartmentOCID = %s; want Auth.CompartmentOCID = %s",
-			cfg.Auth.CompartmentOCID, expected)
 	}
 }
