@@ -151,7 +151,7 @@ def _get_timestamp(test_id):
 
 
 def _kubectl(action, exit_on_error=True):
-    (stdout, _, returncode) = _run_command("kubectl " + action, ".")
+    (stdout, _, returncode) = _run_command("KUBECONFIG=" + _get_kubeconfig() + " kubectl " + action, ".")
     if exit_on_error and returncode != 0:
         _log("Error running kubectl")
         sys.exit(1)
