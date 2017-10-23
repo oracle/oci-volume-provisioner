@@ -8,11 +8,10 @@ IMAGE ?= $(REGISTRY)/$(DOCKER_REGISTRY_USERNAME)/$(BIN)
 
 GOOS ?= linux
 GOARCH ?= amd64
-SRC_DIRS := cmd # directories which hold app source (not vendored)
+SRC_DIRS := cmd pkg # directories which hold app source (not vendored)
 
-.PHONY: all gofmt golint govet test build image push deploy clean
-
-all: build
+.PHONY: all
+all: gofmt golint govet test build
 
 gofmt:
 	@./hack/check-gofmt.sh ${SRC_DIRS}

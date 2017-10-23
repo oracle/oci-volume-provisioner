@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package client
 
 import (
 	"strings"
@@ -20,7 +20,7 @@ import (
 )
 
 func TestLoadClientConfigShouldFailWhenNoConfigProvided(t *testing.T) {
-	_, err := LoadClientConfig(nil)
+	_, err := LoadConfig(nil)
 	if err == nil {
 		t.Fatalf("should fail with when given no config")
 	}
@@ -98,14 +98,14 @@ auth:
 `
 
 func TestLoadClientConfigShouldSucceedWhenProvidedValidConfig(t *testing.T) {
-	_, err := LoadClientConfig(strings.NewReader(validConfig))
+	_, err := LoadConfig(strings.NewReader(validConfig))
 	if err != nil {
 		t.Fatalf("expected no error but got '%+v'", err)
 	}
 }
 
 func TestLoadClientConfigShouldHaveNoDefaultRegionIfNoneSpecified(t *testing.T) {
-	config, err := LoadClientConfig(strings.NewReader(validConfigNoRegion))
+	config, err := LoadConfig(strings.NewReader(validConfigNoRegion))
 	if err != nil {
 		t.Fatalf("expected no error but got '%+v'", err)
 	}
