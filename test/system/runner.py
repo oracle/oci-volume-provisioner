@@ -7,17 +7,17 @@ import os
 import select
 import subprocess
 import sys
+import tempfile
 import time
 import oci
+import yaml
 
 DEBUG_FILE = "runner.log"
 TERRAFORM_CLUSTER = "terraform/cluster"
 TEST_NAME = "volumeprovisionersystemtest"
-TMP_OCI_API_KEY = "/tmp/oci_api_key.pem"
+TMP_OCICONFIG = "/tmp/ociconfig"
 TMP_KUBECONFIG = "/tmp/kubeconfig.conf"
-USER_OCID = "ocid1.user.oc1..aaaaaaaao235lbcxvdrrqlrpwv4qvil2xzs4544h3lof4go3wz2ett6arpeq"
-TENNANCY_OCID = "ocid1.tenancy.oc1..aaaaaaaatyn7scrtwtqedvgrxgr2xunzeo6uanvyhzxqblctwkrpisvke4kq"
-FINGERPRINT = "4d:f5:ff:0e:a9:10:e8:5a:d3:52:6a:f8:1e:99:a3:47"
+TMP_OCI_API_KEY_FILE = "/tmp/oci_api_key.pem"
 COMPARTMENT_ID = "ocid1.compartment.oc1..aaaaaaaa6yrzvtwcumheirxtmbrbrya5lqkr7k7lxi34q3egeseqwlq2l5aq"
 REGION = "us-phoenix-1"
 TIMEOUT = 600
@@ -30,8 +30,8 @@ def _check_env():
     if "DOCKER_REGISTRY_PASSWORD" not in os.environ:
         _log("Error. Can't find DOCKER_REGISTRY_PASSWORD in the environment.")
         sys.exit(1)
-    if "OCI_API_KEY" not in os.environ and "OCI_API_KEY_VAR" not in os.environ:
-        _log("Error. Can't find either OCI_API_KEY or OCI_API_KEY_VAR in the environment.")
+    if "OCICONFIG" not in os.environ and "OCICONFIG_VAR" not in os.environ:
+        _log("Error. Can't find either OCICONFIG or OCICONFIG_VAR in the environment.")
         sys.exit(1)
     if "KUBECONFIG" not in os.environ and "KUBECONFIG_VAR" not in os.environ:
         _log("Error. Can't find either KUBECONFIG or KUBECONFIG_VAR in the environment.")
@@ -39,26 +39,41 @@ def _check_env():
 
 
 def _create_key_files():
-    if "OCI_API_KEY_VAR" in os.environ:
-        _run_command("echo \"$OCI_API_KEY_VAR\" > " + TMP_OCI_API_KEY, ".")
-        _run_command("chmod 600 " + TMP_OCI_API_KEY, ".", verbose=False)
+    if "OCICONFIG_VAR" in os.environ:
+        _run_command("echo \"$OCICONFIG_VAR\" > " + TMP_OCICONFIG, ".")
+        _run_command("chmod 600 " + TMP_OCICONFIG, ".", verbose=False)
     if "KUBECONFIG_VAR" in os.environ:
         _run_command("echo \"$KUBECONFIG_VAR\" > " + TMP_KUBECONFIG, ".")
 
+    oci_config_file = _get_oci_config_file()
+    with open(_get_oci_config_file(), 'r') as stream:
+        try:
+            cnf = yaml.load(stream)
+            with open(TMP_OCI_API_KEY_FILE, 'w') as stream:
+                stream.write(cnf['auth']['key'])
+        except yaml.YAMLError:
+            _log("Error. Failed to parse oci config file " + oci_config_file)
+            sys.exit(1)
+
 
 def _destroy_key_files():
-    if "OCI_API_KEY_VAR" in os.environ:
-        os.remove(TMP_OCI_API_KEY)
+    if "OCICONFIG_VAR" in os.environ:
+        os.remove(TMP_OCICONFIG)
     if "KUBECONFIG_VAR" in os.environ:
         os.remove(TMP_KUBECONFIG)
+    os.remove(TMP_OCI_API_KEY_FILE)
 
 
 def _get_kubeconfig():
     return os.environ['KUBECONFIG'] if "KUBECONFIG" in os.environ else TMP_KUBECONFIG
 
 
-def _get_oci_api_key():
-    return os.environ['OCI_API_KEY'] if "OCI_API_KEY" in os.environ else TMP_OCI_API_KEY
+def _get_oci_config_file():
+    return os.environ['OCICONFIG'] if "OCICONFIG" in os.environ else TMP_OCICONFIG
+
+
+def _get_oci_api_key_file():
+    return TMP_OCI_API_KEY_FILE
 
 
 def _banner(as_banner, bold):
@@ -135,12 +150,8 @@ def _get_timestamp(test_id):
     return test_id if test_id is not None else datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')
 
 
-def _get_kubectl_env():
-    return "KUBECONFIG=" + _get_kubeconfig()
-
-
-def _kubectl(action, kubectl_env, exit_on_error=True):
-    (stdout, _, returncode) = _run_command(kubectl_env + " kubectl " + action, ".")
+def _kubectl(action, exit_on_error=True):
+    (stdout, _, returncode) = _run_command("kubectl " + action, ".")
     if exit_on_error and returncode != 0:
         _log("Error running kubectl")
         sys.exit(1)
@@ -148,22 +159,22 @@ def _kubectl(action, kubectl_env, exit_on_error=True):
     return stdout
 
 
-def _get_pod_infos(kubectl_env):
-    stdout = _kubectl("-n kube-system get pods -o wide", kubectl_env)
+def _get_pod_infos():
+    stdout = _kubectl("-n kube-system get pods -o wide")
     infos = []
     for line in stdout.split("\n"):
         line_array = line.split()
         if len(line_array) > 0:
             name = line_array[0]
-            if name == "oci-provisioner":
+            if name == "oci-volume-provisioner":
                 status = line_array[2]
                 node = line_array[6]
                 infos.append((name, status, node))
     return infos
 
 
-def _wait_for_pod_status(kubectl_env, desired_status):
-    infos = _get_pod_infos(kubectl_env)
+def _wait_for_pod_status(desired_status):
+    infos = _get_pod_infos()
     num_polls = 0
     while not any(i[1] == desired_status for i in infos):
         for i in infos:
@@ -176,12 +187,12 @@ def _wait_for_pod_status(kubectl_env, desired_status):
                      "failed to achieve status: " + desired_status + "." + \
                      "Final status was: " + i[1])
             sys.exit(1)
-        infos = _get_pod_infos(kubectl_env)
+        infos = _get_pod_infos()
     return (infos[0][0], infos[0][1], infos[0][2])
 
 
-def _get_volume(kubectl_env):
-    stdout = _kubectl("get PersistentVolumeClaim -o wide", kubectl_env)
+def _get_volume():
+    stdout = _kubectl("get PersistentVolumeClaim -o wide")
     for line in stdout.split("\n"):
         line_array = line.split()
         if len(line_array) >= 3:
@@ -192,16 +203,16 @@ def _get_volume(kubectl_env):
     return None
 
 
-def _get_volume_and_wait(kubectl_env):
+def _get_volume_and_wait():
     num_polls = 0
-    volume = _get_volume(kubectl_env)
+    volume = _get_volume()
     while not volume:
         _log("    waiting...")
         time.sleep(1)
         num_polls += 1
         if num_polls == TIMEOUT:
             return False
-        volume = _get_volume(kubectl_env)
+        volume = _get_volume()
     return volume
 
 
@@ -217,12 +228,19 @@ def _get_json_doc(response):
 
 def _oci_config():
     config = dict(oci.config.DEFAULT_CONFIG)
-    config["user"] = USER_OCID
-    config["tenancy"] = TENNANCY_OCID
-    config["fingerprint"] = FINGERPRINT
-    config["key_file"] = _get_oci_api_key()
-    config["region"] = REGION
-    return config
+    oci_config_file = _get_oci_config_file()
+    with open(oci_config_file, 'r') as stream:
+        try:
+            cnf = yaml.load(stream)
+            config["user"] = cnf['auth']['user']
+            config["tenancy"] = cnf['auth']['tenancy']
+            config["fingerprint"] = cnf['auth']['fingerprint']
+            config["key_file"] = TMP_OCI_API_KEY_FILE
+            config["region"] = cnf['auth']['region']
+            return config
+        except yaml.YAMLError:
+            _log("Error. Failed to parse oci config file " + oci_config_file)
+            sys.exit(1)
 
 
 def _volume_exists(volume, state):
@@ -269,43 +287,32 @@ def _main():
     _check_env()
     _create_key_files()
 
-    kubectl_env = _get_kubectl_env()
     success = True
 
     if not args['no_setup']:
         _log("Setting up the volume provisioner", as_banner=True)
-
-        _kubectl("create -f ../../manifests/auth/serviceaccount.yaml",
-                 kubectl_env, exit_on_error=False)
-        _kubectl("create -f../../manifests/auth/clusterrole.yaml",
-                 kubectl_env, exit_on_error=False)
-        _kubectl("create -f ../../manifests/auth/clusterrolebinding.yaml",
-                 kubectl_env, exit_on_error=False)
-        _run_command(kubectl_env + " ../../scripts/generate-oci-configmap.sh " + \
-                                   USER_OCID + " " + \
-                                   FINGERPRINT + " " + \
-                                   TENNANCY_OCID, ".", verbose=False)
-        _run_command(kubectl_env + " ../../scripts/generate-oci-secret.sh " + \
-                                   _get_oci_api_key(), ".", verbose=False)
-        _run_command(kubectl_env + " ../../scripts/generate-docker-registry-secret.sh \'" + \
-                                   os.environ['DOCKER_REGISTRY_USERNAME'] + "\' \'" + \
-                                   os.environ['DOCKER_REGISTRY_PASSWORD'] + "\' " + \
-                                   "test-user@oracle.com", ".", verbose=False)
-        _kubectl("create -f ../../dist/oci-volume-provisioner.yaml",
-                 kubectl_env, exit_on_error=False)
-        _kubectl("create -f ../../manifests/storage-class.yaml",
-                 kubectl_env, exit_on_error=False)
-
-        _wait_for_pod_status(kubectl_env, "Running")
+        _kubectl("-n kube-system create secret docker-registry wcr-docker-pull-secret " + \
+                 "--docker-server=\"wcr.io\" " + \
+                 "--docker-username=\"" + os.environ['DOCKER_REGISTRY_USERNAME'] +"\" " + \
+                 "--docker-password=\"" + os.environ['DOCKER_REGISTRY_PASSWORD'] +"\" " + \
+                 "--docker-email=\"k8s@oracle.com\"",
+                 exit_on_error=False)
+        _kubectl("-n kube-system create secret generic oci-volume-provisioner " + \
+                 "--from-file=config.yaml=" + _get_oci_config_file(),
+                 exit_on_error=False)
+        _kubectl("create -f ../../manifests/storage-class.yaml", exit_on_error=False)
+        _kubectl("create -f ../../manifests/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
+        _kubectl("create -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
+        _wait_for_pod_status("Running")
 
     if not args['no_test']:
         _log("Running system test: ", as_banner=True)
 
         _log("Creating the volume claim")
         _kubectl("create -f ../../manifests/example-claim.yaml",
-                 kubectl_env, exit_on_error=False)
+                 exit_on_error=False)
 
-        volume = _get_volume_and_wait(kubectl_env)
+        volume = _get_volume_and_wait()
         _log("Created volume with name: " + volume)
 
         _log("Querying the OCI api to make sure a volume with this name exists...")
@@ -315,8 +322,7 @@ def _main():
         _log("Volume: " + volume + " is present and available")
 
         _log("Delete the volume claim")
-        _kubectl("delete -f ../../manifests/example-claim.yaml",
-                 kubectl_env, exit_on_error=False)
+        _kubectl("delete -f ../../manifests/example-claim.yaml", exit_on_error=False)
 
         _log("Querying the OCI api to make sure a volume with this name now doesnt exist...")
         if not _volume_exists(volume, 'TERMINATED'):
@@ -326,23 +332,11 @@ def _main():
 
     if not args['no_teardown']:
         _log("Tearing down the volume provisioner", as_banner=True)
-
-        _kubectl("delete -f ../../manifests/storage-class.yaml",
-                 kubectl_env, exit_on_error=False)
-        _kubectl("delete -f ../../dist/oci-volume-provisioner.yaml",
-                 kubectl_env, exit_on_error=False)
-        _kubectl("-n kube-system delete secret odx-docker-pull-secret",
-                 kubectl_env, exit_on_error=False)
-        _kubectl("-n kube-system delete secret ocisapikey",
-                 kubectl_env, exit_on_error=False)
-        _kubectl("-n kube-system delete configmap oci-volume-provisioner",
-                 kubectl_env, exit_on_error=False)
-        _kubectl("delete -f ../../manifests/auth/clusterrolebinding.yaml",
-                 kubectl_env, exit_on_error=False)
-        _kubectl("delete -f../../manifests/auth/clusterrole.yaml",
-                 kubectl_env, exit_on_error=False)
-        _kubectl("delete -f ../../manifests/auth/serviceaccount.yaml",
-                 kubectl_env, exit_on_error=False)
+        _kubectl("delete -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
+        _kubectl("delete -f ../../manifests/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
+        _kubectl("delete -f ../../manifests/storage-class.yaml", exit_on_error=False)
+        _kubectl("-n kube-system delete secret oci-volume-provisioner", exit_on_error=False)
+        _kubectl("-n kube-system delete secret wcr-docker-pull-secret", exit_on_error=False)
 
     _destroy_key_files()
 

@@ -25,7 +25,7 @@ It uses the OCI Volume driver to do the actual provisioning of Storage Volumes.
 + Install the [Oracle OCI flex volume driver](https://github.com/oracle/oci-flexvolume-driver)
 + Kubernetes 1.6 + 
 
-## Developing
+## Building
 
 Make and push the image
 
@@ -33,35 +33,47 @@ Make and push the image
 make push
 ```
 
-Configure the RBAC roles: 
+Note: We publish the `oci-volume-provisioner` to a private Docker registry. You
+will need a [Docker registry secret][2] to push images to it.
 
-```
-kubectl create -f manifests/auth/serviceaccount.yaml
-kubectl create -f manifests/auth/clusterrole.yaml
-kubectl create -f manifests/auth/clusterrolebinding.yaml
-```
-
-Configure the OCI config map, OCI secret and docker registry secret:
-
-```
-./scripts/generate-oci-configmap.sh <user ocid> <fingerprint> <tennacy ocid>
-./scripts/generate-oci-secret.sh <oci_api_key.pem>
-./scripts/generate-docker-registry-secret.sh <username> <password> <email>
+```bash
+$ kubectl -n kube-system create secret docker-registry wcr-docker-pull-secret \
+    --docker-server="registry.oracledx.com" \
+    --docker-username="agent" \
+    --docker-password="$DOCKER_REGISTRY_PASSWORD" \
+    --docker-email="k8s@oracle.com"
 ```
 
-Create the oci storage class:
+## Configuration
+
+An example configuration file can be found [here][1]. Download this file and
+populate it with values specific to your chosen OCI identity and tenancy.
+Then create the Kubernetes secret with the following command:
+vim c
+```bash
+$ kubectl create secret generic oci-volume-provisioner \
+     -n kube-system \
+     --from-file=config.yaml=oci-volume-provisioner-config.yaml
+```
+
+Create the `oci` storage class:
 
 ```
 kubectl create -f manifests/storage-class.yaml
 ```
 
-Finally install the OCI volume provisioner:
+## Deployment
+
+Lastly deploy the volume provisioner and associated RBAC rules if your cluster is configured to use RBAC:
 
 ```
 kubectl create -f dist/oci-volume-provisioner.yaml
+kubectl create -f manifests/oci-volume-provisioner-rbac.yaml
 ```
 
-## Example claim yaml
+## Usage
+
+### Example claim yaml
 
 The storageClassName must be "oci" and the matchlabels should contain the name
 of your compartment (optional) and the availability domain (required). This is
@@ -86,7 +98,7 @@ spec:
       storage: 50Gi
 ```
 
-## Example pod yaml
+### Example pod yaml
 
 ```yaml 
 kind: Pod
@@ -108,3 +120,7 @@ spec:
       - mountPath: "/usr/share/nginx/html"
         name: task-pv-storage
 ```
+
+
+[1]: https://github.com/oracle/oci-volume-provisioner/tree/master/manifests/oci-volume-provisioner-config-example.yaml
+[2]: https://kubernetes.io/docs/concepts/containers/images/#creating-a-secret-with-a-docker-config

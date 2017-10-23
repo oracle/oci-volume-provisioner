@@ -3,14 +3,14 @@ VERSION := $(shell git describe --always --dirty)
 DIR := dist
 BIN := oci-volume-provisioner
 REGISTRY ?= wcr.io
-USER ?= oracle
-IMAGE ?= $(REGISTRY)/$(USER)/$(BIN)
+DOCKER_REGISTRY_USERNAME ?= oracle
+IMAGE ?= $(REGISTRY)/$(DOCKER_REGISTRY_USERNAME)/$(BIN)
 
 GOOS ?= linux
 GOARCH ?= amd64
 SRC_DIRS := cmd # directories which hold app source (not vendored)
 
-.PHONY: all gofmt golint govet build image push deploy clean
+.PHONY: all gofmt golint govet test build image push deploy clean
 
 all: build
 
@@ -22,6 +22,9 @@ golint:
 
 govet:
 	@./hack/check-govet.sh ${SRC_DIRS}
+
+test:
+	@./hack/test.sh $(SRC_DIRS)
 
 build: ${DIR}/${BIN}
 
@@ -36,10 +39,6 @@ image: ${DIR}/${BIN}
 push: image
 	docker login -u '$(DOCKER_REGISTRY_USERNAME)' -p '$(DOCKER_REGISTRY_PASSWORD)' $(REGISTRY)
 	docker push ${IMAGE}:${VERSION}
-
-deploy:
-	kubectl delete pod oci-volume-provisioner -n oci || true
-	kubectl create -f ${DIR}/oci-volume-provisioner.yaml
 
 clean:
 	rm -rf ${DIR}
