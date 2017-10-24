@@ -27,7 +27,7 @@ govet:
 
 .PHONY: test
 test:
-	@./hack/test.sh $(SRC_DIRS)
+	@./hack/test.sh ${SRC_DIRS}
 
 .PHONY: build
 build: ${DIR}/${BIN}
