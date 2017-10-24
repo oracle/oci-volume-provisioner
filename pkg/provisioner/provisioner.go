@@ -12,42 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package provisioner
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"strings"
-	"syscall"
-	"time"
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	baremetal "github.com/oracle/bmcs-go-sdk"
+	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api/v1"
-	"k8s.io/client-go/rest"
 )
 
 const (
-	resyncPeriod              = 15 * time.Second
-	provisionerName           = "oracle.com/oci"
-	exponentialBackOffOnError = false
-	failedRetryThreshold      = 5
-	leasePeriod               = controller.DefaultLeaseDuration
-	retryPeriod               = controller.DefaultRetryPeriod
-	renewDeadline             = controller.DefaultRenewDeadline
-	termLimit                 = controller.DefaultTermLimit
-	ociProvisionerIdentity    = "ociProvisionerIdentity"
-	ociVolumeID               = "ociVolumeID"
-	ociAvailabilityDomain     = "ociAvailabilityDomain"
-	ociCompartment            = "ociCompartment"
-	configFilePath            = "/etc/oci/config.yaml"
+	ociProvisionerIdentity = "ociProvisionerIdentity"
+	ociVolumeID            = "ociVolumeID"
+	ociAvailabilityDomain  = "ociAvailabilityDomain"
+	ociCompartment         = "ociCompartment"
+	configFilePath         = "/etc/oci/config.yaml"
 )
 
 type ociProvisioner struct {
@@ -72,12 +59,12 @@ func NewOCIProvisioner() controller.Provisioner {
 	}
 	defer f.Close()
 
-	cfg, err := LoadClientConfig(f)
+	cfg, err := client.LoadConfig(f)
 	if err != nil {
 		glog.Fatalf("Unable to load volume provisioner client: %v", err)
 	}
 
-	client, err := ClientFromConfig(cfg)
+	client, err := client.FromConfig(cfg)
 	if err != nil {
 		glog.Fatalf("Unable to load volume provisioner client: %v", err)
 	}
@@ -226,42 +213,4 @@ func (p *ociProvisioner) Delete(volume *v1.PersistentVolume) error {
 	}
 
 	return p.client.DeleteVolume(volume.Annotations[ociVolumeID], nil)
-}
-
-func main() {
-	syscall.Umask(0)
-
-	flag.Parse()
-	flag.Set("logtostderr", "true")
-
-	// Create an InClusterConfig and use it to create a client for the controller
-	// to use to communicate with Kubernetes
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		glog.Fatalf("Failed to create config: %v", err)
-	}
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		glog.Fatalf("Failed to create client: %v", err)
-	}
-
-	// The controller needs to know what the server version is because out-of-tree
-	// provisioners aren't officially supported until 1.5
-	serverVersion, err := clientset.Discovery().ServerVersion()
-	if err != nil {
-		glog.Fatalf("Error getting server version: %v", err)
-	}
-
-	// Create the provisioner: it implements the Provisioner interface expected by
-	// the controller
-	ociProvisioner := NewOCIProvisioner()
-
-	// Start the provision controller which will dynamically provision oci
-	// PVs
-	pc := controller.NewProvisionController(
-		clientset, resyncPeriod, provisionerName, ociProvisioner,
-		serverVersion.GitVersion, exponentialBackOffOnError,
-		failedRetryThreshold, leasePeriod, renewDeadline,
-		retryPeriod, termLimit)
-	pc.Run(wait.NeverStop)
 }

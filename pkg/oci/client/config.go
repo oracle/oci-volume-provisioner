@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package client
 
 import (
 	"errors"
@@ -43,8 +43,8 @@ func (c *Config) Validate() error {
 	return ValidateConfig(c).ToAggregate()
 }
 
-// LoadClientConfig consumes the config and constructs a Config object.
-func LoadClientConfig(r io.Reader) (*Config, error) {
+// LoadConfig consumes the config and constructs a Config object.
+func LoadConfig(r io.Reader) (*Config, error) {
 	if r == nil {
 		return nil, errors.New("no configuration file given")
 	}
@@ -60,8 +60,8 @@ func LoadClientConfig(r io.Reader) (*Config, error) {
 	return cfg, nil
 }
 
-// ClientFromConfig creates a baremetal client from the given configuration
-func ClientFromConfig(cfg *Config) (client *baremetal.Client, err error) {
+// FromConfig creates a baremetal client from the given configuration
+func FromConfig(cfg *Config) (client *baremetal.Client, err error) {
 	ociClient, err := baremetal.NewClient(
 		cfg.Auth.UserOCID,
 		cfg.Auth.TenancyOCID,

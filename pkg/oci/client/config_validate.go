@@ -1,10 +1,9 @@
-package main
+package client
 
 import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
-// validateAuthConfig provides basic validation of AuthConfig instances.
 func validateAuthConfig(c AuthConfig, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	if c.Region == "" {
