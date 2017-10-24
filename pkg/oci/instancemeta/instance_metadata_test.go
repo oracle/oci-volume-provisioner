@@ -1,59 +1,59 @@
+// Copyright 2017 The OCI Flexvolume Driver Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package instancemeta
 
 import (
-	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
 	"testing"
 )
 
-func mockInstanceMetadataJSON() string {
-	return `{
-			"availabilityDomain" : "NWuj:PHX-AD-1",
-  			"compartmentId" : "ocid1.compartment.oc1..aaaaaaaa3um2atybwhder4qttfhgon4j3hcxgmsvnyvx4flfjyewkkwfzwnq",
-  			"displayName" : "trjl-kb8s-master",
-  			"id" : "ocid1.instance.oc1.phx.abyhqljtj775udgtbu7nddt6j2hqgxdsgrnpweepogvvsmqfppefewile5zq",
-  			"image" : "ocid1.image.oc1.phx.aaaaaaaaamx6ta37uxltor6n5lxfgd5lkb3lwmoqurlpn2x4dz5ockekiuea",
-  			"metadata" : {
-    			"ssh_authorized_keys" : "ssh-rsa some-key-data tlangfor@tlangfor-mac\n"
-  			},
-  			"region" : "phx",
-  			"shape" : "VM.Standard1.1",
-  			"state" : "Provisioning",
-  			"timeCreated" : 1496415602152
-			}`
-}
+const exampleResponse = `{
+  "availabilityDomain" : "NWuj:PHX-AD-1",
+  "compartmentId" : "ocid1.compartment.oc1..aaaaaaaa3um2atybwhder4qttfhgon4j3hcxgmsvnyvx4flfjyewkkwfzwnq",
+  "displayName" : "trjl-kb8s-master",
+  "id" : "ocid1.instance.oc1.phx.abyhqljtj775udgtbu7nddt6j2hqgxdsgrnpweepogvvsmqfppefewile5zq",
+  "image" : "ocid1.image.oc1.phx.aaaaaaaaamx6ta37uxltor6n5lxfgd5lkb3lwmoqurlpn2x4dz5ockekiuea",
+  "metadata" : {
+    "ssh_authorized_keys" : "ssh-rsa some-key-data tlangfor@tlangfor-mac\n"
+  },
+  "region" : "phx",
+  "shape" : "VM.Standard1.1",
+  "state" : "Provisioning",
+  "timeCreated" : 1496415602152
+}`
 
-func mockInstanceMetadata() *InstanceMetadata {
-	return &InstanceMetadata{
-		InstanceOCID:       "ocid1.instance.oc1.phx.abyhqljtj775udgtbu7nddt6j2hqgxdsgrnpweepogvvsmqfppefewile5zq",
-		CompartmentOCID:    "ocid1.compartment.oc1..aaaaaaaa3um2atybwhder4qttfhgon4j3hcxgmsvnyvx4flfjyewkkwfzwnq",
-		AvailabilityDomain: "NWuj:PHX-AD-1",
-		Region:             "phx",
-	}
-}
-func mockInstanceMetadataFromAPIFailure() (*InstanceMetadata, error) {
-	return nil, fmt.Errorf("failed to http get node api metadata: %s",
-		errors.New("Get http://169.254.169.254/opc/v1/instance/: dial tcp 169.254.169.254:80: i/o timeout"))
-}
-
-func TestUnmarshallInstanceMetadataJSON(t *testing.T) {
-	mockJSON := mockInstanceMetadataJSON()
-	metadata, err := unmarshallInstanceMetadataJSON([]byte(mockJSON))
-	expected := mockInstanceMetadata()
-
+func TestGetMetadata(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, exampleResponse)
+	}))
+	defer ts.Close()
+	getter := metadataGetter{client: ts.Client(), baseURL: ts.URL}
+	meta, err := getter.Get()
 	if err != nil {
-		t.Fatalf("Got unexpected error %s", err)
+		t.Fatalf("Uexpected error calling Get(): %v", err)
 	}
-	if metadata.InstanceOCID != expected.InstanceOCID {
-		t.Fatalf("%v != %v", metadata.InstanceOCID, expected.InstanceOCID)
+
+	expected := &InstanceMetadata{
+		CompartmentOCID: "ocid1.compartment.oc1..aaaaaaaa3um2atybwhder4qttfhgon4j3hcxgmsvnyvx4flfjyewkkwfzwnq",
+		Region:          "phx",
 	}
-	if metadata.CompartmentOCID != expected.CompartmentOCID {
-		t.Fatalf("%v != %v", metadata.CompartmentOCID, expected.CompartmentOCID)
-	}
-	if metadata.AvailabilityDomain != expected.AvailabilityDomain {
-		t.Fatalf("%v != %v", metadata.AvailabilityDomain, expected.AvailabilityDomain)
-	}
-	if metadata.Region != expected.Region {
-		t.Fatalf("%v != %v", metadata.Region, expected.Region)
+
+	if !reflect.DeepEqual(meta, expected) {
+		t.Errorf("Get() => %+v, want %+v", meta, expected)
 	}
 }

@@ -14,10 +14,18 @@ build:
         cat ${WERCKER_OUTPUT_DIR}/VERSION.txt
 
     - script:
-      name: build
+      name: validate source code
       code: |
         go get -u github.com/golang/lint/golint
-        make gofmt golint govet build
+        make gofmt golint govet
+
+    - script:
+      name: run unit tests
+      code: make test
+
+    - script:
+      name: build
+      code: make build
 
     - script:
       name: copy build artifacts
@@ -67,4 +75,4 @@ system-test:
         name: system test
         code: |
           cd test/system
-          ./runner.py  
+          ./runner.py
