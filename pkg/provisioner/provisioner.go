@@ -83,17 +83,48 @@ func roundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
 }
 
 func (p *ociProvisioner) findCompartmentIDByName(name string) (*baremetal.Compartment, error) {
-	compartments, err := p.client.ListCompartments(&baremetal.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	for _, compartment := range compartments.Compartments {
-		if compartment.Name == name {
-			return &compartment, nil
+	opts := &baremetal.ListOptions{}
+	for {
+		compartments, err := p.client.ListCompartments(opts)
+		if err != nil {
+			return nil, err
+		}
+		for _, compartment := range compartments.Compartments {
+			if compartment.Name == name {
+				return &compartment, nil
+			}
+		}
+		if hasNextPage := SetNextPageOption(compartments.NextPage, &opts.PageListOptions); !hasNextPage {
+			break
 		}
 	}
-	return nil, fmt.Errorf("unable to find OCI compartment named '%s'", name)
+	return nil, fmt.Errorf("Unable to find BMC comparment named '%s'", name)
 }
+
+// SetNextPageOption sets the next page option on a oci list page options
+// struct.
+func SetNextPageOption(nextPage string, opts *baremetal.PageListOptions) (hasNextPage bool) {
+	if nextPage == "" {
+		hasNextPage = false
+	} else {
+		hasNextPage = true
+		opts.Page = nextPage
+	}
+	return
+}
+
+// func (p *ociProvisioner) findCompartmentIDByName(name string) (*baremetal.Compartment, error) {
+// 	compartments, err := p.client.ListCompartments(&baremetal.ListOptions{})
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	for _, compartment := range compartments.Compartments {
+// 		if compartment.Name == name {
+// 			return &compartment, nil
+// 		}
+// 	}
+// 	return nil, fmt.Errorf("unable to find OCI compartment named '%s'", name)
+// }
 
 func (p *ociProvisioner) findADByName(name string) (*baremetal.AvailabilityDomain, error) {
 	ads, err := p.client.ListAvailabilityDomains(p.tenancyID)
