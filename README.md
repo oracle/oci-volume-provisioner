@@ -65,23 +65,13 @@ In this example we'll use the OCI Volume Provisioner to create persistent storag
 
 ### Create a Storage Class
 
-```yaml
-kind: StorageClass
-apiVersion: storage.k8s.io/v1
-metadata:
-  name: oci-flexvolume
-provisioner: oracle.com/oci
 ```
-
-Save the contents above to a file (oci-storage-class.yaml). Create with:
-
-```
-kubectl apply -f oci-storage-class.yaml
+kubectl apply -f https://raw.githubusercontent.com/oracle/oci-volume-provisioner/master/manifests/storage-class.yaml
 ```
 
 ### Create a PVC
 
-Next we'll create a [PersistentVolumeClaim][4] (PVC)
+Next we'll create a [PersistentVolumeClaim][4] (PVC).
 
 The storageClassName must match the StorageClass you created previously.
 
