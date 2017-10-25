@@ -1,96 +1,103 @@
 # OCI Volume Provisioner
 
-A volume provisioner that enables persistent storage when running Kubernetes on Oracle OCI.
+The OCI Volume Provisioner enables [dynamic provisioning][1] of storage resources when running Kubernetes on Oracle OCI.
+It uses the [OCI Flexvolume Driver][2] to do the actual provisioning of block storage resources.
 
-## What is it?
-
-Dynamic volume provisioning, a feature unique to Kubernetes, allows storage
-volumes to be created on-demand. Without dynamic provisioning, cluster
-administrators have to manually make calls to their cloud or storage provider
-to create new storage volumes, and then create PersistentVolume objects to
-represent them in Kubernetes.
-
-The dynamic provisioning feature eliminates the need for cluster administrators
-to pre-provision storage. Instead, it automatically provisions storage when it
-is requested by users.
-
-It achieves this by creating a storage class and provisioning any storage
-claims that assiciated with this claim.
-
-This is an external (out of tree) dynamic volume provisioner for OCI and Kubernetes. 
-It uses the OCI Volume driver to do the actual provisioning of Storage Volumes.
+[![wercker status](https://app.wercker.com/status/0bb764451c28a60b4260d76754f02118/s/master "wercker status")](https://app.wercker.com/project/byKey/0bb764451c28a60b4260d76754f02118)
 
 ## Prerequisites
 
-+ Install the [Oracle OCI flex volume driver](https://github.com/oracle/oci-flexvolume-driver)
-+ Kubernetes 1.6 + 
++ Install the [OCI flexvolume driver][2]
++ Kubernetes 1.6 +
 
-## Building
+## Install
 
-Make and push the image
+The oci-volume-provisioner is provided as a Kubernetes deployment.
 
-```
-make push
-```
+### Submit configuration as a Kubernetes secret
 
-Note: We publish the `oci-volume-provisioner` to a private Docker registry. You
-will need a [Docker registry secret][2] to push images to it.
+Create a config.yaml file with contents similar to the following. This file will contain authentication
+information necessary to authenticate with the OCI APIs and provision block storage volumes.
+
+```yaml
+auth:
+  tenancy: ocid1.tenancy.oc1..aaaaaaaatyn7scrtwt...
+  user: ocid1.user.oc1..aaaaaaaao235lbcxvdrrqlr...
+  key: |
+    -----BEGIN RSA PRIVATE KEY-----
+    MIIEowIBAAKCAQEUjVBnOgC4wA3j6CeTc6hIA9B3iwuJKyR8i7w...
+    -----END RSA PRIVATE KEY-----
+  fingerprint: 4d:f5:ff:0e:a9:10:e8:5a:d3:52:6a:f8:1e:99:a3:47
+  region: us-phoenix-1
+````
+
+Submit this as a Kubernetes Secret.
 
 ```bash
-$ kubectl -n kube-system create secret docker-registry wcr-docker-pull-secret \
-    --docker-server="wcr.io" \
-    --docker-username="$DOCKER_REGISTRY_USERNAME" \
-    --docker-password="$DOCKER_REGISTRY_PASSWORD" \
-    --docker-email="k8s@oracle.com"
+kubectl create secret generic oci-volume-provisioner \
+    -n kube-system \
+    --from-file=config.yaml=config.yaml
 ```
 
-## Configuration
+## Deploy the OCI Volume Provisioner
 
-An example configuration file can be found [here][1]. Download this file and
-populate it with values specific to your chosen OCI identity and tenancy.
-Then create the Kubernetes secret with the following command:
-vim c
-```bash
-$ kubectl create secret generic oci-volume-provisioner \
-     -n kube-system \
-     --from-file=config.yaml=oci-volume-provisioner-config.yaml
-```
-
-Create the `oci` storage class:
+If your cluster is configured to use [RBAC][3] you will need to submit the following:
 
 ```
-kubectl create -f manifests/storage-class.yaml
+kubectl apply -f https://raw.githubusercontent.com/oracle/oci-volume-provisioner/master/manifests/oci-volume-provisioner-rbac.yaml
 ```
 
-## Deployment
-
-Lastly deploy the volume provisioner and associated RBAC rules if your cluster is configured to use RBAC:
+Deploy the volume provisioner into your Kubernetes cluster:
 
 ```
-kubectl create -f dist/oci-volume-provisioner.yaml
-kubectl create -f manifests/oci-volume-provisioner-rbac.yaml
+kubectl apply -f https://raw.githubusercontent.com/oracle/oci-volume-provisioner/master/manifests/oci-volume-provisioner.yaml
 ```
 
-## Usage
+Lastly, verify that the oci-volume-provisioner is running in your cluster. By default it runs in the 'kube-system' namespace.
 
-### Example claim yaml
+```
+kubectl -n kube-system get po | grep oci-volume-provisioner
+```
 
-The storageClassName must be "oci" and the matchlabels should contain the name
-of your compartment and the availability domain. This is
-one of {REGION}-AD-1, {REGION}-AD-2 or {REGION}-AD-3. 
+## Tutorial
+
+In this example we'll use the OCI Volume Provisioner to create persistent storage for an NGINX Pod.
+
+### Create a Storage Class
+
+```yaml
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: oci-flexvolume
+provisioner: oracle.com/oci
+```
+
+Save the contents above to a file (oci-storage-class.yaml). Create with:
+
+```
+kubectl apply -f oci-storage-class.yaml
+```
+
+### Create a PVC
+
+Next we'll create a [PersistentVolumeClaim][4] (PVC)
+
+The storageClassName must match the StorageClass you created previously.
+
+The matchLabels should contain the (shortened) Availability Domain (AD) you want to provision a volume in.
+For example in Phoenix that would be `PHX-AD-1` and in Ashburn `US-ASHBURN-AD-1`.
 
 ```yaml
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
-  name: demooci
+  name: nginx-volume
 spec:
   storageClassName: "oci"
-  selector: 
+  selector:
     matchLabels:
       oci-availability-domain: "PHX-AD-1"
-      # optional compartment name
-      oci-compartment: "kubernetes-test"
   accessModes:
     - ReadWriteOnce
   resources:
@@ -98,29 +105,33 @@ spec:
       storage: 50Gi
 ```
 
-### Example Pod yaml
+After submitting the PVC, you should see a block storage volume available in your OCI tenancy.
 
-```yaml 
+### Create a Kubernetes Pod that references the PVC
+
+Now you have a PVC, you can create a Kubernetes Pod that will consume the storage.
+
+```yaml
 kind: Pod
 apiVersion: v1
 metadata:
-  name: task-pv-pod
+  name: nginx
 spec:
   volumes:
-    - name: task-pv-storage
+    - name: nginx-storage
       persistentVolumeClaim:
-      claimName: demooci
+      claimName: nginx-volume
   containers:
-    - name: task-pv-container
+    - name: nginx
       image: nginx
       ports:
         - containerPort: 80
-          name: "http-server"
       volumeMounts:
       - mountPath: "/usr/share/nginx/html"
-        name: task-pv-storage
+        name: nginx-storage
 ```
 
-
-[1]: https://github.com/oracle/oci-volume-provisioner/tree/master/manifests/oci-volume-provisioner-config-example.yaml
-[2]: https://kubernetes.io/docs/concepts/containers/images/#creating-a-secret-with-a-docker-config
+[1]: http://blog.kubernetes.io/2016/10/dynamic-provisioning-and-storage-in-kubernetes.html
+[2]: https://github.com/oracle/oci-flexvolume-driver
+[3]: https://kubernetes.io/docs/admin/authorization/rbac/
+[4]: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims
