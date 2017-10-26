@@ -56,7 +56,7 @@ push:
         chmod +x /oci-volume-provisioner
 
     - internal/docker-push:
-      repository: oracle/oci-volume-provisioner
+      repository: $DOCKER_REGISTRY_USERNAME/oci-volume-provisioner
       registry: https://wcr.io/v2
       username: $DOCKER_REGISTRY_USERNAME
       password: $DOCKER_REGISTRY_PASSWORD
@@ -66,7 +66,7 @@ push:
 
 system-test:
   box:
-    id: wcr.io/oracle/oci-volume-provisioner-system-test:1.0.0
+    id: wcr.io/$DOCKER_REGISTRY_USERNAME/oci-volume-provisioner-system-test:1.0.0
     registry: https://wcr.io/v2
     username: $DOCKER_REGISTRY_USERNAME
     password: $DOCKER_REGISTRY_PASSWORD
