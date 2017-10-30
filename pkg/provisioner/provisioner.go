@@ -35,6 +35,7 @@ const (
 	ociAvailabilityDomain  = "ociAvailabilityDomain"
 	ociCompartment         = "ociCompartment"
 	configFilePath         = "/etc/oci/config.yaml"
+	fsType                 = "fsType"
 )
 
 // OCIProvisioner is a dynamic volume provisioner that satisfies
@@ -155,6 +156,11 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 
 	volumeName := mapVolumeIDToName(newVolume.ID)
 
+	fs := "ext4"
+	if fsType, ok := options.Parameters[fsType]; ok {
+		fs = fsType
+	}
+
 	pv := &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: volumeName,
@@ -174,7 +180,7 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 			PersistentVolumeSource: v1.PersistentVolumeSource{
 				FlexVolume: &v1.FlexVolumeSource{
 					Driver: "oracle/oci",
-					FSType: "ext4",
+					FSType: fs,
 				},
 			},
 		},
