@@ -1,4 +1,5 @@
 dist/
 *.env
+env.sh
 .wercker
 *.log

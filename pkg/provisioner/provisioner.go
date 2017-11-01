@@ -23,8 +23,8 @@ import (
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	baremetal "github.com/oracle/bmcs-go-sdk"
+	"github.com/oracle/oci-flexvolume-driver/pkg/oci/instancemeta"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
-	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/pkg/api/v1"
 )
@@ -67,7 +67,7 @@ func NewOCIProvisioner(nodeName string) controller.Provisioner {
 
 	client, err := client.FromConfig(cfg)
 	if err != nil {
-		glog.Fatalf("Unable to load volume provisioner client: %v", err)
+		glog.Fatalf("Unable to create volume provisioner client: %v", err)
 	}
 
 	metadata, err := instancemeta.New().Get()
@@ -103,12 +103,76 @@ func (p *OCIProvisioner) findADByName(name string) (*baremetal.AvailabilityDomai
 	return nil, fmt.Errorf("error looking up availability domain '%s'", name)
 }
 
+func provisionNewVolume(
+	client baremetal.Client,
+	availabilityDomain *baremetal.AvailabilityDomain,
+	compartmentOCID string,
+	options controller.VolumeOptions,
+) (*baremetal.Volume, error) {
+
+	volSize := options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
+	volSizeBytes := volSize.Value()
+	glog.Infof("Volume size %#v", volSizeBytes)
+
+	volSizeMB := int(roundUpSize(volSizeBytes, 1024*1024))
+	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, availabilityDomain.Name, compartmentOCID)
+
+	newVolume, err := client.CreateVolume(availabilityDomain.Name, compartmentOCID, &baremetal.CreateVolumeOptions{SizeInMBs: volSizeMB})
+	if err != nil {
+		return nil, err
+	}
+
+	return newVolume, err
+}
+
 func mapVolumeIDToName(volumeID string) string {
 	return strings.Split(volumeID, ".")[4]
 }
 
+func resolveFSType(options controller.VolumeOptions) string {
+	fs := "ext4" // default to ext4
+	if fsType, ok := options.Parameters[fsType]; ok {
+		fs = fsType
+	}
+	return fs
+}
+
+func buildPersistentVolumeObjectMeta(identity string, volume *baremetal.Volume) metav1.ObjectMeta {
+	volumeName := mapVolumeIDToName(volume.ID)
+	return metav1.ObjectMeta{
+		Name: volumeName,
+		Annotations: map[string]string{
+			ociProvisionerIdentity: identity,
+			ociVolumeID:            volume.ID,
+			ociAvailabilityDomain:  volume.AvailabilityDomain, // == findADByName
+			ociCompartment:         volume.CompartmentID,      // == findCompartmentIDByName
+		},
+	}
+}
+
+func buildPersistentVolumeSpec(options controller.VolumeOptions) v1.PersistentVolumeSpec {
+	filesystemType := resolveFSType(options)
+	return v1.PersistentVolumeSpec{
+		PersistentVolumeReclaimPolicy: options.PersistentVolumeReclaimPolicy,
+		AccessModes:                   options.PVC.Spec.AccessModes,
+		Capacity: v1.ResourceList{
+			v1.ResourceName(v1.ResourceStorage): options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)],
+		},
+		PersistentVolumeSource: v1.PersistentVolumeSource{
+			FlexVolume: &v1.FlexVolumeSource{
+				Driver: "oracle/oci",
+				FSType: filesystemType,
+			},
+		},
+	}
+}
+
 // Provision creates a storage asset and returns a PV object representing it.
 func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.PersistentVolume, error) {
+
+	// gather oci provisioning params
+	//
+
 	for _, accessMode := range options.PVC.Spec.AccessModes {
 		if accessMode != v1.ReadWriteOnce {
 			return nil, fmt.Errorf("invalid access mode %v specified. Only %v is supported",
@@ -140,51 +204,22 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 		return nil, err
 	}
 
-	// Calculate the size
-	volSize := options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
-	volSizeBytes := volSize.Value()
-	glog.Infof("Volume size %#v", volSizeBytes)
+	// provision oci volume
+	//
 
-	volSizeMB := int(roundUpSize(volSizeBytes, 1024*1024))
-
-	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, availabilityDomain.Name, compartmentOCID)
-
-	newVolume, err := p.client.CreateVolume(availabilityDomain.Name, compartmentOCID, &baremetal.CreateVolumeOptions{SizeInMBs: volSizeMB})
+	newVolume, err := provisionNewVolume(p.client, availabilityDomain, compartmentOCID, options)
 	if err != nil {
 		return nil, err
 	}
 
-	volumeName := mapVolumeIDToName(newVolume.ID)
-
-	fs := "ext4"
-	if fsType, ok := options.Parameters[fsType]; ok {
-		fs = fsType
-	}
+	// return k8s volume representation
+	//
 
 	pv := &v1.PersistentVolume{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: volumeName,
-			Annotations: map[string]string{
-				ociProvisionerIdentity: p.identity,
-				ociVolumeID:            newVolume.ID,
-				ociAvailabilityDomain:  availabilityDomain.Name,
-				ociCompartment:         compartmentOCID,
-			},
-		},
-		Spec: v1.PersistentVolumeSpec{
-			PersistentVolumeReclaimPolicy: options.PersistentVolumeReclaimPolicy,
-			AccessModes:                   options.PVC.Spec.AccessModes,
-			Capacity: v1.ResourceList{
-				v1.ResourceName(v1.ResourceStorage): options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)],
-			},
-			PersistentVolumeSource: v1.PersistentVolumeSource{
-				FlexVolume: &v1.FlexVolumeSource{
-					Driver: "oracle/oci",
-					FSType: fs,
-				},
-			},
-		},
+		ObjectMeta: buildPersistentVolumeObjectMeta(p.identity, newVolume),
+		Spec:       buildPersistentVolumeSpec(options),
 	}
+
 	return pv, nil
 }
 
