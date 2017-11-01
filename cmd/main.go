@@ -16,6 +16,7 @@ package main
 
 import (
 	"flag"
+	"os"
 	"syscall"
 	"time"
 
@@ -63,9 +64,15 @@ func main() {
 		glog.Fatalf("Error getting server version: %v", err)
 	}
 
+	// TODO (owainlewis) ensure this is clearly documented
+	nodeName := os.Getenv("NODE_NAME")
+	if nodeName == "" {
+		glog.Fatal("env variable NODE_NAME must be set so that this provisioner can identify itself")
+	}
+
 	// Create the provisioner: it implements the Provisioner interface expected by
 	// the controller
-	ociProvisioner := provisioner.NewOCIProvisioner()
+	ociProvisioner := provisioner.NewOCIProvisioner(nodeName)
 
 	// Start the provision controller which will dynamically provision oci
 	// PVs

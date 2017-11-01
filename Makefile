@@ -31,14 +31,14 @@ test:
 
 .PHONY: build
 build: ${DIR}/${BIN}
+	@sed "s/{{VERSION}}/$(VERSION)/g" manifests/oci-volume-provisioner.yaml > $(DIR)/oci-volume-provisioner.yaml
 
 ${DIR}/${BIN}: ${GO_SRC}
 	mkdir -p ${DIR}
 	GOOS=${GOOS} GOARCH=${GOARCH} CGO_ENABLED=0 go build -i -v -ldflags '-extldflags "-static"' -o $@ ./cmd/
 
 .PHONY: image
-image: ${DIR}/${BIN}
-	sed "s/{{VERSION}}/$(VERSION)/g" manifests/oci-volume-provisioner.yaml > $(DIR)/oci-volume-provisioner.yaml
+image: build
 	docker build -t ${IMAGE}:${VERSION} .
 
 .PHONY: push

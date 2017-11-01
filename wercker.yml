@@ -47,7 +47,7 @@ push:
       name: set ENV vars
       code: |
         export VERSION=$(cat VERSION.txt)
-        echo "${VERSION}"
+        echo "Pushing version ${VERSION}"
 
     - script:
       name: prepare
@@ -56,18 +56,15 @@ push:
         chmod +x /oci-volume-provisioner
 
     - internal/docker-push:
-      repository: $DOCKER_REGISTRY_USERNAME/oci-volume-provisioner
-      registry: https://wcr.io/v2
-      username: $DOCKER_REGISTRY_USERNAME
-      password: $DOCKER_REGISTRY_PASSWORD
+      repository: wcr.io/oracle/oci-volume-provisioner
       tag: $VERSION
       entrypoint: /oci-volume-provisioner
       user: 65534 # nobody
 
 system-test:
   box:
-    id: wcr.io/$DOCKER_REGISTRY_USERNAME/oci-volume-provisioner-system-test:1.0.0
-    registry: https://wcr.io/v2
+    id: wcr.io/oracle/oci-volume-provisioner-system-test:1.0.0
+    registry: wcr.io
     username: $DOCKER_REGISTRY_USERNAME
     password: $DOCKER_REGISTRY_PASSWORD
   steps:

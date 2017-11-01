@@ -24,7 +24,7 @@ import (
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	baremetal "github.com/oracle/bmcs-go-sdk"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
-
+	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/pkg/api/v1"
 )
@@ -37,21 +37,21 @@ const (
 	configFilePath         = "/etc/oci/config.yaml"
 )
 
-type ociProvisioner struct {
+// OCIProvisioner is a dynamic volume provisioner that satisfies
+// the Kubernetes external storage Provisioner controller interface
+type OCIProvisioner struct {
 	client baremetal.Client
 
 	// Identity of this ociProvisioner, set to node's name. Used to identify "this" provisioner's PVs.
-	identity string
+	identity      string
+	tenancyID     string
+	compartmentID string
 
-	tenancyID string
+	metadata *instancemeta.InstanceMetadata
 }
 
-// NewOCIProvisioner creates a new oci provisioner.
-func NewOCIProvisioner() controller.Provisioner {
-	nodeName := os.Getenv("NODE_NAME")
-	if nodeName == "" {
-		glog.Fatal("env variable NODE_NAME must be set so that this provisioner can identify itself")
-	}
+// NewOCIProvisioner creates a new OCI provisioner.
+func NewOCIProvisioner(nodeName string) controller.Provisioner {
 
 	f, err := os.Open(configFilePath)
 	if err != nil {
@@ -69,33 +69,27 @@ func NewOCIProvisioner() controller.Provisioner {
 		glog.Fatalf("Unable to load volume provisioner client: %v", err)
 	}
 
-	return &ociProvisioner{
-		client:    *client,
-		identity:  nodeName,
-		tenancyID: cfg.Auth.TenancyOCID,
+	metadata, err := instancemeta.New().Get()
+	if err != nil {
+		glog.Fatalf("Unable to retrieve instance metadata: %v", err)
+	}
+
+	return &OCIProvisioner{
+		client:        *client,
+		identity:      nodeName,
+		tenancyID:     cfg.Auth.TenancyOCID,
+		compartmentID: cfg.Auth.CompartmentOCID,
+		metadata:      metadata,
 	}
 }
 
-var _ controller.Provisioner = &ociProvisioner{}
+var _ controller.Provisioner = &OCIProvisioner{}
 
 func roundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
 	return (volumeSizeBytes + allocationUnitBytes - 1) / allocationUnitBytes
 }
 
-func (p *ociProvisioner) findCompartmentIDByName(name string) (*baremetal.Compartment, error) {
-	compartments, err := p.client.ListCompartments(&baremetal.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	for _, compartment := range compartments.Compartments {
-		if compartment.Name == name {
-			return &compartment, nil
-		}
-	}
-	return nil, fmt.Errorf("unable to find OCI compartment named '%s'", name)
-}
-
-func (p *ociProvisioner) findADByName(name string) (*baremetal.AvailabilityDomain, error) {
+func (p *OCIProvisioner) findADByName(name string) (*baremetal.AvailabilityDomain, error) {
 	ads, err := p.client.ListAvailabilityDomains(p.tenancyID)
 	if err != nil {
 		return nil, err
@@ -113,7 +107,7 @@ func mapVolumeIDToName(volumeID string) string {
 }
 
 // Provision creates a storage asset and returns a PV object representing it.
-func (p *ociProvisioner) Provision(options controller.VolumeOptions) (*v1.PersistentVolume, error) {
+func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.PersistentVolume, error) {
 	for _, accessMode := range options.PVC.Spec.AccessModes {
 		if accessMode != v1.ReadWriteOnce {
 			return nil, fmt.Errorf("invalid access mode %v specified. Only %v is supported",
@@ -127,14 +121,12 @@ func (p *ociProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 	}
 	glog.Infof("VolumeOptions.PVC.Spec.Selector %#v", *options.PVC.Spec.Selector)
 
-	compartmentName, ok := options.PVC.Spec.Selector.MatchLabels["oci-compartment"]
-	if !ok {
-		return nil, fmt.Errorf("claim Selector must specify 'oci-compartment'")
-	}
-
-	compartment, err := p.findCompartmentIDByName(compartmentName)
-	if err != nil {
-		return nil, err
+	var compartmentOCID string
+	if p.compartmentID == "" {
+		glog.Infof("'CompartmentID' not given. Using compartment OCID %s from instance metadata", p.metadata.CompartmentOCID)
+		compartmentOCID = p.metadata.CompartmentOCID
+	} else {
+		compartmentOCID = p.compartmentID
 	}
 
 	availabilityDomainName, ok := options.PVC.Spec.Selector.MatchLabels["oci-availability-domain"]
@@ -153,14 +145,10 @@ func (p *ociProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 	glog.Infof("Volume size %#v", volSizeBytes)
 
 	volSizeMB := int(roundUpSize(volSizeBytes, 1024*1024))
-	glog.Infof("Creating volume size=%v AD=%s compartment=%q compartmentID=%q", volSizeMB,
-		availabilityDomain.Name,
-		compartmentName,
-		compartment.ID)
 
-	newVolume, err := p.client.CreateVolume(availabilityDomain.Name,
-		compartment.ID,
-		&baremetal.CreateVolumeOptions{SizeInMBs: volSizeMB})
+	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, availabilityDomain.Name, compartmentOCID)
+
+	newVolume, err := p.client.CreateVolume(availabilityDomain.Name, compartmentOCID, &baremetal.CreateVolumeOptions{SizeInMBs: volSizeMB})
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +162,7 @@ func (p *ociProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 				ociProvisionerIdentity: p.identity,
 				ociVolumeID:            newVolume.ID,
 				ociAvailabilityDomain:  availabilityDomain.Name,
-				ociCompartment:         compartment.CompartmentID,
+				ociCompartment:         compartmentOCID,
 			},
 		},
 		Spec: v1.PersistentVolumeSpec{
@@ -196,7 +184,7 @@ func (p *ociProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 
 // Delete removes the storage asset that was created by Provision represented
 // by the given PV.
-func (p *ociProvisioner) Delete(volume *v1.PersistentVolume) error {
+func (p *OCIProvisioner) Delete(volume *v1.PersistentVolume) error {
 	glog.Infof("Deleting volume %v with volumeId %v", volume, volume.Annotations[ociVolumeID])
 
 	ann, ok := volume.Annotations[ociProvisionerIdentity]

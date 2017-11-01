@@ -279,6 +279,12 @@ def _handle_args():
                         default=False)
     return vars(parser.parse_args())
 
+def cleanup():
+    _kubectl("delete -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
+    _kubectl("delete -f ../../manifests/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
+    _kubectl("delete -f ../../manifests/storage-class.yaml", exit_on_error=False)
+    _kubectl("-n kube-system delete secret oci-volume-provisioner", exit_on_error=False)
+    _kubectl("-n kube-system delete secret wcr-docker-pull-secret", exit_on_error=False)
 
 def _main():
     _reset_debug_file()
@@ -288,6 +294,9 @@ def _main():
     _create_key_files()
 
     success = True
+
+    # Cleanup in case any existing state exists in the cluster
+    cleanup()
 
     if not args['no_setup']:
         _log("Setting up the volume provisioner", as_banner=True)
@@ -300,9 +309,12 @@ def _main():
         _kubectl("-n kube-system create secret generic oci-volume-provisioner " + \
                  "--from-file=config.yaml=" + _get_oci_config_file(),
                  exit_on_error=False)
+
+
         _kubectl("create -f ../../manifests/storage-class.yaml", exit_on_error=False)
         _kubectl("create -f ../../manifests/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
         _kubectl("create -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
+
         _wait_for_pod_status("Running")
 
     if not args['no_test']:
@@ -332,11 +344,7 @@ def _main():
 
     if not args['no_teardown']:
         _log("Tearing down the volume provisioner", as_banner=True)
-        _kubectl("delete -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
-        _kubectl("delete -f ../../manifests/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
-        _kubectl("delete -f ../../manifests/storage-class.yaml", exit_on_error=False)
-        _kubectl("-n kube-system delete secret oci-volume-provisioner", exit_on_error=False)
-        _kubectl("-n kube-system delete secret wcr-docker-pull-secret", exit_on_error=False)
+        cleanup()
 
     _destroy_key_files()
 

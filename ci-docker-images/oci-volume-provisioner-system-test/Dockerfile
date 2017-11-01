@@ -26,7 +26,7 @@ RUN tar -xzvf linux.tar.gz -C /
 RUN echo "providers { oci = \"/linux_amd64/terraform-provider-oci_v${OCI_TERRAFORM_PROVIDER_VERSION}\" }" > ~/.terraformrc
 
 # Installs the python Oracle OCI client.
-RUN install \
+RUN pip install \
     oci \
     requests[security]
 
