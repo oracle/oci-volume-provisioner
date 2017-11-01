@@ -30,6 +30,7 @@ const validConfig = `
 auth:
   region: us-phoenix-1
   tenancy: ocid1.tenancy.oc1..aaaaaaaatyn7scrtwtqedvgrxgr2xunzeo6uanvyhzxqblctwkrpisvke4kq
+  compartment: ocid1.compartment.oc1..aaaaaaaa3um2atybwhder4qttfhgon4j3hcxgmsvnyvx4flfjyewkkwfzwnq
   user: ocid1.user.oc1..aaaaaaaai77mql2xerv7cn6wu3nhxang3y4jk56vo5bn5l5lysl34avnui3q
   key: |
     -----BEGIN RSA PRIVATE KEY-----
@@ -64,7 +65,6 @@ auth:
 const validConfigNoRegion = `
 auth:
   tenancy: ocid1.tenancy.oc1..aaaaaaaatyn7scrtwtqedvgrxgr2xunzeo6uanvyhzxqblctwkrpisvke4kq
-  compartment: ocid1.compartment.oc1..aaaaaaaa3um2atybwhder4qttfhgon4j3hcxgmsvnyvx4flfjyewkkwfzwnq
   user: ocid1.user.oc1..aaaaaaaai77mql2xerv7cn6wu3nhxang3y4jk56vo5bn5l5lysl34avnui3q
   key: |
     -----BEGIN RSA PRIVATE KEY-----
@@ -111,5 +111,14 @@ func TestLoadClientConfigShouldHaveNoDefaultRegionIfNoneSpecified(t *testing.T) 
 	}
 	if config.Auth.Region != "" {
 		t.Errorf("expected no region but got %s", config.Auth.Region)
+	}
+}
+
+func TestLoadConfigShouldHaveCompartment(t *testing.T) {
+	config, _ := LoadConfig(strings.NewReader(validConfig))
+	expected := "ocid1.compartment.oc1..aaaaaaaa3um2atybwhder4qttfhgon4j3hcxgmsvnyvx4flfjyewkkwfzwnq"
+	actual := config.Auth.CompartmentOCID
+	if actual != expected {
+		t.Errorf("expected compartment %s but found %s", expected, actual)
 	}
 }

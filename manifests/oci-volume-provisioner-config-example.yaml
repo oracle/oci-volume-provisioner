@@ -7,3 +7,4 @@ auth:
     -----END RSA PRIVATE KEY-----
   fingerprint: 4d:f5:ff:0e:a9:10:e8:5a:d3:52:6a:f8:1e:99:a3:47
   region: us-phoenix-1
+  compartment: ocid1.compartment.oc1..aaaaaaaa6yrzvtwcumheirxtmbrbrya5lqkr7k7lxi34q3egeseqwlq2l5aq

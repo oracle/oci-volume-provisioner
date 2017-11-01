@@ -4,10 +4,9 @@ metadata:
   name: demooci
 spec:
   storageClassName: "oci"
-  selector: 
+  selector:
     matchLabels:
       oci-availability-domain: "PHX-AD-3"
-      oci-compartment: "kubernetes-test"
   accessModes:
     - ReadWriteOnce
   resources:

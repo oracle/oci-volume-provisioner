@@ -19,18 +19,18 @@ import (
 	"io"
 	"io/ioutil"
 
-	baremetal "github.com/oracle/bmcs-go-sdk"
 	"gopkg.in/yaml.v2"
 )
 
 // AuthConfig holds the configuration required for communicating with the OCI
 // API.
 type AuthConfig struct {
-	TenancyOCID string `yaml:"tenancy"`
-	UserOCID    string `yaml:"user"`
-	PrivateKey  string `yaml:"key"`
-	Fingerprint string `yaml:"fingerprint"`
-	Region      string `yaml:"region"`
+	TenancyOCID     string `yaml:"tenancy"`
+	UserOCID        string `yaml:"user"`
+	CompartmentOCID string `yaml:"compartment"`
+	PrivateKey      string `yaml:"key"`
+	Fingerprint     string `yaml:"fingerprint"`
+	Region          string `yaml:"region"`
 }
 
 // Config holds the OCI cloud-provider config passed to Kubernetes compontents.
@@ -43,33 +43,23 @@ func (c *Config) Validate() error {
 	return ValidateConfig(c).ToAggregate()
 }
 
-// LoadConfig consumes the config and constructs a Config object.
+// LoadConfig consumes the config Reader and constructs a Config object.
 func LoadConfig(r io.Reader) (*Config, error) {
 	if r == nil {
 		return nil, errors.New("no configuration file given")
 	}
+
 	cfg := &Config{}
+
 	b, err := ioutil.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
+
 	err = yaml.Unmarshal(b, &cfg)
 	if err != nil {
 		return nil, err
 	}
-	return cfg, nil
-}
 
-// FromConfig creates a baremetal client from the given configuration
-func FromConfig(cfg *Config) (client *baremetal.Client, err error) {
-	ociClient, err := baremetal.NewClient(
-		cfg.Auth.UserOCID,
-		cfg.Auth.TenancyOCID,
-		cfg.Auth.Fingerprint,
-		baremetal.PrivateKeyBytes([]byte(cfg.Auth.PrivateKey)),
-		baremetal.Region(cfg.Auth.Region))
-	if err != nil {
-		return nil, err
-	}
-	return ociClient, nil
+	return cfg, nil
 }
