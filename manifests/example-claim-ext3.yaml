@@ -1,0 +1,15 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: demo-oci-ext3
+spec:
+  storageClassName: "oci-ext3"
+  selector: 
+    matchLabels:
+      oci-availability-domain: "PHX-AD-1"
+      oci-compartment: "kubernetes-test"
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi

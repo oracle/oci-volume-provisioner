@@ -9,7 +9,8 @@ spec:
     - name: wcr-docker-pull-secret
   containers:
     - name: oci-volume-provisioner
-      image: wcr.io/oracle/oci-volume-provisioner:{{VERSION}}
+      # image: wcr.io/oracle/oci-volume-provisioner:{{VERSION}}
+      image: wcr.io/templecloud/oci-volume-provisioner:{{VERSION}}
       imagePullPolicy: "Always"
       env:
         - name: NODE_NAME
