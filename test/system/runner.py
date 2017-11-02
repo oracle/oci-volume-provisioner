@@ -294,29 +294,37 @@ def cleanup(exit_on_error=False, display_errors=True):
     _kubectl("delete -f ../../manifests/storage-class.yaml", exit_on_error, display_errors)
     _kubectl("-n kube-system delete secret oci-volume-provisioner", exit_on_error, display_errors)
     _kubectl("-n kube-system delete secret wcr-docker-pull-secret", exit_on_error, display_errors)
+
+# def cleanup():
+#     _kubectl("delete -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
+#     _kubectl("delete -f ../../manifests/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
+#     _kubectl("delete -f ../../manifests/storage-class.yaml", exit_on_error=False)
+#     _kubectl("delete -f ../../manifests/storage-class-ext3.yaml", exit_on_error=False)
+#     _kubectl("-n kube-system delete secret oci-volume-provisioner", exit_on_error=False)
+#     _kubectl("-n kube-system delete secret wcr-docker-pull-secret", exit_on_error=False)
     
 def _test_create_volume(claim_target, claim_volume_name):
 
-        _log("Creating the volume claim")
-        _kubectl("create -f " + claim_target, exit_on_error=False)
+    _log("Creating the volume claim")
+    _kubectl("create -f " + claim_target, exit_on_error=False)
 
-        volume = _get_volume_and_wait(claim_volume_name)
-        _log("Created volume with name: " + volume)
+    volume = _get_volume_and_wait(claim_volume_name)
+    _log("Created volume with name: " + volume)
 
-        _log("Querying the OCI api to make sure a volume with this name exists...")
-        if not _wait_for_volume(volume):
-            _log("Failed to find volume with name: " + volume)
-            sys.exit(1)
-        _log("Volume: " + volume + " is present and available")
+    _log("Querying the OCI api to make sure a volume with this name exists...")
+    if not _wait_for_volume(volume):
+        _log("Failed to find volume with name: " + volume)
+        sys.exit(1)
+    _log("Volume: " + volume + " is present and available")
 
-        _log("Delete the volume claim")
-        _kubectl("delete -f " + claim_target, exit_on_error=False)
+    _log("Delete the volume claim")
+    _kubectl("delete -f " + claim_target, exit_on_error=False)
 
-        _log("Querying the OCI api to make sure a volume with this name now doesnt exist...")
-        if not _volume_exists(volume, 'TERMINATED'):
-            _log("Volume with name: " + volume + " still exists")
-            sys.exit(1)
-        _log("Volume: " + volume + " has now been terminated")
+    _log("Querying the OCI api to make sure a volume with this name now doesnt exist...")
+    if not _volume_exists(volume, 'TERMINATED'):
+        _log("Volume with name: " + volume + " still exists")
+        sys.exit(1)
+    _log("Volume: " + volume + " has now been terminated")
 
 
 def _main():
@@ -342,7 +350,6 @@ def _main():
         _kubectl("-n kube-system create secret generic oci-volume-provisioner " + \
                  "--from-file=config.yaml=" + _get_oci_config_file(),
                  exit_on_error=False)
-
         _kubectl("create -f ../../manifests/storage-class.yaml", exit_on_error=False)
         _kubectl("create -f ../../manifests/storage-class-ext3.yaml", exit_on_error=False)
         _kubectl("create -f ../../manifests/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
