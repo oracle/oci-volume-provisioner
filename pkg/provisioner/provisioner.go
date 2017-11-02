@@ -23,8 +23,8 @@ import (
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	baremetal "github.com/oracle/bmcs-go-sdk"
-	"github.com/oracle/oci-flexvolume-driver/pkg/oci/instancemeta"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
+	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/pkg/api/v1"
 )
