@@ -18,7 +18,8 @@ TEST_NAME = "volumeprovisionersystemtest"
 TMP_OCICONFIG = "/tmp/ociconfig"
 TMP_KUBECONFIG = "/tmp/kubeconfig.conf"
 TMP_OCI_API_KEY_FILE = "/tmp/oci_api_key.pem"
-COMPARTMENT_ID = "ocid1.compartment.oc1..aaaaaaaa6yrzvtwcumheirxtmbrbrya5lqkr7k7lxi34q3egeseqwlq2l5aq"
+# COMPARTMENT_ID = "ocid1.compartment.oc1..aaaaaaaa6yrzvtwcumheirxtmbrbrya5lqkr7k7lxi34q3egeseqwlq2l5aq"
+# COMPARTMENT_ID = "ocid1.compartment.oc1..aaaaaaaa3um2atybwhder4qttfhgon4j3hcxgmsvnyvx4flfjyewkkwfzwnq"
 REGION = "us-phoenix-1"
 TIMEOUT = 600
 
@@ -243,24 +244,35 @@ def _oci_config():
             sys.exit(1)
 
 
-def _volume_exists(volume, state):
+def _volume_exists(compartment_id, volume, state):
     client = oci.core.blockstorage_client.BlockstorageClient(_oci_config())
-    volumes = client.list_volumes(COMPARTMENT_ID)
+    volumes = client.list_volumes(compartment_id)
     for vol in _get_json_doc(str(volumes.data)):
         if vol['id'].endswith(volume) and vol['lifecycle_state'] == state:
             return True
     return False
 
 
-def _wait_for_volume(volume):
+def _wait_for_volume(compartment_id, volume):
     num_polls = 0
-    while not _volume_exists(volume, 'AVAILABLE'):
+    while not _volume_exists(compartment_id, volume, 'AVAILABLE'):
         _log("    waiting...")
         time.sleep(1)
         num_polls += 1
         if num_polls == TIMEOUT:
             return False
     return True
+
+def _get_compartment_id():
+    """
+    Gets the oci compartment_id from the oci-volume-provisioner pod host.
+    This is where oci volume resources will be created.
+    """
+    result = _kubectl("-n kube-system exec oci-volume-provisioner -- curl -s http://169.254.169.254/opc/v1/instance/",
+                exit_on_error=False)
+    result_json = _get_json_doc(str(result))
+    compartment_id = result_json["compartmentId"]
+    return compartment_id
 
 
 def _handle_args():
@@ -310,12 +322,14 @@ def _main():
                  "--from-file=config.yaml=" + _get_oci_config_file(),
                  exit_on_error=False)
 
-
         _kubectl("create -f ../../manifests/storage-class.yaml", exit_on_error=False)
         _kubectl("create -f ../../manifests/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
         _kubectl("create -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
 
         _wait_for_pod_status("Running")
+
+    # get the compartment_id of the oci-volume-provisioner
+    compartment_id = _get_compartment_id()
 
     if not args['no_test']:
         _log("Running system test: ", as_banner=True)
@@ -328,7 +342,7 @@ def _main():
         _log("Created volume with name: " + volume)
 
         _log("Querying the OCI api to make sure a volume with this name exists...")
-        if not _wait_for_volume(volume):
+        if not _wait_for_volume(compartment_id, volume):
             _log("Failed to find volume with name: " + volume)
             sys.exit(1)
         _log("Volume: " + volume + " is present and available")
@@ -337,7 +351,7 @@ def _main():
         _kubectl("delete -f ../../manifests/example-claim.yaml", exit_on_error=False)
 
         _log("Querying the OCI api to make sure a volume with this name now doesnt exist...")
-        if not _volume_exists(volume, 'TERMINATED'):
+        if not _volume_exists(compartment_id, volume, 'TERMINATED'):
             _log("Volume with name: " + volume + " still exists")
             sys.exit(1)
         _log("Volume: " + volume + " has now been terminated")
