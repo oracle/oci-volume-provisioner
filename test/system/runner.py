@@ -288,22 +288,21 @@ def _handle_args():
                         default=False)
     return vars(parser.parse_args())
 
-def cleanup(exit_on_error=False, display_errors=True):
-    _kubectl("delete -f ../../dist/oci-volume-provisioner.yaml", exit_on_error, display_errors)
-    _kubectl("delete -f ../../manifests/oci-volume-provisioner-rbac.yaml", exit_on_error, display_errors)
-    _kubectl("delete -f ../../manifests/storage-class.yaml", exit_on_error, display_errors)
-    _kubectl("-n kube-system delete secret oci-volume-provisioner", exit_on_error, display_errors)
-    _kubectl("-n kube-system delete secret wcr-docker-pull-secret", exit_on_error, display_errors)
 
-# def cleanup():
-#     _kubectl("delete -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
-#     _kubectl("delete -f ../../manifests/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
-#     _kubectl("delete -f ../../manifests/storage-class.yaml", exit_on_error=False)
-#     _kubectl("delete -f ../../manifests/storage-class-ext3.yaml", exit_on_error=False)
-#     _kubectl("-n kube-system delete secret oci-volume-provisioner", exit_on_error=False)
-#     _kubectl("-n kube-system delete secret wcr-docker-pull-secret", exit_on_error=False)
-    
-def _test_create_volume(claim_target, claim_volume_name):
+def cleanup(exit_on_error=False, display_errors=True):
+    _kubectl("delete -f ../../dist/oci-volume-provisioner.yaml",
+             exit_on_error, display_errors)
+    _kubectl("delete -f ../../manifests/oci-volume-provisioner-rbac.yaml",
+             exit_on_error, display_errors)
+    _kubectl("delete -f ../../manifests/storage-class.yaml",
+             exit_on_error, display_errors)
+    _kubectl("-n kube-system delete secret oci-volume-provisioner",
+             exit_on_error, display_errors)
+    _kubectl("-n kube-system delete secret wcr-docker-pull-secret",
+             exit_on_error, display_errors)
+
+
+def _test_create_volume(compartment_id, claim_target, claim_volume_name):
 
     _log("Creating the volume claim")
     _kubectl("create -f " + claim_target, exit_on_error=False)
@@ -312,7 +311,7 @@ def _test_create_volume(claim_target, claim_volume_name):
     _log("Created volume with name: " + volume)
 
     _log("Querying the OCI api to make sure a volume with this name exists...")
-    if not _wait_for_volume(volume):
+    if not _wait_for_volume(compartment_id, volume):
         _log("Failed to find volume with name: " + volume)
         sys.exit(1)
     _log("Volume: " + volume + " is present and available")
@@ -321,7 +320,7 @@ def _test_create_volume(claim_target, claim_volume_name):
     _kubectl("delete -f " + claim_target, exit_on_error=False)
 
     _log("Querying the OCI api to make sure a volume with this name now doesnt exist...")
-    if not _volume_exists(volume, 'TERMINATED'):
+    if not _volume_exists(compartment_id, volume, 'TERMINATED'):
         _log("Volume with name: " + volume + " still exists")
         sys.exit(1)
     _log("Volume: " + volume + " has now been terminated")
@@ -363,8 +362,8 @@ def _main():
     if not args['no_test']:
         _log("Running system test: ", as_banner=True)
 
-        _test_create_volume("../../manifests/example-claim.yaml", "demooci")
-        _test_create_volume("../../manifests/example-claim-ext3.yaml", "demo-oci-ext3")
+        _test_create_volume(compartment_id, "../../manifests/example-claim.yaml", "demooci")
+        _test_create_volume(compartment_id, "../../manifests/example-claim-ext3.yaml", "demo-oci-ext3")
 
     if not args['no_teardown']:
         _log("Tearing down the volume provisioner", as_banner=True)
