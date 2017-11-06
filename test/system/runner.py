@@ -40,7 +40,7 @@ def _check_env():
 def _create_key_files():
     if "OCICONFIG_VAR" in os.environ:
         _run_command("echo \"$OCICONFIG_VAR\" | openssl enc -base64 -d -A > " + TMP_OCICONFIG, ".")
-        _run_command("chmod 600 " + TMP_OCICONFIG, ".", verbose=False)
+        _run_command("chmod 600 " + TMP_OCICONFIG, ".")
     if "KUBECONFIG_VAR" in os.environ:
         _run_command("echo \"$KUBECONFIG_VAR\" | openssl enc -base64 -d -A > " + TMP_KUBECONFIG, ".")
 
