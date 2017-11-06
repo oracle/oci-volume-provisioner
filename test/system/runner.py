@@ -128,22 +128,6 @@ def _poll(stdout, stderr):
                     stderrbuf_line = _process_stream(stream, read_fds, stderrbuf, stderrbuf_line)
     return (''.join(stdoutbuf), ''.join(stderrbuf))
 
-# trjl
-# def _run_command(cmd, cwd, verbose=True):
-#     if verbose:
-#         _log(cwd + ": " + cmd)
-#     process = subprocess.Popen(cmd,
-#                                stdout=subprocess.PIPE,
-#                                stderr=subprocess.PIPE,
-#                                shell=True, cwd=cwd)
-#     (stdout, stderr) = _poll(process.stdout, process.stderr)
-#     returncode = process.wait()
-#     if returncode != 0:
-#         _log("    stdout: " + stdout)
-#         _log("    stderr: " + stderr)
-#         _log("    result: " + str(returncode))
-#     return (stdout, stderr, returncode)
-
 def _run_command(cmd, cwd, display_errors=True):
     _log(cwd + ": " + cmd)
     process = subprocess.Popen(cmd,
