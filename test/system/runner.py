@@ -18,8 +18,6 @@ TEST_NAME = "volumeprovisionersystemtest"
 TMP_OCICONFIG = "/tmp/ociconfig"
 TMP_KUBECONFIG = "/tmp/kubeconfig.conf"
 TMP_OCI_API_KEY_FILE = "/tmp/oci_api_key.pem"
-# COMPARTMENT_ID = "ocid1.compartment.oc1..aaaaaaaa6yrzvtwcumheirxtmbrbrya5lqkr7k7lxi34q3egeseqwlq2l5aq"
-# COMPARTMENT_ID = "ocid1.compartment.oc1..aaaaaaaa3um2atybwhder4qttfhgon4j3hcxgmsvnyvx4flfjyewkkwfzwnq"
 REGION = "us-phoenix-1"
 TIMEOUT = 600
 
@@ -130,17 +128,31 @@ def _poll(stdout, stderr):
                     stderrbuf_line = _process_stream(stream, read_fds, stderrbuf, stderrbuf_line)
     return (''.join(stdoutbuf), ''.join(stderrbuf))
 
+# trjl
+# def _run_command(cmd, cwd, verbose=True):
+#     if verbose:
+#         _log(cwd + ": " + cmd)
+#     process = subprocess.Popen(cmd,
+#                                stdout=subprocess.PIPE,
+#                                stderr=subprocess.PIPE,
+#                                shell=True, cwd=cwd)
+#     (stdout, stderr) = _poll(process.stdout, process.stderr)
+#     returncode = process.wait()
+#     if returncode != 0:
+#         _log("    stdout: " + stdout)
+#         _log("    stderr: " + stderr)
+#         _log("    result: " + str(returncode))
+#     return (stdout, stderr, returncode)
 
-def _run_command(cmd, cwd, verbose=True):
-    if verbose:
-        _log(cwd + ": " + cmd)
+def _run_command(cmd, cwd, display_errors=True):
+    _log(cwd + ": " + cmd)
     process = subprocess.Popen(cmd,
                                stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE,
                                shell=True, cwd=cwd)
     (stdout, stderr) = _poll(process.stdout, process.stderr)
     returncode = process.wait()
-    if returncode != 0:
+    if returncode != 0 and display_errors:
         _log("    stdout: " + stdout)
         _log("    stderr: " + stderr)
         _log("    result: " + str(returncode))
@@ -151,12 +163,13 @@ def _get_timestamp(test_id):
     return test_id if test_id is not None else datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')
 
 
-def _kubectl(action, exit_on_error=True):
-    (stdout, _, returncode) = _run_command("KUBECONFIG=" + _get_kubeconfig() + " kubectl " + action, ".")
+def _kubectl(action, exit_on_error=True, display_errors=True, log_stdout=True):
+    (stdout, _, returncode) = _run_command("KUBECONFIG=" + _get_kubeconfig() + " kubectl " + action, ".", display_errors)
     if exit_on_error and returncode != 0:
         _log("Error running kubectl")
         sys.exit(1)
-    _log(stdout)
+    if log_stdout:
+        _log(stdout)
     return stdout
 
 
@@ -269,7 +282,7 @@ def _get_compartment_id():
     This is where oci volume resources will be created.
     """
     result = _kubectl("-n kube-system exec oci-volume-provisioner -- curl -s http://169.254.169.254/opc/v1/instance/",
-                exit_on_error=False)
+                exit_on_error=False, log_stdout=False)
     result_json = _get_json_doc(str(result))
     compartment_id = result_json["compartmentId"]
     return compartment_id
@@ -291,12 +304,12 @@ def _handle_args():
                         default=False)
     return vars(parser.parse_args())
 
-def cleanup():
-    _kubectl("delete -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
-    _kubectl("delete -f ../../manifests/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
-    _kubectl("delete -f ../../manifests/storage-class.yaml", exit_on_error=False)
-    _kubectl("-n kube-system delete secret oci-volume-provisioner", exit_on_error=False)
-    _kubectl("-n kube-system delete secret wcr-docker-pull-secret", exit_on_error=False)
+def cleanup(exit_on_error=False, display_errors=True):
+    _kubectl("delete -f ../../dist/oci-volume-provisioner.yaml", exit_on_error, display_errors)
+    _kubectl("delete -f ../../manifests/oci-volume-provisioner-rbac.yaml", exit_on_error, display_errors)
+    _kubectl("delete -f ../../manifests/storage-class.yaml", exit_on_error, display_errors)
+    _kubectl("-n kube-system delete secret oci-volume-provisioner", exit_on_error, display_errors)
+    _kubectl("-n kube-system delete secret wcr-docker-pull-secret", exit_on_error, display_errors)
 
 def _main():
     _reset_debug_file()
@@ -308,7 +321,7 @@ def _main():
     success = True
 
     # Cleanup in case any existing state exists in the cluster
-    cleanup()
+    cleanup(display_errors=False)
 
     if not args['no_setup']:
         _log("Setting up the volume provisioner", as_banner=True)
