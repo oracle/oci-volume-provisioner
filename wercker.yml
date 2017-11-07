@@ -56,8 +56,6 @@ push:
         chmod +x /oci-volume-provisioner
 
     - internal/docker-push:
-      username: $DOCKER_REGISTRY_USERNAME
-      password: $DOCKER_REGISTRY_PASSWORD
       repository: wcr.io/oracle/oci-volume-provisioner
       tag: $VERSION
       entrypoint: /oci-volume-provisioner

@@ -7,7 +7,6 @@ spec:
   selector: 
     matchLabels:
       oci-availability-domain: "PHX-AD-1"
-      oci-compartment: "kubernetes-test"
   accessModes:
     - ReadWriteOnce
   resources:

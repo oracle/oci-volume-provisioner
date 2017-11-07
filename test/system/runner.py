@@ -7,7 +7,6 @@ import os
 import select
 import subprocess
 import sys
-import tempfile
 import time
 import oci
 import yaml
@@ -289,12 +288,14 @@ def _handle_args():
     return vars(parser.parse_args())
 
 
-def cleanup(exit_on_error=False, display_errors=True):
+def _cleanup(exit_on_error=False, display_errors=True):
     _kubectl("delete -f ../../dist/oci-volume-provisioner.yaml",
              exit_on_error, display_errors)
     _kubectl("delete -f ../../manifests/oci-volume-provisioner-rbac.yaml",
              exit_on_error, display_errors)
     _kubectl("delete -f ../../manifests/storage-class.yaml",
+             exit_on_error, display_errors)
+    _kubectl("delete -f ../../manifests/storage-class-ext3.yaml",
              exit_on_error, display_errors)
     _kubectl("-n kube-system delete secret oci-volume-provisioner",
              exit_on_error, display_errors)
@@ -336,7 +337,7 @@ def _main():
     success = True
 
     # Cleanup in case any existing state exists in the cluster
-    cleanup(display_errors=False)
+    _cleanup(display_errors=False)
 
     if not args['no_setup']:
         _log("Setting up the volume provisioner", as_banner=True)
@@ -367,7 +368,7 @@ def _main():
 
     if not args['no_teardown']:
         _log("Tearing down the volume provisioner", as_banner=True)
-        cleanup()
+        _cleanup()
 
     _destroy_key_files()
 
