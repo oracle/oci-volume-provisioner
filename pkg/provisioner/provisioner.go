@@ -213,15 +213,14 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 		ObjectMeta: metav1.ObjectMeta{
 			Name: volumeName,
 			Annotations: map[string]string{
-				ociProvisionerIdentity:        p.identity,
-				ociVolumeID:                   newVolume.ID,
-				ociAvailabilityDomain:         availabilityDomainName,
-				ociCompartment:                compartmentOCID,
-
+				ociProvisionerIdentity: p.identity,
+				ociVolumeID:            newVolume.ID,
+				ociAvailabilityDomain:  availabilityDomainName,
+				ociCompartment:         compartmentOCID,
 			},
-			Labels:map[string]string {
+			Labels: map[string]string{
 				metav1.LabelZoneFailureDomain: availabilityDomainName,
-			}
+			},
 		},
 		Spec: v1.PersistentVolumeSpec{
 			PersistentVolumeReclaimPolicy: options.PersistentVolumeReclaimPolicy,
