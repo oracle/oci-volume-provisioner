@@ -7,7 +7,6 @@ import os
 import select
 import subprocess
 import sys
-import tempfile
 import time
 import oci
 import yaml
@@ -189,28 +188,28 @@ def _wait_for_pod_status(desired_status):
     return (infos[0][0], infos[0][1], infos[0][2])
 
 
-def _get_volume():
+def _get_volume(volume_name):
     stdout = _kubectl("get PersistentVolumeClaim -o wide")
     for line in stdout.split("\n"):
         line_array = line.split()
         if len(line_array) >= 3:
             name = line_array[0]
             status = line_array[1]
-            if name == "demooci" and status == "Bound":
+            if name == volume_name and status == "Bound":
                 return line_array[2]
     return None
 
 
-def _get_volume_and_wait():
+def _get_volume_and_wait(volume_name):
     num_polls = 0
-    volume = _get_volume()
+    volume = _get_volume(volume_name)
     while not volume:
         _log("    waiting...")
         time.sleep(1)
         num_polls += 1
         if num_polls == TIMEOUT:
             return False
-        volume = _get_volume()
+        volume = _get_volume(volume_name)
     return volume
 
 
@@ -288,12 +287,45 @@ def _handle_args():
                         default=False)
     return vars(parser.parse_args())
 
-def cleanup(exit_on_error=False, display_errors=True):
-    _kubectl("delete -f ../../dist/oci-volume-provisioner.yaml", exit_on_error, display_errors)
-    _kubectl("delete -f ../../manifests/oci-volume-provisioner-rbac.yaml", exit_on_error, display_errors)
-    _kubectl("delete -f ../../manifests/storage-class.yaml", exit_on_error, display_errors)
-    _kubectl("-n kube-system delete secret oci-volume-provisioner", exit_on_error, display_errors)
-    _kubectl("-n kube-system delete secret wcr-docker-pull-secret", exit_on_error, display_errors)
+
+def _cleanup(exit_on_error=False, display_errors=True):
+    _kubectl("delete -f ../../dist/oci-volume-provisioner.yaml",
+             exit_on_error, display_errors)
+    _kubectl("delete -f ../../manifests/oci-volume-provisioner-rbac.yaml",
+             exit_on_error, display_errors)
+    _kubectl("delete -f ../../manifests/storage-class.yaml",
+             exit_on_error, display_errors)
+    _kubectl("delete -f ../../manifests/storage-class-ext3.yaml",
+             exit_on_error, display_errors)
+    _kubectl("-n kube-system delete secret oci-volume-provisioner",
+             exit_on_error, display_errors)
+    _kubectl("-n kube-system delete secret wcr-docker-pull-secret",
+             exit_on_error, display_errors)
+
+
+def _test_create_volume(compartment_id, claim_target, claim_volume_name):
+
+    _log("Creating the volume claim")
+    _kubectl("create -f " + claim_target, exit_on_error=False)
+
+    volume = _get_volume_and_wait(claim_volume_name)
+    _log("Created volume with name: " + volume)
+
+    _log("Querying the OCI api to make sure a volume with this name exists...")
+    if not _wait_for_volume(compartment_id, volume):
+        _log("Failed to find volume with name: " + volume)
+        sys.exit(1)
+    _log("Volume: " + volume + " is present and available")
+
+    _log("Delete the volume claim")
+    _kubectl("delete -f " + claim_target, exit_on_error=False)
+
+    _log("Querying the OCI api to make sure a volume with this name now doesnt exist...")
+    if not _volume_exists(compartment_id, volume, 'TERMINATED'):
+        _log("Volume with name: " + volume + " still exists")
+        sys.exit(1)
+    _log("Volume: " + volume + " has now been terminated")
+
 
 def _main():
     _reset_debug_file()
@@ -305,7 +337,7 @@ def _main():
     success = True
 
     # Cleanup in case any existing state exists in the cluster
-    cleanup(display_errors=False)
+    _cleanup(display_errors=False)
 
     if not args['no_setup']:
         _log("Setting up the volume provisioner", as_banner=True)
@@ -318,8 +350,8 @@ def _main():
         _kubectl("-n kube-system create secret generic oci-volume-provisioner " + \
                  "--from-file=config.yaml=" + _get_oci_config_file(),
                  exit_on_error=False)
-
         _kubectl("create -f ../../manifests/storage-class.yaml", exit_on_error=False)
+        _kubectl("create -f ../../manifests/storage-class-ext3.yaml", exit_on_error=False)
         _kubectl("create -f ../../manifests/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
         _kubectl("create -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
 
@@ -331,31 +363,12 @@ def _main():
     if not args['no_test']:
         _log("Running system test: ", as_banner=True)
 
-        _log("Creating the volume claim")
-        _kubectl("create -f ../../manifests/example-claim.yaml",
-                 exit_on_error=False)
-
-        volume = _get_volume_and_wait()
-        _log("Created volume with name: " + volume)
-
-        _log("Querying the OCI api to make sure a volume with this name exists...")
-        if not _wait_for_volume(compartment_id, volume):
-            _log("Failed to find volume with name: " + volume)
-            sys.exit(1)
-        _log("Volume: " + volume + " is present and available")
-
-        _log("Delete the volume claim")
-        _kubectl("delete -f ../../manifests/example-claim.yaml", exit_on_error=False)
-
-        _log("Querying the OCI api to make sure a volume with this name now doesnt exist...")
-        if not _volume_exists(compartment_id, volume, 'TERMINATED'):
-            _log("Volume with name: " + volume + " still exists")
-            sys.exit(1)
-        _log("Volume: " + volume + " has now been terminated")
+        _test_create_volume(compartment_id, "../../manifests/example-claim.yaml", "demooci")
+        _test_create_volume(compartment_id, "../../manifests/example-claim-ext3.yaml", "demo-oci-ext3")
 
     if not args['no_teardown']:
         _log("Tearing down the volume provisioner", as_banner=True)
-        cleanup()
+        _cleanup()
 
     _destroy_key_files()
 

@@ -35,6 +35,7 @@ const (
 	ociAvailabilityDomain  = "ociAvailabilityDomain"
 	ociCompartment         = "ociCompartment"
 	configFilePath         = "/etc/oci/config.yaml"
+	fsType                 = "fsType"
 )
 
 // OCIProvisioner is a dynamic volume provisioner that satisfies
@@ -66,7 +67,7 @@ func NewOCIProvisioner(nodeName string) controller.Provisioner {
 
 	client, err := client.FromConfig(cfg)
 	if err != nil {
-		glog.Fatalf("Unable to load volume provisioner client: %v", err)
+		glog.Fatalf("Unable to create volume provisioner client: %v", err)
 	}
 
 	metadata, err := instancemeta.New().Get()
@@ -104,6 +105,14 @@ func (p *OCIProvisioner) findADByName(name string) (*baremetal.AvailabilityDomai
 
 func mapVolumeIDToName(volumeID string) string {
 	return strings.Split(volumeID, ".")[4]
+}
+
+func resolveFSType(options controller.VolumeOptions) string {
+	fs := "ext4" // default to ext4
+	if fsType, ok := options.Parameters[fsType]; ok {
+		fs = fsType
+	}
+	return fs
 }
 
 // Provision creates a storage asset and returns a PV object representing it.
@@ -154,6 +163,7 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 	}
 
 	volumeName := mapVolumeIDToName(newVolume.ID)
+	filesystemType := resolveFSType(options)
 
 	pv := &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
@@ -174,11 +184,12 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 			PersistentVolumeSource: v1.PersistentVolumeSource{
 				FlexVolume: &v1.FlexVolumeSource{
 					Driver: "oracle/oci",
-					FSType: "ext4",
+					FSType: filesystemType,
 				},
 			},
 		},
 	}
+
 	return pv, nil
 }
 
