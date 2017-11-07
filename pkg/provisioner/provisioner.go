@@ -174,6 +174,9 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 				ociAvailabilityDomain:  availabilityDomain.Name,
 				ociCompartment:         compartmentOCID,
 			},
+			Labels: map[string]string{
+				metav1.LabelZoneFailureDomain: availabilityDomainName,
+			},
 		},
 		Spec: v1.PersistentVolumeSpec{
 			PersistentVolumeReclaimPolicy: options.PersistentVolumeReclaimPolicy,
