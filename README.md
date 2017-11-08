@@ -121,6 +121,10 @@ spec:
         name: nginx-storage
 ```
 
+## Misc
+
+You can add a prefix to volume display names by setting an `OCI_VOLUME_NAME_PREFIX` environment variable.
+
 [1]: http://blog.kubernetes.io/2016/10/dynamic-provisioning-and-storage-in-kubernetes.html
 [2]: https://github.com/oracle/oci-flexvolume-driver
 [3]: https://kubernetes.io/docs/admin/authorization/rbac/
