@@ -36,6 +36,7 @@ const (
 	ociCompartment         = "ociCompartment"
 	configFilePath         = "/etc/oci/config.yaml"
 	fsType                 = "fsType"
+	volumePrefixEnvVarName = "OCI_VOLUME_NAME_PREFIX"
 )
 
 // OCIProvisioner is a dynamic volume provisioner that satisfies
@@ -115,6 +116,17 @@ func resolveFSType(options controller.VolumeOptions) string {
 	return fs
 }
 
+func getOptionsForVolume(sizeMBs int, volumeNamePrefix, volumeName string) *baremetal.CreateVolumeOptions {
+	return &baremetal.CreateVolumeOptions{
+		SizeInMBs: sizeMBs,
+		CreateOptions: baremetal.CreateOptions{
+			DisplayNameOptions: baremetal.DisplayNameOptions{
+				DisplayName: volumeNamePrefix + volumeName,
+			},
+		},
+	}
+}
+
 // Provision creates a storage asset and returns a PV object representing it.
 func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.PersistentVolume, error) {
 	for _, accessMode := range options.PVC.Spec.AccessModes {
@@ -157,7 +169,8 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 
 	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, availabilityDomain.Name, compartmentOCID)
 
-	newVolume, err := p.client.CreateVolume(availabilityDomain.Name, compartmentOCID, &baremetal.CreateVolumeOptions{SizeInMBs: volSizeMB})
+	createOpts := getOptionsForVolume(volSizeMB, os.Getenv(volumePrefixEnvVarName), options.PVC.Name)
+	newVolume, err := p.client.CreateVolume(availabilityDomain.Name, compartmentOCID, createOpts)
 	if err != nil {
 		return nil, err
 	}
