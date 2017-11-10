@@ -1,32 +1,31 @@
-kind: Pod
-apiVersion: v1
+apiVersion: apps/v1beta1
+kind: Deployment
 metadata:
   name: oci-volume-provisioner
   namespace: kube-system
 spec:
-  serviceAccountName: oci-volume-provisioner
-  imagePullSecrets:
-    - name: wcr-docker-pull-secret
-  containers:
-    - name: oci-volume-provisioner
-      image: wcr.io/oracle/oci-volume-provisioner:{{VERSION}}
-      imagePullPolicy: "Always"
-      env:
-        - name: NODE_NAME
-          valueFrom:
-            fieldRef:
-              fieldPath: spec.nodeName
-      volumeMounts:
-        - name: etcssl
-          mountPath: /etc/ssl
-          readOnly: true
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: oci-volume-provisioner
+    spec:
+      serviceAccountName: oci-volume-provisioner
+      imagePullSecrets:
+        - name: wcr-docker-pull-secret
+      containers:
+        - name: oci-volume-provisioner
+          image: wcr.io/oracle/oci-volume-provisioner:{{VERSION}}
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: config
+              mountPath: /etc/oci/
+              readOnly: true
+      volumes:
         - name: config
-          mountPath: /etc/oci/
-          readOnly: true
-  volumes:
-    - name: etcssl
-      hostPath:
-        path: /etc/ssl
-    - name: config
-      secret:
-        secretName: oci-volume-provisioner
+          secret:
+            secretName: oci-volume-provisioner
