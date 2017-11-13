@@ -55,6 +55,11 @@ push:
         mv ./dist/oci-volume-provisioner /oci-volume-provisioner
         chmod +x /oci-volume-provisioner
 
+    - script:
+      name: Install SSL
+      code: |
+        yum install -y openssl ca-certificates
+
     - internal/docker-push:
       repository: wcr.io/oracle/oci-volume-provisioner
       tag: $VERSION

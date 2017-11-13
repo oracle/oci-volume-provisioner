@@ -163,7 +163,7 @@ def _get_pod_infos():
         line_array = line.split()
         if len(line_array) > 0:
             name = line_array[0]
-            if name == "oci-volume-provisioner":
+            if name.startswith('oci-volume-provisioner'):
                 status = line_array[2]
                 node = line_array[6]
                 infos.append((name, status, node))
@@ -259,12 +259,12 @@ def _wait_for_volume(compartment_id, volume):
             return False
     return True
 
-def _get_compartment_id():
+def _get_compartment_id(pod_name):
     """
     Gets the oci compartment_id from the oci-volume-provisioner pod host.
     This is where oci volume resources will be created.
     """
-    result = _kubectl("-n kube-system exec oci-volume-provisioner -- curl -s http://169.254.169.254/opc/v1/instance/",
+    result = _kubectl("-n kube-system exec %s -- curl -s http://169.254.169.254/opc/v1/instance/" % pod_name,
                 exit_on_error=False, log_stdout=False)
     result_json = _get_json_doc(str(result))
     compartment_id = result_json["compartmentId"]
@@ -355,10 +355,10 @@ def _main():
         _kubectl("create -f ../../manifests/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
         _kubectl("create -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
 
-        _wait_for_pod_status("Running")
+        pod_name, _, _ = _wait_for_pod_status("Running")
 
     # get the compartment_id of the oci-volume-provisioner
-    compartment_id = _get_compartment_id()
+    compartment_id = _get_compartment_id(pod_name)
 
     if not args['no_test']:
         _log("Running system test: ", as_banner=True)
