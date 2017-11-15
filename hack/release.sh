@@ -7,7 +7,7 @@ IMAGE=wcr.io/oracle/oci-volume-provisioner
 if git rev-parse "$RELEASE" >/dev/null 2>&1; then
     echo "Tag $RELEASE already exists. Doing nothing"
 else
-    SHA=$(git rev-parse --short=8 HEAD)
+    SHA=$(git describe --always HEAD)
 
     echo "Creating new release $RELEASE for SHA $SHA"
 
