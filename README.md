@@ -125,6 +125,22 @@ spec:
 
 You can add a prefix to volume display names by setting an `OCI_VOLUME_NAME_PREFIX` environment variable.
 
+## Contributing
+
+`oci-volume-provisioner` is an open source project. See [CONTRIBUTING](CONTRIBUTING.md) for
+details.
+
+Oracle gratefully acknowledges the contributions to this project that have been made
+by the community.
+
+## License
+
+Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
+
+`oci-volume-provisioner` is licensed under the Apache License 2.0.
+
+See [LICENSE](LICENSE) for more details.
+
 [1]: http://blog.kubernetes.io/2016/10/dynamic-provisioning-and-storage-in-kubernetes.html
 [2]: https://github.com/oracle/oci-flexvolume-driver
 [3]: https://kubernetes.io/docs/admin/authorization/rbac/
