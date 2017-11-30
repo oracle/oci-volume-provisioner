@@ -26,7 +26,11 @@ import (
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/rest"
+	"k8s.io/kubernetes/pkg/volume"
 )
 
 const (
@@ -49,7 +53,8 @@ type OCIProvisioner struct {
 	tenancyID     string
 	compartmentID string
 
-	metadata *instancemeta.InstanceMetadata
+	metadata   *instancemeta.InstanceMetadata
+	kubeClient *kubernetes.Clientset
 }
 
 // NewOCIProvisioner creates a new OCI provisioner.
@@ -76,12 +81,23 @@ func NewOCIProvisioner(nodeName string) controller.Provisioner {
 		glog.Fatalf("Unable to retrieve instance metadata: %v", err)
 	}
 
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		glog.Fatalf("Unable to load k8s client incluster: %v", err)
+	}
+
+	clientSet, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		glog.Fatalf("Unable to create k8s client incluster: %v", err)
+	}
+
 	return &OCIProvisioner{
 		client:        *client,
 		identity:      nodeName,
 		tenancyID:     cfg.Auth.TenancyOCID,
 		compartmentID: cfg.Auth.CompartmentOCID,
 		metadata:      metadata,
+		kubeClient:    clientSet,
 	}
 }
 
@@ -102,6 +118,42 @@ func (p *OCIProvisioner) findADByName(name string) (*baremetal.AvailabilityDomai
 		}
 	}
 	return nil, fmt.Errorf("error looking up availability domain '%s'", name)
+}
+
+// chooseAvailabilityDomain selects the availability zone using the ZoneFailureDomain labels
+// on the nodes. This only works if the nodes have been labeled by either the CCM or someother method.
+func (p *OCIProvisioner) chooseAvailabilityDomain(pvc *v1.PersistentVolumeClaim) (string, *baremetal.AvailabilityDomain, error) {
+	// Try the standard Kube label
+	availabilityDomainName, ok := pvc.Spec.Selector.MatchLabels[metav1.LabelZoneFailureDomain]
+	if !ok {
+		// If not try backwards compat label
+		availabilityDomainName, ok = pvc.Spec.Selector.MatchLabels["oci-availability-domain"]
+	}
+	if !ok {
+		nodeList, err := p.kubeClient.CoreV1().Nodes().List(metav1.ListOptions{})
+		if err != nil {
+			return "", nil, fmt.Errorf("chooseAvailabilityDomain failed due to node list failure:%v", err)
+		}
+		var validADs sets.String
+		for _, node := range nodeList.Items {
+			zone, ok := node.Labels[metav1.LabelZoneFailureDomain]
+			if ok {
+				validADs.Insert(zone)
+			}
+		}
+		if validADs.Len() == 0 {
+			return "", nil, fmt.Errorf("chooseAvailabilityDomain failed due to no zonelabels(%s) on nodes", metav1.LabelZoneFailureDomain)
+		}
+		availabilityDomainName = volume.ChooseZoneForVolume(validADs, pvc.Name)
+		glog.Infof("Zone not specified so %s selected", availabilityDomainName)
+	}
+
+	availabilityDomain, err := p.findADByName(availabilityDomainName)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return availabilityDomainName, availabilityDomain, nil
 }
 
 func mapVolumeIDToName(volumeID string) string {
@@ -150,15 +202,7 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 		compartmentOCID = p.compartmentID
 	}
 
-	availabilityDomainName, ok := options.PVC.Spec.Selector.MatchLabels["oci-availability-domain"]
-	if !ok {
-		return nil, fmt.Errorf("claim Selector must specify 'oci-availability-domain'")
-	}
-
-	availabilityDomain, err := p.findADByName(availabilityDomainName)
-	if err != nil {
-		return nil, err
-	}
+	availabilityDomainName, availabilityDomain, err := p.chooseAvailabilityDomain(options.PVC)
 
 	// Calculate the size
 	volSize := options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
@@ -184,7 +228,7 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 			Annotations: map[string]string{
 				ociProvisionerIdentity: p.identity,
 				ociVolumeID:            newVolume.ID,
-				ociAvailabilityDomain:  availabilityDomain.Name,
+				ociAvailabilityDomain:  availabilityDomainName,
 				ociCompartment:         compartmentOCID,
 			},
 			Labels: map[string]string{
