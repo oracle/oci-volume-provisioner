@@ -121,12 +121,20 @@ func (p *OCIProvisioner) findADByName(name string) (*baremetal.AvailabilityDomai
 // chooseAvailabilityDomain selects the availability zone using the ZoneFailureDomain labels
 // on the nodes. This only works if the nodes have been labeled by either the CCM or someother method.
 func (p *OCIProvisioner) chooseAvailabilityDomain(pvc *v1.PersistentVolumeClaim) (string, *baremetal.AvailabilityDomain, error) {
-	// Try the standard Kube label
-	availabilityDomainName, ok := pvc.Spec.Selector.MatchLabels[metav1.LabelZoneFailureDomain]
-	if !ok {
-		// If not try backwards compat label
-		availabilityDomainName, ok = pvc.Spec.Selector.MatchLabels["oci-availability-domain"]
+	var (
+		availabilityDomainName string
+		ok                     bool
+	)
+
+	if pvc.Spec.Selector != nil {
+		// Try the standard Kube label
+		availabilityDomainName, ok = pvc.Spec.Selector.MatchLabels[metav1.LabelZoneFailureDomain]
+		if !ok {
+			// If not try backwards compat label
+			availabilityDomainName, ok = pvc.Spec.Selector.MatchLabels["oci-availability-domain"]
+		}
 	}
+
 	if !ok {
 		nodes, err := p.nodeLister.List(labels.Everything())
 		if err != nil {
@@ -175,11 +183,6 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 				v1.ReadWriteOnce)
 		}
 	}
-
-	if options.PVC.Spec.Selector == nil {
-		return nil, fmt.Errorf("claim Selector must be specified")
-	}
-	glog.Infof("VolumeOptions.PVC.Spec.Selector %#v", *options.PVC.Spec.Selector)
 
 	var compartmentOCID string
 	if p.compartmentID == "" {
