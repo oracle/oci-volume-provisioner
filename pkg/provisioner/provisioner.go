@@ -140,7 +140,7 @@ func (p *OCIProvisioner) chooseAvailabilityDomain(pvc *v1.PersistentVolumeClaim)
 		if err != nil {
 			return "", nil, fmt.Errorf("failed to list nodes when choosing availability domain: %v", err)
 		}
-		var validADs sets.String
+		validADs := sets.NewString()
 		for _, node := range nodes {
 			zone, ok := node.Labels[metav1.LabelZoneFailureDomain]
 			if ok {
