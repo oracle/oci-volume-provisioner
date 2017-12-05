@@ -25,9 +25,14 @@ import (
 
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	informersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
+	listersv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/kubernetes/pkg/volume"
 
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
@@ -53,12 +58,14 @@ type OCIProvisioner struct {
 	tenancyID     string
 	compartmentID string
 
-	metadata   *instancemeta.InstanceMetadata
-	kubeClient kubernetes.Interface
+	metadata         *instancemeta.InstanceMetadata
+	kubeClient       kubernetes.Interface
+	nodeLister       listersv1.NodeLister
+	nodeListerSynced cache.InformerSynced
 }
 
 // NewOCIProvisioner creates a new OCI provisioner.
-func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeName string) controller.Provisioner {
+func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1.NodeInformer, nodeName string) *OCIProvisioner {
 	f, err := os.Open(configFilePath)
 	if err != nil {
 		glog.Fatalf("Unable to load volume provisioner configuration file: %v", configFilePath)
@@ -81,12 +88,14 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeName string) control
 	}
 
 	return &OCIProvisioner{
-		client:        *client,
-		identity:      nodeName,
-		tenancyID:     cfg.Auth.TenancyOCID,
-		compartmentID: cfg.Auth.CompartmentOCID,
-		metadata:      metadata,
-		kubeClient:    kubeClient,
+		client:           *client,
+		identity:         nodeName,
+		tenancyID:        cfg.Auth.TenancyOCID,
+		compartmentID:    cfg.Auth.CompartmentOCID,
+		metadata:         metadata,
+		kubeClient:       kubeClient,
+		nodeLister:       nodeInformer.Lister(),
+		nodeListerSynced: nodeInformer.Informer().HasSynced,
 	}
 }
 
@@ -119,19 +128,19 @@ func (p *OCIProvisioner) chooseAvailabilityDomain(pvc *v1.PersistentVolumeClaim)
 		availabilityDomainName, ok = pvc.Spec.Selector.MatchLabels["oci-availability-domain"]
 	}
 	if !ok {
-		nodeList, err := p.kubeClient.CoreV1().Nodes().List(metav1.ListOptions{})
+		nodes, err := p.nodeLister.List(labels.Everything())
 		if err != nil {
-			return "", nil, fmt.Errorf("chooseAvailabilityDomain failed due to node list failure:%v", err)
+			return "", nil, fmt.Errorf("failed to list nodes when choosing availability domain: %v", err)
 		}
 		var validADs sets.String
-		for _, node := range nodeList.Items {
+		for _, node := range nodes {
 			zone, ok := node.Labels[metav1.LabelZoneFailureDomain]
 			if ok {
 				validADs.Insert(zone)
 			}
 		}
 		if validADs.Len() == 0 {
-			return "", nil, fmt.Errorf("chooseAvailabilityDomain failed due to no zonelabels(%s) on nodes", metav1.LabelZoneFailureDomain)
+			return "", nil, fmt.Errorf("failed to choose availability domain; no zone labels (%q) on nodes", metav1.LabelZoneFailureDomain)
 		}
 		availabilityDomainName = volume.ChooseZoneForVolume(validADs, pvc.Name)
 		glog.Infof("Zone not specified so %s selected", availabilityDomainName)
@@ -249,4 +258,19 @@ func (p *OCIProvisioner) Delete(volume *v1.PersistentVolume) error {
 	}
 
 	return p.client.DeleteVolume(volume.Annotations[ociVolumeID], nil)
+}
+
+// Run runs the OCI Volume provisioner controller.
+func (p *OCIProvisioner) Run(stopCh <-chan struct{}) {
+	glog.Info("Starting OCI Volume provisioner controller")
+
+	glog.Info("Waiting for caches to sync for OCI Volume provisioner controller")
+	if !cache.WaitForCacheSync(stopCh, p.nodeListerSynced) {
+		utilruntime.HandleError(errors.New("Unable to sync caches for OCI Volume provisioner controller"))
+		return
+	}
+	glog.Infof("Caches are synced for OCI Volume provisioner controller")
+
+	defer glog.Info("Shutting down OCI Volume provisioner controller")
+	<-stopCh
 }
