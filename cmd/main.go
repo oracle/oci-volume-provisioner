@@ -72,14 +72,21 @@ func main() {
 
 	// Create the provisioner: it implements the Provisioner interface expected by
 	// the controller
-	ociProvisioner := provisioner.NewOCIProvisioner(nodeName)
+	ociProvisioner := provisioner.NewOCIProvisioner(clientset, nodeName)
 
 	// Start the provision controller which will dynamically provision oci
 	// PVs
 	pc := controller.NewProvisionController(
-		clientset, resyncPeriod, provisionerName, ociProvisioner,
-		serverVersion.GitVersion, exponentialBackOffOnError,
-		failedRetryThreshold, leasePeriod, renewDeadline,
-		retryPeriod, termLimit)
+		clientset,
+		resyncPeriod,
+		provisionerName,
+		ociProvisioner,
+		serverVersion.GitVersion,
+		exponentialBackOffOnError,
+		failedRetryThreshold,
+		leasePeriod,
+		renewDeadline,
+		retryPeriod,
+		termLimit)
 	pc.Run(wait.NeverStop)
 }

@@ -21,16 +21,17 @@ import (
 	"strings"
 
 	"github.com/golang/glog"
-	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	baremetal "github.com/oracle/bmcs-go-sdk"
-	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
-	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
+
+	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api/v1"
-	"k8s.io/client-go/rest"
 	"k8s.io/kubernetes/pkg/volume"
+
+	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
+	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 )
 
 const (
@@ -53,12 +54,11 @@ type OCIProvisioner struct {
 	compartmentID string
 
 	metadata   *instancemeta.InstanceMetadata
-	kubeClient *kubernetes.Clientset
+	kubeClient kubernetes.Interface
 }
 
 // NewOCIProvisioner creates a new OCI provisioner.
-func NewOCIProvisioner(nodeName string) controller.Provisioner {
-
+func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeName string) controller.Provisioner {
 	f, err := os.Open(configFilePath)
 	if err != nil {
 		glog.Fatalf("Unable to load volume provisioner configuration file: %v", configFilePath)
@@ -80,23 +80,13 @@ func NewOCIProvisioner(nodeName string) controller.Provisioner {
 		glog.Fatalf("Unable to retrieve instance metadata: %v", err)
 	}
 
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		glog.Fatalf("Unable to load k8s client incluster: %v", err)
-	}
-
-	clientSet, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		glog.Fatalf("Unable to create k8s client incluster: %v", err)
-	}
-
 	return &OCIProvisioner{
 		client:        *client,
 		identity:      nodeName,
 		tenancyID:     cfg.Auth.TenancyOCID,
 		compartmentID: cfg.Auth.CompartmentOCID,
 		metadata:      metadata,
-		kubeClient:    clientSet,
+		kubeClient:    kubeClient,
 	}
 }
 
