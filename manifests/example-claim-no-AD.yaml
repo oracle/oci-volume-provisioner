@@ -1,0 +1,11 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: demooci-no-ad
+spec:
+  storageClassName: "oci"
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi

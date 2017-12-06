@@ -14,6 +14,9 @@ rules:
     resources: ["storageclasses"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["list", "watch"]
+  - apiGroups: [""]
     resources: ["events"]
     verbs: ["list", "watch", "create", "update", "patch"]
 ---
