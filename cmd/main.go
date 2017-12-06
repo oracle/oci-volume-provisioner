@@ -90,7 +90,6 @@ func main() {
 	// Create the provisioner: it implements the Provisioner interface expected by
 	// the controller
 	ociProvisioner := provisioner.NewOCIProvisioner(clientset, sharedInformerFactory.Core().V1().Nodes(), nodeName)
-	go ociProvisioner.Run(stopCh)
 
 	// Start the provision controller which will dynamically provision oci
 	// PVs
@@ -108,6 +107,12 @@ func main() {
 		termLimit)
 
 	go sharedInformerFactory.Start(stopCh)
+
+	// We block waiting for Ready() after the shared informer factory has
+	// started so we don't deadlock waiting for caches to sync.
+	if err := ociProvisioner.Ready(stopCh); err != nil {
+		glog.Fatalf("Failed to start volume provisioner: %v", err)
+	}
 
 	pc.Run(stopCh)
 }

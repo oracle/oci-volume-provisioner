@@ -26,7 +26,6 @@ import (
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	informersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -193,11 +192,14 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 	}
 
 	availabilityDomainName, availabilityDomain, err := p.chooseAvailabilityDomain(options.PVC)
+	if err != nil {
+		return nil, err
+	}
 
 	// Calculate the size
 	volSize := options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
 	volSizeBytes := volSize.Value()
-	glog.Infof("Volume size %#v", volSizeBytes)
+	glog.Infof("Volume size (bytes): %v", volSizeBytes)
 
 	volSizeMB := int(roundUpSize(volSizeBytes, 1024*1024))
 
@@ -263,17 +265,10 @@ func (p *OCIProvisioner) Delete(volume *v1.PersistentVolume) error {
 	return p.client.DeleteVolume(volume.Annotations[ociVolumeID], nil)
 }
 
-// Run runs the OCI Volume provisioner controller.
-func (p *OCIProvisioner) Run(stopCh <-chan struct{}) {
-	glog.Info("Starting OCI Volume provisioner controller")
-
-	glog.Info("Waiting for caches to sync for OCI Volume provisioner controller")
+// Ready waits unitl the the nodeLister has been synced.
+func (p *OCIProvisioner) Ready(stopCh <-chan struct{}) error {
 	if !cache.WaitForCacheSync(stopCh, p.nodeListerSynced) {
-		utilruntime.HandleError(errors.New("Unable to sync caches for OCI Volume provisioner controller"))
-		return
+		return errors.New("unable to sync caches for OCI Volume Provisioner")
 	}
-	glog.Infof("Caches are synced for OCI Volume provisioner controller")
-
-	defer glog.Info("Shutting down OCI Volume provisioner controller")
-	<-stopCh
+	return nil
 }
