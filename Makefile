@@ -31,7 +31,8 @@ test:
 
 .PHONY: build
 build: ${DIR}/${BIN}
-	@sed "s/{{VERSION}}/$(VERSION)/g" manifests/oci-volume-provisioner.yaml > $(DIR)/oci-volume-provisioner.yaml
+	@sed 's#${IMAGE}:[0-9]\+.[0-9]\+.[0-9]\+#${IMAGE}:${VERSION}#g' \
+	    manifests/oci-volume-provisioner.yaml > $(DIR)/oci-volume-provisioner.yaml
 
 ${DIR}/${BIN}: ${GO_SRC}
 	mkdir -p ${DIR}
