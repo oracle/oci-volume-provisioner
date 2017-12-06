@@ -21,12 +21,21 @@ import (
 	"strings"
 
 	"github.com/golang/glog"
-	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	baremetal "github.com/oracle/bmcs-go-sdk"
+
+	"github.com/kubernetes-incubator/external-storage/lib/controller"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/sets"
+	informersv1 "k8s.io/client-go/informers/core/v1"
+	"k8s.io/client-go/kubernetes"
+	listersv1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/kubernetes/pkg/volume"
+
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/pkg/api/v1"
 )
 
 const (
@@ -49,12 +58,14 @@ type OCIProvisioner struct {
 	tenancyID     string
 	compartmentID string
 
-	metadata *instancemeta.InstanceMetadata
+	metadata         *instancemeta.InstanceMetadata
+	kubeClient       kubernetes.Interface
+	nodeLister       listersv1.NodeLister
+	nodeListerSynced cache.InformerSynced
 }
 
 // NewOCIProvisioner creates a new OCI provisioner.
-func NewOCIProvisioner(nodeName string) controller.Provisioner {
-
+func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1.NodeInformer, nodeName string) *OCIProvisioner {
 	f, err := os.Open(configFilePath)
 	if err != nil {
 		glog.Fatalf("Unable to load volume provisioner configuration file: %v", configFilePath)
@@ -77,11 +88,14 @@ func NewOCIProvisioner(nodeName string) controller.Provisioner {
 	}
 
 	return &OCIProvisioner{
-		client:        *client,
-		identity:      nodeName,
-		tenancyID:     cfg.Auth.TenancyOCID,
-		compartmentID: cfg.Auth.CompartmentOCID,
-		metadata:      metadata,
+		client:           *client,
+		identity:         nodeName,
+		tenancyID:        cfg.Auth.TenancyOCID,
+		compartmentID:    cfg.Auth.CompartmentOCID,
+		metadata:         metadata,
+		kubeClient:       kubeClient,
+		nodeLister:       nodeInformer.Lister(),
+		nodeListerSynced: nodeInformer.Informer().HasSynced,
 	}
 }
 
@@ -102,6 +116,50 @@ func (p *OCIProvisioner) findADByName(name string) (*baremetal.AvailabilityDomai
 		}
 	}
 	return nil, fmt.Errorf("error looking up availability domain '%s'", name)
+}
+
+// chooseAvailabilityDomain selects the availability zone using the ZoneFailureDomain labels
+// on the nodes. This only works if the nodes have been labeled by either the CCM or someother method.
+func (p *OCIProvisioner) chooseAvailabilityDomain(pvc *v1.PersistentVolumeClaim) (string, *baremetal.AvailabilityDomain, error) {
+	var (
+		availabilityDomainName string
+		ok                     bool
+	)
+
+	if pvc.Spec.Selector != nil {
+		// Try the standard Kube label
+		availabilityDomainName, ok = pvc.Spec.Selector.MatchLabels[metav1.LabelZoneFailureDomain]
+		if !ok {
+			// If not try backwards compat label
+			availabilityDomainName, ok = pvc.Spec.Selector.MatchLabels["oci-availability-domain"]
+		}
+	}
+
+	if !ok {
+		nodes, err := p.nodeLister.List(labels.Everything())
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to list nodes when choosing availability domain: %v", err)
+		}
+		validADs := sets.NewString()
+		for _, node := range nodes {
+			zone, ok := node.Labels[metav1.LabelZoneFailureDomain]
+			if ok {
+				validADs.Insert(zone)
+			}
+		}
+		if validADs.Len() == 0 {
+			return "", nil, fmt.Errorf("failed to choose availability domain; no zone labels (%q) on nodes", metav1.LabelZoneFailureDomain)
+		}
+		availabilityDomainName = volume.ChooseZoneForVolume(validADs, pvc.Name)
+		glog.Infof("Zone not specified so %s selected", availabilityDomainName)
+	}
+
+	availabilityDomain, err := p.findADByName(availabilityDomainName)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return availabilityDomainName, availabilityDomain, nil
 }
 
 func mapVolumeIDToName(volumeID string) string {
@@ -137,11 +195,6 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 		}
 	}
 
-	if options.PVC.Spec.Selector == nil {
-		return nil, fmt.Errorf("claim Selector must be specified")
-	}
-	glog.Infof("VolumeOptions.PVC.Spec.Selector %#v", *options.PVC.Spec.Selector)
-
 	var compartmentOCID string
 	if p.compartmentID == "" {
 		glog.Infof("'CompartmentID' not given. Using compartment OCID %s from instance metadata", p.metadata.CompartmentOCID)
@@ -150,12 +203,7 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 		compartmentOCID = p.compartmentID
 	}
 
-	availabilityDomainName, ok := options.PVC.Spec.Selector.MatchLabels["oci-availability-domain"]
-	if !ok {
-		return nil, fmt.Errorf("claim Selector must specify 'oci-availability-domain'")
-	}
-
-	availabilityDomain, err := p.findADByName(availabilityDomainName)
+	availabilityDomainName, availabilityDomain, err := p.chooseAvailabilityDomain(options.PVC)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +211,7 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 	// Calculate the size
 	volSize := options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
 	volSizeBytes := volSize.Value()
-	glog.Infof("Volume size %#v", volSizeBytes)
+	glog.Infof("Volume size (bytes): %v", volSizeBytes)
 
 	volSizeMB := int(roundUpSize(volSizeBytes, 1024*1024))
 
@@ -184,7 +232,7 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 			Annotations: map[string]string{
 				ociProvisionerIdentity: p.identity,
 				ociVolumeID:            newVolume.ID,
-				ociAvailabilityDomain:  availabilityDomain.Name,
+				ociAvailabilityDomain:  availabilityDomainName,
 				ociCompartment:         compartmentOCID,
 			},
 			Labels: map[string]string{
@@ -228,4 +276,12 @@ func (p *OCIProvisioner) Delete(volume *v1.PersistentVolume) error {
 	}
 
 	return p.client.DeleteVolume(volume.Annotations[ociVolumeID], nil)
+}
+
+// Ready waits unitl the the nodeLister has been synced.
+func (p *OCIProvisioner) Ready(stopCh <-chan struct{}) error {
+	if !cache.WaitForCacheSync(stopCh, p.nodeListerSynced) {
+		return errors.New("unable to sync caches for OCI Volume Provisioner")
+	}
+	return nil
 }

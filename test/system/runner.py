@@ -361,10 +361,17 @@ def _main():
     compartment_id = _get_compartment_id(pod_name)
 
     if not args['no_test']:
-        _log("Running system test: ", as_banner=True)
+        _log("Running system test: Simple", as_banner=True)
+        _test_create_volume(compartment_id,
+                            "../../manifests/example-claim.yaml", "demooci")
 
-        _test_create_volume(compartment_id, "../../manifests/example-claim.yaml", "demooci")
-        _test_create_volume(compartment_id, "../../manifests/example-claim-ext3.yaml", "demo-oci-ext3")
+        _log("Running system test: Ext3 file system", as_banner=True)
+        _test_create_volume(compartment_id,
+                            "../../manifests/example-claim-ext3.yaml", "demo-oci-ext3")
+
+        _log("Running system test: No AD specified", as_banner=True)
+        _test_create_volume(compartment_id,
+                            "../../manifests/example-claim-no-AD.yaml", "demooci-no-ad")
 
     if not args['no_teardown']:
         _log("Tearing down the volume provisioner", as_banner=True)
