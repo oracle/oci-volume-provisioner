@@ -11,8 +11,6 @@ spec:
         app: oci-volume-provisioner
     spec:
       serviceAccountName: oci-volume-provisioner
-      imagePullSecrets:
-        - name: wcr-docker-pull-secret
       containers:
         - name: oci-volume-provisioner
           image: wcr.io/oracle/oci-volume-provisioner:0.2.0
