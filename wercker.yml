@@ -70,8 +70,6 @@ system-test:
   box:
     id: wcr.io/oracle/oci-volume-provisioner-system-test:1.0.0
     registry: wcr.io
-    username: $DOCKER_REGISTRY_USERNAME
-    password: $DOCKER_REGISTRY_PASSWORD
   steps:
     - script:
         name: system test
