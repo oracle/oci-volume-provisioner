@@ -4,6 +4,7 @@ The OCI Volume Provisioner enables [dynamic provisioning][1] of storage resource
 It uses the [OCI Flexvolume Driver][2] to do the actual provisioning of block storage resources.
 
 [![wercker status](https://app.wercker.com/status/0bb764451c28a60b4260d76754f02118/s/master "wercker status")](https://app.wercker.com/project/byKey/0bb764451c28a60b4260d76754f02118)
+[![Go Report Card](https://goreportcard.com/badge/github.com/oracle/oci-volume-provisioner)](https://goreportcard.com/report/github.com/oracle/oci-volume-provisioner)
 
 ## Prerequisites
 
