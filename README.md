@@ -110,7 +110,7 @@ spec:
   volumes:
     - name: nginx-storage
       persistentVolumeClaim:
-      claimName: nginx-volume
+        claimName: nginx-volume
   containers:
     - name: nginx
       image: nginx
