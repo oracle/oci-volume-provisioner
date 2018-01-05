@@ -262,15 +262,15 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 func (p *OCIProvisioner) Delete(volume *v1.PersistentVolume) error {
 	glog.Infof("Deleting volume %v with volumeId %v", volume, volume.Annotations[ociVolumeID])
 
-	ann, ok := volume.Annotations[ociProvisionerIdentity]
+	identity, ok := volume.Annotations[ociProvisionerIdentity]
 	if !ok {
 		return errors.New("identity annotation not found on PV")
 	}
-	if ann != p.identity {
+	if identity != p.identity {
 		return &controller.IgnoredError{Reason: "identity annotation on PV does not match ours"}
 	}
 
-	ann, ok = volume.Annotations[ociVolumeID]
+	_, ok = volume.Annotations[ociVolumeID]
 	if !ok {
 		return errors.New("volumeid annotation not found on PV")
 	}
