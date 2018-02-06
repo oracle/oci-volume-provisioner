@@ -8,12 +8,6 @@ build:
   base-path: "/go/src/github.com/oracle/oci-volume-provisioner"
   steps:
     - script:
-      name: write VERSION.txt
-      code: |
-        git describe --always --dirty > ${WERCKER_OUTPUT_DIR}/VERSION.txt
-        cat ${WERCKER_OUTPUT_DIR}/VERSION.txt
-
-    - script:
       name: validate source code
       code: |
         go get -u github.com/golang/lint/golint
@@ -28,16 +22,18 @@ build:
       code: make build
 
     - script:
-      name: copy build artifacts
+      name: write VERSION.txt
       code: |
-        cp -R dist ${WERCKER_OUTPUT_DIR}/
-
+        make version > dist/VERSION.txt
+        cat dist/VERSION.txt
+      
+copy:
+  steps:
     - script:
-      name: copy test artifacts
+      name: copy build/test artifacts
       code: |
-        cp -R manifests ${WERCKER_OUTPUT_DIR}/
-        mkdir -p ${WERCKER_OUTPUT_DIR}/test
-        cp -R test/system ${WERCKER_OUTPUT_DIR}/test/
+        cp -a dist/* ${WERCKER_OUTPUT_DIR}
+        cp -a test ${WERCKER_OUTPUT_DIR}
 
 push:
   box:
@@ -66,6 +62,7 @@ push:
       entrypoint: /oci-volume-provisioner
       user: 65534 # nobody
 
+      
 system-test:
   box:
     id: wcr.io/oracle/oci-volume-provisioner-system-test:1.0.0
@@ -76,3 +73,30 @@ system-test:
         code: |
           cd test/system
           ./runner.py
+
+
+release:
+  box:
+    id: oraclelinux:7-slim
+  steps:
+    - script:
+        name: set ENV vars
+        code: |
+          export VERSION=$(cat VERSION.txt)
+          echo "${VERSION}"
+
+    - github-create-release:
+      token: $GITHUB_TOKEN
+      tag: $VERSION
+      title: $VERSION
+      draft: false
+
+    - github-upload-asset:
+      token: $GITHUB_TOKEN
+      file: ./oci-volume-provisioner.yaml
+      filename: oci-volume-provisioner.yaml
+      content-type: text/yaml
+
+
+
+          
