@@ -48,7 +48,7 @@ push:
     - script:
       name: prepare
       code: |
-        mv ./dist/oci-volume-provisioner /oci-volume-provisioner
+        mv ./oci-volume-provisioner /oci-volume-provisioner
         chmod +x /oci-volume-provisioner
 
     - script:
