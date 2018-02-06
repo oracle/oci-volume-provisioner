@@ -97,7 +97,7 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1
 	return &OCIProvisioner{
 		client:           *client,
 		ctx:              context.Background(),
-		timeout:          300,
+		timeout:          3 * time.Minute,
 		identity:         nodeName,
 		tenancyID:        cfg.Auth.TenancyOCID,
 		compartmentID:    cfg.Auth.CompartmentOCID,
@@ -290,7 +290,7 @@ func (p *OCIProvisioner) Delete(volume *v1.PersistentVolume) error {
 	}
 
 	request := core.DeleteVolumeRequest{VolumeId: common.String(ociVolumeID)}
-	ctx, cancel := context.WithTimeout(p.ctx, p.timeout)
+	ctx, cancel := context.WithTimeout(p.ctx, p.timeout*time.Second)
 	defer cancel()
 	return p.client.BlockStorage.DeleteVolume(ctx, request)
 }
