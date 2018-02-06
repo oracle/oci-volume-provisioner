@@ -28,11 +28,7 @@
   name = "github.com/kubernetes-incubator/external-storage"
   version = "2.0.0"
 
-[[constraint]]
-  branch = "master"
-  name = "github.com/oracle/bmcs-go-sdk"
-
-[[constraint]]
+[[override]]
   name = "gopkg.in/gcfg.v1"
 
 [[constraint]]
@@ -43,3 +39,7 @@
 
 [[constraint]]
   name = "k8s.io/kubernetes"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/oracle/oci-go-sdk"
