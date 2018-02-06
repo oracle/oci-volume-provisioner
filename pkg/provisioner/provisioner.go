@@ -290,7 +290,7 @@ func (p *OCIProvisioner) Delete(volume *v1.PersistentVolume) error {
 	}
 
 	request := core.DeleteVolumeRequest{VolumeId: common.String(ociVolumeID)}
-	ctx, cancel := context.WithTimeout(p.ctx, p.timeout*time.Second)
+	ctx, cancel := context.WithTimeout(p.ctx, p.timeout)
 	defer cancel()
 	return p.client.BlockStorage.DeleteVolume(ctx, request)
 }
