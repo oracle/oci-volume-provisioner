@@ -21,6 +21,7 @@ import (
 	"github.com/pkg/errors"
 )
 
+// ProvisionerClient wraps the oci sub-clients required for volume provisioning.
 type ProvisionerClient struct {
 	BlockStorage *core.BlockstorageClient
 	Identity     *identity.IdentityClient
