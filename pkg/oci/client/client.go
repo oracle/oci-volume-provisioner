@@ -14,18 +14,53 @@
 
 package client
 
-import baremetal "github.com/oracle/bmcs-go-sdk"
+import (
+	"github.com/oracle/oci-go-sdk/common"
+	"github.com/oracle/oci-go-sdk/core"
+	"github.com/oracle/oci-go-sdk/identity"
+	"github.com/pkg/errors"
+)
 
-// FromConfig creates a baremetal client from the given configuration.
-func FromConfig(cfg *Config) (*baremetal.Client, error) {
-	ociClient, err := baremetal.NewClient(
-		cfg.Auth.UserOCID,
-		cfg.Auth.TenancyOCID,
-		cfg.Auth.Fingerprint,
-		baremetal.PrivateKeyBytes([]byte(cfg.Auth.PrivateKey)),
-		baremetal.Region(cfg.Auth.Region))
+// ProvisionerClient wraps the oci sub-clients required for volume provisioning.
+type ProvisionerClient struct {
+	BlockStorage *core.BlockstorageClient
+	Identity     *identity.IdentityClient
+}
+
+// FromConfig creates an oci client from the given configuration.
+func FromConfig(cfg *Config) (*ProvisionerClient, error) {
+	config, err := newConfigurationProvider(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return ociClient, nil
+	blockStorage, err := core.NewBlockstorageClientWithConfigurationProvider(config)
+	if err != nil {
+		return nil, err
+	}
+	identity, err := identity.NewIdentityClientWithConfigurationProvider(config)
+	if err != nil {
+		return nil, err
+	}
+	client := ProvisionerClient{&blockStorage, &identity}
+	return &client, nil
+}
+
+func newConfigurationProvider(cfg *Config) (common.ConfigurationProvider, error) {
+	var conf common.ConfigurationProvider
+	if conf == nil {
+		conf = common.DefaultConfigProvider()
+	} else {
+		err := cfg.Validate()
+		if err != nil {
+			return nil, errors.Wrap(err, "invalid client config")
+		}
+		conf = common.NewRawConfigurationProvider(
+			cfg.Auth.TenancyOCID,
+			cfg.Auth.UserOCID,
+			cfg.Auth.Region,
+			cfg.Auth.Fingerprint,
+			cfg.Auth.PrivateKey,
+			common.String(cfg.Auth.PrivateKeyPassphrase))
+	}
+	return conf, nil
 }

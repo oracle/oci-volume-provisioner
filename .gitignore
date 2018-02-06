@@ -3,3 +3,4 @@ dist/
 env.sh
 .wercker
 *.log
+test/system/venv/

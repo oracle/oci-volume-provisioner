@@ -20,18 +20,18 @@ import (
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 )
 
-func TestGetOptionsForVolume(t *testing.T) {
-	volume := getOptionsForVolume(100, "", "myvolume")
-	if volume.DisplayName != "myvolume" {
-		t.Fatalf("Incorrect display name. Expecting %s but got %s", "myvolume", volume.DisplayName)
+func TestNewCreateVolumeDetails(t *testing.T) {
+	volume := newCreateVolumeDetails("test-ad", "test-ocid", "", "myvolume", 100)
+	if *volume.DisplayName != "myvolume" {
+		t.Fatalf("Incorrect display name. Expecting %s but got %s", "myvolume", *volume.DisplayName)
 	}
 }
 
-func TestGetGetOptionsForVolumeCustomDisplayName(t *testing.T) {
-	volume := getOptionsForVolume(100, "XXX", "myvolume")
+func TestNewCreateVolumeDetailsForVolumeCustomDisplayName(t *testing.T) {
+	volume := newCreateVolumeDetails("test-ad", "test-ocid", "XXX", "myvolume", 100)
 
-	if volume.DisplayName != "XXXmyvolume" {
-		t.Fatalf("Incorrect display name. Expecting %s but got %s", "XXXmyvolume", volume.DisplayName)
+	if *volume.DisplayName != "XXXmyvolume" {
+		t.Fatalf("Incorrect display name. Expecting %s but got %s", "XXXmyvolume", *volume.DisplayName)
 	}
 }
 
