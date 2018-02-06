@@ -15,13 +15,17 @@
 package provisioner
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/golang/glog"
-	baremetal "github.com/oracle/bmcs-go-sdk"
+
+	"github.com/oracle/oci-go-sdk/common"
+	"github.com/oracle/oci-go-sdk/core"
+	"github.com/oracle/oci-go-sdk/identity"
 
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -51,7 +55,7 @@ const (
 // OCIProvisioner is a dynamic volume provisioner that satisfies
 // the Kubernetes external storage Provisioner controller interface
 type OCIProvisioner struct {
-	client baremetal.Client
+	client client.ProvisionerClient
 
 	// Identity of this ociProvisioner, set to node's name. Used to identify "this" provisioner's PVs.
 	identity      string
@@ -105,13 +109,15 @@ func roundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
 	return (volumeSizeBytes + allocationUnitBytes - 1) / allocationUnitBytes
 }
 
-func (p *OCIProvisioner) findADByName(name string) (*baremetal.AvailabilityDomain, error) {
-	ads, err := p.client.ListAvailabilityDomains(p.tenancyID)
+func (p *OCIProvisioner) findADByName(name string) (*identity.AvailabilityDomain, error) {
+	request := identity.ListAvailabilityDomainsRequest{CompartmentId: common.String(p.tenancyID)}
+	response, err := p.client.Identity.ListAvailabilityDomains(context.TODO(), request)
 	if err != nil {
 		return nil, err
 	}
-	for _, ad := range ads.AvailabilityDomains {
-		if strings.HasSuffix(ad.Name, name) {
+	// TODO: Add paging when implemented in oci-go-sdk.
+	for _, ad := range response.Items {
+		if strings.HasSuffix(*ad.Name, name) {
 			return &ad, nil
 		}
 	}
@@ -120,7 +126,7 @@ func (p *OCIProvisioner) findADByName(name string) (*baremetal.AvailabilityDomai
 
 // chooseAvailabilityDomain selects the availability zone using the ZoneFailureDomain labels
 // on the nodes. This only works if the nodes have been labeled by either the CCM or someother method.
-func (p *OCIProvisioner) chooseAvailabilityDomain(pvc *v1.PersistentVolumeClaim) (string, *baremetal.AvailabilityDomain, error) {
+func (p *OCIProvisioner) chooseAvailabilityDomain(pvc *v1.PersistentVolumeClaim) (string, *identity.AvailabilityDomain, error) {
 	var (
 		availabilityDomainName string
 		ok                     bool
@@ -174,14 +180,12 @@ func resolveFSType(options controller.VolumeOptions) string {
 	return fs
 }
 
-func getOptionsForVolume(sizeMBs int, volumeNamePrefix, volumeName string) *baremetal.CreateVolumeOptions {
-	return &baremetal.CreateVolumeOptions{
-		SizeInMBs: sizeMBs,
-		CreateOptions: baremetal.CreateOptions{
-			DisplayNameOptions: baremetal.DisplayNameOptions{
-				DisplayName: volumeNamePrefix + volumeName,
-			},
-		},
+func newCreateVolumeDetails(adName, compartmentOCID, volumeNamePrefix, volumeName string, volSizeMB int) core.CreateVolumeDetails {
+	return core.CreateVolumeDetails{
+		AvailabilityDomain: common.String(adName),
+		CompartmentId:      common.String(compartmentOCID),
+		DisplayName:        common.String(fmt.Sprintf("%s%s", volumeNamePrefix, volumeName)),
+		SizeInMBs:          common.Int(volSizeMB),
 	}
 }
 
@@ -212,18 +216,19 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 	volSize := options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
 	volSizeBytes := volSize.Value()
 	glog.Infof("Volume size (bytes): %v", volSizeBytes)
-
 	volSizeMB := int(roundUpSize(volSizeBytes, 1024*1024))
 
 	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, availabilityDomain.Name, compartmentOCID)
 
-	createOpts := getOptionsForVolume(volSizeMB, os.Getenv(volumePrefixEnvVarName), options.PVC.Name)
-	newVolume, err := p.client.CreateVolume(availabilityDomain.Name, compartmentOCID, createOpts)
+	// TODO: OpcRetryToken
+	details := newCreateVolumeDetails(availabilityDomainName, compartmentOCID, os.Getenv(volumePrefixEnvVarName), options.PVC.Name, volSizeMB)
+	request := core.CreateVolumeRequest{CreateVolumeDetails: details}
+	newVolume, err := p.client.BlockStorage.CreateVolume(context.TODO(), request)
 	if err != nil {
 		return nil, err
 	}
 
-	volumeName := mapVolumeIDToName(newVolume.ID)
+	volumeName := mapVolumeIDToName(*newVolume.Id)
 	filesystemType := resolveFSType(options)
 
 	pv := &v1.PersistentVolume{
@@ -231,7 +236,7 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 			Name: volumeName,
 			Annotations: map[string]string{
 				ociProvisionerIdentity: p.identity,
-				ociVolumeID:            newVolume.ID,
+				ociVolumeID:            *newVolume.Id,
 				ociAvailabilityDomain:  availabilityDomainName,
 				ociCompartment:         compartmentOCID,
 			},
@@ -275,7 +280,8 @@ func (p *OCIProvisioner) Delete(volume *v1.PersistentVolume) error {
 		return errors.New("volumeid annotation not found on PV")
 	}
 
-	return p.client.DeleteVolume(volume.Annotations[ociVolumeID], nil)
+	request := core.DeleteVolumeRequest{VolumeId: common.String(ociVolumeID)}
+	return p.client.BlockStorage.DeleteVolume(context.TODO(), request)
 }
 
 // Ready waits unitl the the nodeLister has been synced.
