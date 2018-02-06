@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/golang/glog"
 
@@ -55,7 +56,9 @@ const (
 // OCIProvisioner is a dynamic volume provisioner that satisfies
 // the Kubernetes external storage Provisioner controller interface
 type OCIProvisioner struct {
-	client client.ProvisionerClient
+	client  client.ProvisionerClient
+	ctx     context.Context
+	timeout time.Duration
 
 	// Identity of this ociProvisioner, set to node's name. Used to identify "this" provisioner's PVs.
 	identity      string
@@ -93,6 +96,8 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1
 
 	return &OCIProvisioner{
 		client:           *client,
+		ctx:              context.Background(),
+		timeout:          300,
 		identity:         nodeName,
 		tenancyID:        cfg.Auth.TenancyOCID,
 		compartmentID:    cfg.Auth.CompartmentOCID,
@@ -111,7 +116,9 @@ func roundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
 
 func (p *OCIProvisioner) findADByName(name string) (*identity.AvailabilityDomain, error) {
 	request := identity.ListAvailabilityDomainsRequest{CompartmentId: common.String(p.tenancyID)}
-	response, err := p.client.Identity.ListAvailabilityDomains(context.TODO(), request)
+	ctx, cancel := context.WithTimeout(p.ctx, p.timeout)
+	defer cancel()
+	response, err := p.client.Identity.ListAvailabilityDomains(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -220,10 +227,12 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 
 	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, availabilityDomain.Name, compartmentOCID)
 
-	// TODO: OpcRetryToken
+	// TODO: Consider OpcRetryToken
 	details := newCreateVolumeDetails(availabilityDomainName, compartmentOCID, os.Getenv(volumePrefixEnvVarName), options.PVC.Name, volSizeMB)
 	request := core.CreateVolumeRequest{CreateVolumeDetails: details}
-	newVolume, err := p.client.BlockStorage.CreateVolume(context.TODO(), request)
+	ctx, cancel := context.WithTimeout(p.ctx, p.timeout)
+	defer cancel()
+	newVolume, err := p.client.BlockStorage.CreateVolume(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +290,9 @@ func (p *OCIProvisioner) Delete(volume *v1.PersistentVolume) error {
 	}
 
 	request := core.DeleteVolumeRequest{VolumeId: common.String(ociVolumeID)}
-	return p.client.BlockStorage.DeleteVolume(context.TODO(), request)
+	ctx, cancel := context.WithTimeout(p.ctx, p.timeout)
+	defer cancel()
+	return p.client.BlockStorage.DeleteVolume(ctx, request)
 }
 
 // Ready waits unitl the the nodeLister has been synced.
