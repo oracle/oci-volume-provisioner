@@ -32,7 +32,7 @@ copy:
     - script:
       name: copy build/test artifacts
       code: |
-        cp -a dist/* ${WERCKER_OUTPUT_DIR}
+        cp -a dist ${WERCKER_OUTPUT_DIR}
         cp -a test ${WERCKER_OUTPUT_DIR}
 
 push:
@@ -42,19 +42,19 @@ push:
     - script:
       name: set ENV vars
       code: |
-        export VERSION=$(cat VERSION.txt)
+        export VERSION=$(cat dist/VERSION.txt)
         echo "Pushing version ${VERSION}"
 
     - script:
       name: prepare
       code: |
-        mv ./oci-volume-provisioner /oci-volume-provisioner
+        mv ./dist/oci-volume-provisioner /oci-volume-provisioner
         chmod +x /oci-volume-provisioner
 
     - script:
       name: Install SSL
       code: |
-        yum install -y openssl ca-certificates
+        yum install -y openssl ca-certificates && yum clean all
 
     - internal/docker-push:
       repository: wcr.io/oracle/oci-volume-provisioner
@@ -62,7 +62,6 @@ push:
       entrypoint: /oci-volume-provisioner
       user: 65534 # nobody
 
-      
 system-test:
   box:
     id: wcr.io/oracle/oci-volume-provisioner-system-test:1.0.0
@@ -82,7 +81,7 @@ release:
     - script:
         name: set ENV vars
         code: |
-          export VERSION=$(cat VERSION.txt)
+          export VERSION=$(cat dist/VERSION.txt)
           echo "${VERSION}"
 
     - github-create-release:
@@ -93,10 +92,29 @@ release:
 
     - github-upload-asset:
       token: $GITHUB_TOKEN
-      file: ./oci-volume-provisioner.yaml
+      file: ./dist/oci-volume-provisioner.yaml
       filename: oci-volume-provisioner.yaml
       content-type: text/yaml
 
+    - github-upload-asset:
+      token: $GITHUB_TOKEN
+      file: ./dist/oci-volume-provisioner-rbac.yaml
+      filename: oci-volume-provisioner-rbac.yaml
+      content-type: text/yaml
 
+    - github-upload-asset:
+      token: $GITHUB_TOKEN
+      file: ./dist/storage-class-ext3.yaml
+      filename: storage-class-ext3.yaml
+      content-type: text/yaml
+
+    - github-upload-asset:
+      token: $GITHUB_TOKEN
+      file: ./dist/storage-class.yaml
+      filename: storage-class.yaml
+      content-type: text/yaml
+      
 
           
+
+      

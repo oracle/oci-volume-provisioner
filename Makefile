@@ -35,7 +35,11 @@ test:
 .PHONY: build
 build: ${DIR}/${BIN}
 	@sed 's#${IMAGE}:[0-9]\+.[0-9]\+.[0-9]\+#${IMAGE}:${VERSION}#g' \
-	    manifests/oci-volume-provisioner.yaml > $(DIR)/oci-volume-provisioner.yaml
+	 manifests/oci-volume-provisioner.yaml > $(DIR)/oci-volume-provisioner.yaml
+	cp manifests/storage-class-ext3.yaml $(DIR)/storage-class-ext3.yaml
+	cp manifests/storage-class.yaml $(DIR)/storage-class.yaml
+	cp manifests/oci-volume-provisioner-rbac.yaml $(DIR)/oci-volume-provisioner-rbac.yaml
+
 
 ${DIR}/${BIN}: ${GO_SRC}
 	mkdir -p ${DIR}
