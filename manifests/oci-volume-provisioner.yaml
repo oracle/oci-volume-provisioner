@@ -13,7 +13,7 @@ spec:
       serviceAccountName: oci-volume-provisioner
       containers:
         - name: oci-volume-provisioner
-          image: wcr.io/oracle/oci-volume-provisioner:0.2.0
+          image: wcr.io/oracle/oci-volume-provisioner:@VERSION@
           env:
             - name: NODE_NAME
               valueFrom:
