@@ -19,6 +19,7 @@ The oci-volume-provisioner is provided as a Kubernetes deployment.
 
 Create a config.yaml file with contents similar to the following. This file will contain authentication
 information necessary to authenticate with the OCI APIs and provision block storage volumes.
+The `key_passphrase` field can be left out if your key has no passphrase.
 
 ```yaml
 auth:
@@ -28,8 +29,10 @@ auth:
     -----BEGIN RSA PRIVATE KEY-----
     MIIEowIBAAKCAQEUjVBnOgC4wA3j6CeTc6hIA9B3iwuJKyR8i7w...
     -----END RSA PRIVATE KEY-----
+  key_passphrase: supersecretpassphrase
   fingerprint: 4d:f5:ff:0e:a9:10:e8:5a:d3:52:6a:f8:1e:99:a3:47
   region: us-phoenix-1
+  
 ````
 
 Submit this as a Kubernetes Secret.
@@ -42,16 +45,28 @@ kubectl create secret generic oci-volume-provisioner \
 
 ## Deploy the OCI Volume Provisioner
 
+First select the release to deploy. These are listed here. (https://github.com/oracle/oci-volume-provisioner/releases/latest)
+
+if we had selected version 1.0.0 to deploy we would execute the following.
+
 If your cluster is configured to use [RBAC][3] you will need to submit the following:
 
 ```
-kubectl apply -f https://raw.githubusercontent.com/oracle/oci-volume-provisioner/master/manifests/oci-volume-provisioner-rbac.yaml
+kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/1.0.0/oci-volume-provisioner-rbac.yaml
 ```
 
 Deploy the volume provisioner into your Kubernetes cluster:
 
 ```
-kubectl apply -f https://raw.githubusercontent.com/oracle/oci-volume-provisioner/master/manifests/oci-volume-provisioner.yaml
+kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/1.0.0/oci-volume-provisioner.yaml
+```
+
+Deploy the volume provisioner storage classes
+
+```
+kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/1.0.0/storage-class.yaml
+kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/1.0.0/storage-class-ext3.yaml
+
 ```
 
 Lastly, verify that the oci-volume-provisioner is running in your cluster. By default it runs in the 'kube-system' namespace.
@@ -64,17 +79,11 @@ kubectl -n kube-system get po | grep oci-volume-provisioner
 
 In this example we'll use the OCI Volume Provisioner to create persistent storage for an NGINX Pod.
 
-### Create a Storage Class
-
-```
-kubectl apply -f https://raw.githubusercontent.com/oracle/oci-volume-provisioner/master/manifests/storage-class.yaml
-```
-
 ### Create a PVC
 
 Next we'll create a [PersistentVolumeClaim][4] (PVC).
 
-The storageClassName must match the StorageClass you created previously.
+The storageClassName must match the "oci" storage class supported by the provisioner.
 
 The matchLabels should contain the (shortened) Availability Domain (AD) you want to provision a volume in.
 For example in Phoenix that would be `PHX-AD-1` and in Ashburn `US-ASHBURN-AD-1`.
