@@ -47,25 +47,23 @@ kubectl create secret generic oci-volume-provisioner \
 
 First select the release to deploy. These are listed here. (https://github.com/oracle/oci-volume-provisioner/releases/latest)
 
-if we had selected version 1.0.0 to deploy we would execute the following.
-
-If your cluster is configured to use [RBAC][3] you will need to submit the following:
+If your cluster is configured to use [RBAC][3] you will need to submit the following replacing the <VERSION> placeholder with the selected version:
 
 ```
-kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/1.0.0/oci-volume-provisioner-rbac.yaml
+kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/<VERSION>/oci-volume-provisioner-rbac.yaml
 ```
 
 Deploy the volume provisioner into your Kubernetes cluster:
 
 ```
-kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/1.0.0/oci-volume-provisioner.yaml
+kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/<VERSION>/oci-volume-provisioner.yaml
 ```
 
 Deploy the volume provisioner storage classes
 
 ```
-kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/1.0.0/storage-class.yaml
-kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/1.0.0/storage-class-ext3.yaml
+kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/<VERSION>/storage-class.yaml
+kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/<VERSION>/storage-class-ext3.yaml
 
 ```
 
