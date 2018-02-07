@@ -34,7 +34,7 @@ test:
 
 .PHONY: build
 build: ${DIR}/${BIN}
-	sed 's#@VERSION@#${VERSION}#g' \
+	sed 's#@VERSION@#${VERSION}#g; s#@IMAGE@#${IMAGE}#g' \
 	 manifests/oci-volume-provisioner.yaml > $(DIR)/oci-volume-provisioner.yaml
 	cp manifests/storage-class-ext3.yaml $(DIR)/storage-class-ext3.yaml
 	cp manifests/storage-class.yaml $(DIR)/storage-class.yaml
