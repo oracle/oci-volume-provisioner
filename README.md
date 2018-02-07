@@ -59,7 +59,7 @@ Deploy the volume provisioner into your Kubernetes cluster:
 kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/<VERSION>/oci-volume-provisioner.yaml
 ```
 
-Deploy the volume provisioner storage classes
+Deploy the volume provisioner storage classes:
 
 ```
 kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/<VERSION>/storage-class.yaml
