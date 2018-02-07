@@ -97,7 +97,7 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1
 	return &OCIProvisioner{
 		client:           *client,
 		ctx:              context.Background(),
-		timeout:          300,
+		timeout:          3 * time.Minute,
 		identity:         nodeName,
 		tenancyID:        cfg.Auth.TenancyOCID,
 		compartmentID:    cfg.Auth.CompartmentOCID,
