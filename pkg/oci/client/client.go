@@ -47,9 +47,7 @@ func FromConfig(cfg *Config) (*ProvisionerClient, error) {
 
 func newConfigurationProvider(cfg *Config) (common.ConfigurationProvider, error) {
 	var conf common.ConfigurationProvider
-	if conf == nil {
-		conf = common.DefaultConfigProvider()
-	} else {
+	if cfg != nil {
 		err := cfg.Validate()
 		if err != nil {
 			return nil, errors.Wrap(err, "invalid client config")
@@ -61,6 +59,8 @@ func newConfigurationProvider(cfg *Config) (common.ConfigurationProvider, error)
 			cfg.Auth.Fingerprint,
 			cfg.Auth.PrivateKey,
 			common.String(cfg.Auth.PrivateKeyPassphrase))
+	} else {
+		conf = common.DefaultConfigProvider()
 	}
 	return conf, nil
 }

@@ -335,6 +335,13 @@ def _main():
 
     if not args['no_setup']:
         _log("Setting up the volume provisioner", as_banner=True)
+        if "DOCKER_REGISTRY_USERNAME" in os.environ and "DOCKER_REGISTRY_PASSWORD" in os.environ:
+            _kubectl("-n kube-system create secret docker-registry wcr-docker-pull-secret " + \
+                     "--docker-server=\"wcr.io\" " + \
+                     "--docker-username=\"" + os.environ['DOCKER_REGISTRY_USERNAME'] +"\" " + \
+                     "--docker-password=\"" + os.environ['DOCKER_REGISTRY_PASSWORD'] +"\" " + \
+                     "--docker-email=\"k8s@oracle.com\"",
+                     exit_on_error=False)
         _kubectl("-n kube-system create secret generic oci-volume-provisioner " + \
                  "--from-file=config.yaml=" + _get_oci_config_file(),
                  exit_on_error=False)
