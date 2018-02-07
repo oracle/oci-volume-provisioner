@@ -73,6 +73,16 @@ Lastly, verify that the oci-volume-provisioner is running in your cluster. By de
 kubectl -n kube-system get po | grep oci-volume-provisioner
 ```
 
+### Below is an example of deploying version '1.0.0'
+
+```
+kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/1.0.0/oci-volume-provisioner.yaml
+kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/1.0.0/oci-volume-provisioner.yaml
+kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/1.0.0/storage-class.yaml
+kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/1.0.0/storage-class-ext3.yaml
+
+```
+
 ## Tutorial
 
 In this example we'll use the OCI Volume Provisioner to create persistent storage for an NGINX Pod.
