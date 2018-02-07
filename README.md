@@ -47,7 +47,7 @@ kubectl create secret generic oci-volume-provisioner \
 
 First select the release to deploy. These are listed here. (https://github.com/oracle/oci-volume-provisioner/releases/latest)
 
-If your cluster is configured to use [RBAC][3] you will need to submit the following replacing the <VERSION> placeholder with the selected version:
+If your cluster is configured to use [RBAC][3] you will need to submit the following, replacing the <VERSION> placeholder with the selected version:
 
 ```
 kubectl apply -f https://github.com/oracle/oci-volume-provisioner/releases/download/<VERSION>/oci-volume-provisioner-rbac.yaml
