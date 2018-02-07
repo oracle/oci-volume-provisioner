@@ -1,5 +1,8 @@
 GO_SRC := $(shell find . -name "*.go")
-VERSION := $(shell git describe --always --dirty)
+BUILD := $(shell git describe --always --dirty)
+# Allow overriding for release versions
+# Else just equal the build (git hash)
+VERSION ?= ${BUILD}
 DIR := dist
 BIN := oci-volume-provisioner
 REGISTRY ?= wcr.io
@@ -11,7 +14,7 @@ GOARCH ?= amd64
 SRC_DIRS := cmd pkg # directories which hold app source (not vendored)
 
 .PHONY: all
-all: gofmt golint govet test build
+all: gofmt golint govet test build 
 
 .PHONY: gofmt
 gofmt:
@@ -32,7 +35,11 @@ test:
 .PHONY: build
 build: ${DIR}/${BIN}
 	@sed 's#${IMAGE}:[0-9]\+.[0-9]\+.[0-9]\+#${IMAGE}:${VERSION}#g' \
-	    manifests/oci-volume-provisioner.yaml > $(DIR)/oci-volume-provisioner.yaml
+	 manifests/oci-volume-provisioner.yaml > $(DIR)/oci-volume-provisioner.yaml
+	cp manifests/storage-class-ext3.yaml $(DIR)/storage-class-ext3.yaml
+	cp manifests/storage-class.yaml $(DIR)/storage-class.yaml
+	cp manifests/oci-volume-provisioner-rbac.yaml $(DIR)/oci-volume-provisioner-rbac.yaml
+
 
 ${DIR}/${BIN}: ${GO_SRC}
 	mkdir -p ${DIR}
@@ -50,3 +57,7 @@ push: image
 .PHONY: clean
 clean:
 	rm -rf ${DIR}
+
+.PHONY: version
+version:
+	@echo ${VERSION}

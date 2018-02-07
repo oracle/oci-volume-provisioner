@@ -291,11 +291,11 @@ def _handle_args():
 def _cleanup(exit_on_error=False, display_errors=True):
     _kubectl("delete -f ../../dist/oci-volume-provisioner.yaml",
              exit_on_error, display_errors)
-    _kubectl("delete -f ../../manifests/oci-volume-provisioner-rbac.yaml",
+    _kubectl("delete -f ../../dist/oci-volume-provisioner-rbac.yaml",
              exit_on_error, display_errors)
-    _kubectl("delete -f ../../manifests/storage-class.yaml",
+    _kubectl("delete -f ../../dist/storage-class.yaml",
              exit_on_error, display_errors)
-    _kubectl("delete -f ../../manifests/storage-class-ext3.yaml",
+    _kubectl("delete -f ../../dist/storage-class-ext3.yaml",
              exit_on_error, display_errors)
     _kubectl("-n kube-system delete secret oci-volume-provisioner",
              exit_on_error, display_errors)
@@ -350,9 +350,9 @@ def _main():
         _kubectl("-n kube-system create secret generic oci-volume-provisioner " + \
                  "--from-file=config.yaml=" + _get_oci_config_file(),
                  exit_on_error=False)
-        _kubectl("create -f ../../manifests/storage-class.yaml", exit_on_error=False)
-        _kubectl("create -f ../../manifests/storage-class-ext3.yaml", exit_on_error=False)
-        _kubectl("create -f ../../manifests/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
+        _kubectl("create -f ../../dist/storage-class.yaml", exit_on_error=False)
+        _kubectl("create -f ../../dist/storage-class-ext3.yaml", exit_on_error=False)
+        _kubectl("create -f ../../dist/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
         _kubectl("create -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
 
         pod_name, _, _ = _wait_for_pod_status("Running")
