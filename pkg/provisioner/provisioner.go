@@ -228,7 +228,7 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, availabilityDomain.Name, compartmentOCID)
 
 	// TODO: Consider OpcRetryToken
-	details := newCreateVolumeDetails(availabilityDomainName, compartmentOCID, os.Getenv(volumePrefixEnvVarName), options.PVC.Name, volSizeMB)
+	details := newCreateVolumeDetails(*availabilityDomain.Name, compartmentOCID, os.Getenv(volumePrefixEnvVarName), options.PVC.Name, volSizeMB)
 	request := core.CreateVolumeRequest{CreateVolumeDetails: details}
 	ctx, cancel := context.WithTimeout(p.ctx, p.timeout)
 	defer cancel()
@@ -284,12 +284,12 @@ func (p *OCIProvisioner) Delete(volume *v1.PersistentVolume) error {
 		return &controller.IgnoredError{Reason: "identity annotation on PV does not match ours"}
 	}
 
-	_, ok = volume.Annotations[ociVolumeID]
+	volID, ok := volume.Annotations[ociVolumeID]
 	if !ok {
 		return errors.New("volumeid annotation not found on PV")
 	}
 
-	request := core.DeleteVolumeRequest{VolumeId: common.String(ociVolumeID)}
+	request := core.DeleteVolumeRequest{VolumeId: common.String(volID)}
 	ctx, cancel := context.WithTimeout(p.ctx, p.timeout)
 	defer cancel()
 	return p.client.BlockStorage.DeleteVolume(ctx, request)
