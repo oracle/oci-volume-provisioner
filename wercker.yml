@@ -34,6 +34,7 @@ copy:
       code: |
         cp -a dist ${WERCKER_OUTPUT_DIR}
         cp -a test ${WERCKER_OUTPUT_DIR}
+        cp -a manifests ${WERCKER_OUTPUT_DIR}
 
 push:
   box:
