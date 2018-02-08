@@ -31,7 +31,7 @@ type AuthConfig struct {
 	PrivateKey           string `yaml:"key"`
 	Fingerprint          string `yaml:"fingerprint"`
 	Region               string `yaml:"region"`
-	PrivateKeyPassphrase string `yaml:"key_passphase"`
+	PrivateKeyPassphrase string `yaml:"key_passphrase"`
 }
 
 // Config holds the OCI cloud-provider config passed to Kubernetes compontents.
