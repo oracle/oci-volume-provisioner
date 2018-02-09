@@ -35,6 +35,10 @@ type InstanceConsoleConnection struct {
 
 	// The current state of the console connection.
 	LifecycleState InstanceConsoleConnectionLifecycleStateEnum `mandatory:"false" json:"lifecycleState"`
+
+	// The SSH connection string for the SSH tunnel used to
+	// connect to the console connection over VNC.
+	VncConnectionString *string `mandatory:"false" json:"vncConnectionString"`
 }
 
 func (m InstanceConsoleConnection) String() string {

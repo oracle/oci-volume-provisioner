@@ -23,6 +23,7 @@ import (
 
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/core"
+	"github.com/oracle/oci-go-sdk/ffsw"
 	"github.com/oracle/oci-go-sdk/identity"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 )
@@ -32,6 +33,7 @@ type provisionerClient struct {
 	cfg          *Config
 	blockStorage *core.BlockstorageClient
 	identity     *identity.IdentityClient
+	ffswClient   *ffsw.FileStorageClient
 	context      context.Context
 	timeout      time.Duration
 	metadata     *instancemeta.InstanceMetadata
@@ -41,6 +43,7 @@ type provisionerClient struct {
 type ProvisionerClient interface {
 	BlockStorage() *core.BlockstorageClient
 	Identity() *identity.IdentityClient
+	FileStorage() *ffsw.FileStorageClient
 	Context() context.Context
 	Timeout() time.Duration
 	CompartmentOCID() string
@@ -53,6 +56,10 @@ func (p *provisionerClient) BlockStorage() *core.BlockstorageClient {
 
 func (p *provisionerClient) Identity() *identity.IdentityClient {
 	return p.identity
+}
+
+func (p *provisionerClient) FileStorage() *ffsw.FileStorageClient {
+	return p.ffswClient
 }
 
 func (p *provisionerClient) Context() context.Context {
@@ -83,11 +90,18 @@ func FromConfig(cfg *Config) (ProvisionerClient, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	blockStorage, err := core.NewBlockstorageClientWithConfigurationProvider(config)
 	if err != nil {
 		return nil, err
 	}
+
 	identity, err := identity.NewIdentityClientWithConfigurationProvider(config)
+	if err != nil {
+		return nil, err
+	}
+
+	ffsw, err := ffsw.NewFileStorageClientWithConfigurationProvider(config)
 	if err != nil {
 		return nil, err
 	}
@@ -102,6 +116,7 @@ func FromConfig(cfg *Config) (ProvisionerClient, error) {
 		cfg:          cfg,
 		blockStorage: &blockStorage,
 		identity:     &identity,
+		ffswClient:   &ffsw,
 		timeout:      3 * time.Minute,
 		context:      context.Background(),
 		metadata:     metadata,

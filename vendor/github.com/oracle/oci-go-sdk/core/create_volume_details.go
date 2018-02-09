@@ -10,11 +10,10 @@ package core
 
 import (
 	"encoding/json"
-
 	"github.com/oracle/oci-go-sdk/common"
 )
 
-// CrmakeateVolumeDetails The representation of CreateVolumeDetails
+// CreateVolumeDetails The representation of CreateVolumeDetails
 type CreateVolumeDetails struct {
 
 	// The Availability Domain of the volume.

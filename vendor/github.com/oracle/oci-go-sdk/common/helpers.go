@@ -89,7 +89,6 @@ func now() *SDKTime {
 }
 
 var timeType = reflect.TypeOf(SDKTime{})
-var timeTypePtr = reflect.TypeOf(&SDKTime{})
 
 const sdkTimeFormat = time.RFC3339
 
@@ -164,4 +163,10 @@ func PrivateKeyFromBytes(pemData []byte, password *string) (key *rsa.PrivateKey,
 		return
 	}
 	return
+}
+
+// ShouldContinueIssuingRequests returns true if we should continue retrying a request, based on the current attempt
+// number and the maximum number of attempts specified, or false otherwise.
+func ShouldContinueIssuingRequests(current, maximum uint) bool {
+	return maximum == UnlimitedNumAttemptsValue || current <= maximum
 }

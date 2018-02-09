@@ -20,21 +20,6 @@ import (
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 )
 
-func TestNewCreateVolumeDetails(t *testing.T) {
-	volume := newCreateVolumeDetails("test-ad", "test-ocid", "", "myvolume", 100)
-	if *volume.DisplayName != "myvolume" {
-		t.Fatalf("Incorrect display name. Expecting %s but got %s", "myvolume", *volume.DisplayName)
-	}
-}
-
-func TestNewCreateVolumeDetailsForVolumeCustomDisplayName(t *testing.T) {
-	volume := newCreateVolumeDetails("test-ad", "test-ocid", "XXX", "myvolume", 100)
-
-	if *volume.DisplayName != "XXXmyvolume" {
-		t.Fatalf("Incorrect display name. Expecting %s but got %s", "XXXmyvolume", *volume.DisplayName)
-	}
-}
-
 func TestResolveFSTypeWhenNotConfigured(t *testing.T) {
 	options := controller.VolumeOptions{Parameters: make(map[string]string)}
 	// test default fsType of 'ext4' is always returned.
