@@ -89,6 +89,10 @@ func (filesystem *filesystemProvisioner) Provision(options controller.VolumeOpti
 		Spec: v1.PersistentVolumeSpec{
 			PersistentVolumeReclaimPolicy: options.PersistentVolumeReclaimPolicy,
 			AccessModes:                   options.PVC.Spec.AccessModes,
+			// FIXME?????
+			Capacity: v1.ResourceList{
+				v1.ResourceName(v1.ResourceStorage): options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)],
+			},
 			PersistentVolumeSource: v1.PersistentVolumeSource{
 				FlexVolume: &v1.FlexVolumeSource{
 					Driver: "oracle/oci",
