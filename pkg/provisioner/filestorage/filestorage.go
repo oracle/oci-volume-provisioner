@@ -112,9 +112,9 @@ func (filesystem *filesystemProvisioner) Delete(volume *v1.PersistentVolume) err
 	glog.Infof("Deleting volume %v with filesystemID %v", volume, filesystemID)
 	ctx, cancel := context.WithTimeout(filesystem.client.Context(), filesystem.client.Timeout())
 	defer cancel()
-	return filesystem.client.FileStorage().DeleteFileSystem(ctx,
+	_, err := filesystem.client.FileStorage().DeleteFileSystem(ctx,
 		ffsw.DeleteFileSystemRequest{
 			FileSystemId: &filesystemID,
 		})
-
+	return err
 }

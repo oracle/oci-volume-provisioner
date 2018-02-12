@@ -142,5 +142,6 @@ func (block *blockProvisioner) Delete(volume *v1.PersistentVolume) error {
 	request := core.DeleteVolumeRequest{VolumeId: common.String(volID)}
 	ctx, cancel := context.WithTimeout(block.client.Context(), block.client.Timeout())
 	defer cancel()
-	return block.client.BlockStorage().DeleteVolume(ctx, request)
+	_, err := block.client.BlockStorage().DeleteVolume(ctx, request)
+	return err
 }
