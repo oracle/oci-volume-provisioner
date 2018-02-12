@@ -23,7 +23,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
-	"github.com/oracle/oci-volume-provisioner/pkg/provisioner"
+	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/core"
 	"github.com/oracle/oci-volume-provisioner/pkg/signals"
 
 	"k8s.io/client-go/informers"
@@ -89,7 +89,7 @@ func main() {
 
 	// Create the provisioner: it implements the Provisioner interface expected by
 	// the controller
-	ociProvisioner := provisioner.NewOCIProvisioner(clientset, sharedInformerFactory.Core().V1().Nodes(), nodeName)
+	ociProvisioner := core.NewOCIProvisioner(clientset, sharedInformerFactory.Core().V1().Nodes(), nodeName)
 
 	// Start the provision controller which will dynamically provision oci
 	// PVs

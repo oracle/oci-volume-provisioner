@@ -15,20 +15,70 @@
 package client
 
 import (
+	"context"
+	"time"
+
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
+
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-go-sdk/identity"
-	"github.com/pkg/errors"
+	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 )
 
 // ProvisionerClient wraps the oci sub-clients required for volume provisioning.
-type ProvisionerClient struct {
-	BlockStorage *core.BlockstorageClient
-	Identity     *identity.IdentityClient
+type provisionerClient struct {
+	cfg          *Config
+	blockStorage *core.BlockstorageClient
+	identity     *identity.IdentityClient
+	context      context.Context
+	timeout      time.Duration
+	metadata     *instancemeta.InstanceMetadata
+}
+
+// ProvisionerClient is passed to all sub clients to provision a volume
+type ProvisionerClient interface {
+	BlockStorage() *core.BlockstorageClient
+	Identity() *identity.IdentityClient
+	Context() context.Context
+	Timeout() time.Duration
+	CompartmentOCID() string
+	TenancyOCID() string
+}
+
+func (p *provisionerClient) BlockStorage() *core.BlockstorageClient {
+	return p.blockStorage
+}
+
+func (p *provisionerClient) Identity() *identity.IdentityClient {
+	return p.identity
+}
+
+func (p *provisionerClient) Context() context.Context {
+	return p.context
+}
+
+func (p *provisionerClient) Timeout() time.Duration {
+	return p.timeout
+}
+
+func (p *provisionerClient) CompartmentOCID() (compartmentOCID string) {
+	if p.cfg.Auth.CompartmentOCID == "" {
+		glog.Infof("'CompartmentID' not given. Using compartment OCID %s from instance metadata", p.metadata.CompartmentOCID)
+		compartmentOCID = p.metadata.CompartmentOCID
+	} else {
+		compartmentOCID = p.cfg.Auth.CompartmentOCID
+	}
+	return
+}
+
+func (p *provisionerClient) TenancyOCID() string {
+	return p.cfg.Auth.TenancyOCID
 }
 
 // FromConfig creates an oci client from the given configuration.
-func FromConfig(cfg *Config) (*ProvisionerClient, error) {
+func FromConfig(cfg *Config) (ProvisionerClient, error) {
 	config, err := newConfigurationProvider(cfg)
 	if err != nil {
 		return nil, err
@@ -41,8 +91,21 @@ func FromConfig(cfg *Config) (*ProvisionerClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	client := ProvisionerClient{&blockStorage, &identity}
-	return &client, nil
+
+	metadata, err := instancemeta.New().Get()
+	if err != nil {
+		glog.Fatalf("Unable to retrieve instance metadata: %v", err)
+		return nil, err
+	}
+
+	return &provisionerClient{
+		cfg:          cfg,
+		blockStorage: &blockStorage,
+		identity:     &identity,
+		timeout:      3 * time.Minute,
+		context:      context.Background(),
+		metadata:     metadata,
+	}, nil
 }
 
 func newConfigurationProvider(cfg *Config) (common.ConfigurationProvider, error) {
