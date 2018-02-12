@@ -38,7 +38,7 @@ build: ${DIR}/${BIN}
 	 manifests/oci-volume-provisioner.yaml > $(DIR)/oci-volume-provisioner.yaml
 	cp manifests/storage-class.yaml $(DIR)/storage-class.yaml
 	cp manifests/storage-class-ext3.yaml $(DIR)/storage-class-ext3.yaml
-	cp manifests/storage-class-ext3.yaml $(DIR)/storage-class-ffsw.yaml
+	cp manifests/storage-class-ffsw.yaml $(DIR)/storage-class-ffsw.yaml
 	cp manifests/oci-volume-provisioner-rbac.yaml $(DIR)/oci-volume-provisioner-rbac.yaml
 
 
