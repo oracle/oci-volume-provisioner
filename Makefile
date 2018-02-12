@@ -1,8 +1,13 @@
 GO_SRC := $(shell find . -name "*.go")
-BUILD := $(shell git describe --always --dirty)
 # Allow overriding for release versions
 # Else just equal the build (git hash)
-VERSION ?= ${BUILD}
+BUILD := $(shell git describe --tags --dirty --always)
+ifeq ($(DEV_BUILD), true)
+	# If DEV_BUILD is set, use the dev format.
+	VERSION ?= ${BUILD}-${USER}-dev
+else
+	VERSION ?= ${BUILD}
+endif
 DIR := dist
 BIN := oci-volume-provisioner
 REGISTRY ?= wcr.io
