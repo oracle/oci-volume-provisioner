@@ -9,19 +9,26 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// InstanceCredentials The credentials for a particular instance.
+
+    
+ // InstanceCredentials The credentials for a particular instance.
 type InstanceCredentials struct {
-
-	// The password for the username.
-	Password *string `mandatory:"true" json:"password"`
-
-	// The username.
-	Username *string `mandatory:"true" json:"username"`
+    
+ // The password for the username.
+    Password *string `mandatory:"true" json:"password"`
+    
+ // The username.
+    Username *string `mandatory:"true" json:"username"`
 }
 
 func (m InstanceCredentials) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

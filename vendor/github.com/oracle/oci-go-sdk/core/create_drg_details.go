@@ -9,19 +9,26 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// CreateDrgDetails The representation of CreateDrgDetails
+
+    
+ // CreateDrgDetails The representation of CreateDrgDetails
 type CreateDrgDetails struct {
-
-	// The OCID of the compartment to contain the DRG.
-	CompartmentId *string `mandatory:"true" json:"compartmentId"`
-
-	// A user-friendly name. Does not have to be unique, and it's changeable. Avoid entering confidential information.
-	DisplayName *string `mandatory:"false" json:"displayName"`
+    
+ // The OCID of the compartment to contain the DRG.
+    CompartmentId *string `mandatory:"true" json:"compartmentId"`
+    
+ // A user-friendly name. Does not have to be unique, and it's changeable. Avoid entering confidential information.
+    DisplayName *string `mandatory:"false" json:"displayName"`
 }
 
 func (m CreateDrgDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

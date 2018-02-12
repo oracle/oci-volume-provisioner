@@ -9,20 +9,27 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// CreateInstanceConsoleConnectionDetails The details for creating a instance console connection.
-// The instance console connection is created in the same compartment as the instance.
+
+    
+ // CreateInstanceConsoleConnectionDetails The details for creating a instance console connection.
+ // The instance console connection is created in the same compartment as the instance.
 type CreateInstanceConsoleConnectionDetails struct {
-
-	// The OCID of the instance to create the console connection to.
-	InstanceId *string `mandatory:"true" json:"instanceId"`
-
-	// The SSH public key used to authenticate the console connection.
-	PublicKey *string `mandatory:"true" json:"publicKey"`
+    
+ // The OCID of the instance to create the console connection to.
+    InstanceId *string `mandatory:"true" json:"instanceId"`
+    
+ // The SSH public key used to authenticate the console connection.
+    PublicKey *string `mandatory:"true" json:"publicKey"`
 }
 
 func (m CreateInstanceConsoleConnectionDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

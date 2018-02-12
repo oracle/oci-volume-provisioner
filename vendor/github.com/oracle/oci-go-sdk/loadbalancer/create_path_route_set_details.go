@@ -9,19 +9,26 @@
 package loadbalancer
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// CreatePathRouteSetDetails The representation of CreatePathRouteSetDetails
+
+    
+ // CreatePathRouteSetDetails The representation of CreatePathRouteSetDetails
 type CreatePathRouteSetDetails struct {
-
-	// A unique name for this set of path routes.
-	// Example: `path-route-set-001`
-	Name *string `mandatory:"true" json:"name"`
-
-	PathRoutes []PathRoute `mandatory:"true" json:"pathRoutes"`
+    
+ // A unique name for this set of path routes.
+ // Example: `path-route-set-001`
+    Name *string `mandatory:"true" json:"name"`
+    
+    PathRoutes []PathRoute `mandatory:"true" json:"pathRoutes"`
 }
 
 func (m CreatePathRouteSetDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

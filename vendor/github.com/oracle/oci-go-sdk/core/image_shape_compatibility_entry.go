@@ -9,19 +9,26 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// ImageShapeCompatibilityEntry An image and shape that are compatible.
+
+    
+ // ImageShapeCompatibilityEntry An image and shape that are compatible.
 type ImageShapeCompatibilityEntry struct {
-
-	// The image OCID.
-	ImageId *string `mandatory:"true" json:"imageId"`
-
-	// The shape name.
-	Shape *string `mandatory:"true" json:"shape"`
+    
+ // The image OCID.
+    ImageId *string `mandatory:"true" json:"imageId"`
+    
+ // The shape name.
+    Shape *string `mandatory:"true" json:"shape"`
 }
 
 func (m ImageShapeCompatibilityEntry) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

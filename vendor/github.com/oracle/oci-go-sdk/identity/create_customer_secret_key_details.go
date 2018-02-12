@@ -9,16 +9,23 @@
 package identity
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// CreateCustomerSecretKeyDetails The representation of CreateCustomerSecretKeyDetails
-type CreateCustomerSecretKeyDetails struct {
 
-	// The name you assign to the secret key during creation. Does not have to be unique, and it's changeable.
-	DisplayName *string `mandatory:"true" json:"displayName"`
+    
+ // CreateCustomerSecretKeyDetails The representation of CreateCustomerSecretKeyDetails
+type CreateCustomerSecretKeyDetails struct {
+    
+ // The name you assign to the secret key during creation. Does not have to be unique, and it's changeable.
+    DisplayName *string `mandatory:"true" json:"displayName"`
 }
 
 func (m CreateCustomerSecretKeyDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

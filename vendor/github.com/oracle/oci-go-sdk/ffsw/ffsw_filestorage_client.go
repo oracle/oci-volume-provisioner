@@ -36,19 +36,22 @@ func NewFileStorageClientWithConfigurationProvider(configProvider common.Configu
     return
 }
 
+// SetRegion overrides the region of this client.
+func (client *FileStorageClient) SetRegion(region string)  {
+    client.Host = fmt.Sprintf(common.DefaultHostURLTemplate, "ffsw", region)
+}
 
-// SetConfigurationProvider sets the configuration provider, returns an error if is not valid
+
+// SetConfigurationProvider sets the configuration provider including the region, returns an error if is not valid
 func (client *FileStorageClient) setConfigurationProvider(configProvider common.ConfigurationProvider) error {
     if ok, err := common.IsConfigurationProviderValid(configProvider); !ok {
         return err
     }
 
-    region, err := configProvider.Region()
-    if err != nil {
-        return err
-    }
+    // Error has been checked already
+    region, _ := configProvider.Region()
     client.config = &configProvider
-    client.Host = fmt.Sprintf(common.DefaultHostURLTemplate, "filestorage", string(region))
+    client.SetRegion(region)
     return nil
 }
 
@@ -61,16 +64,17 @@ func (client *FileStorageClient) ConfigurationProvider() *common.ConfigurationPr
 
 
 
+
  // CreateExport Creates a new export in the specifed export set, path, and
  // file system.
-func(client FileStorageClient) CreateExport(ctx context.Context, request CreateExportRequest, options ...common.RetryPolicyOption) (response CreateExportResponse,  err error) {
+func(client FileStorageClient) CreateExport(ctx context.Context, request CreateExportRequest) (response CreateExportResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodPost, "/exports", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {
@@ -80,6 +84,7 @@ func(client FileStorageClient) CreateExport(ctx context.Context, request CreateE
         err = common.UnmarshalResponse(httpResponse, &response)
     return
 }
+
 
 
 
@@ -105,14 +110,14 @@ func(client FileStorageClient) CreateExport(ctx context.Context, request CreateE
  // find its OCID in the response. You can also retrieve a
  // resource's OCID by using a List API operation on that resource
  // type, or by viewing the resource in the Console.
-func(client FileStorageClient) CreateFileSystem(ctx context.Context, request CreateFileSystemRequest, options ...common.RetryPolicyOption) (response CreateFileSystemResponse,  err error) {
+func(client FileStorageClient) CreateFileSystem(ctx context.Context, request CreateFileSystemRequest) (response CreateFileSystemResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodPost, "/fileSystems", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {
@@ -122,6 +127,7 @@ func(client FileStorageClient) CreateFileSystem(ctx context.Context, request Cre
         err = common.UnmarshalResponse(httpResponse, &response)
     return
 }
+
 
 
 
@@ -150,14 +156,14 @@ func(client FileStorageClient) CreateFileSystem(ctx context.Context, request Cre
  // you can find its OCID in the response. You can also retrieve a
  // resource's OCID by using a List API operation on that resource
  // type, or by viewing the resource in the Console.
-func(client FileStorageClient) CreateMountTarget(ctx context.Context, request CreateMountTargetRequest, options ...common.RetryPolicyOption) (response CreateMountTargetResponse,  err error) {
+func(client FileStorageClient) CreateMountTarget(ctx context.Context, request CreateMountTargetRequest) (response CreateMountTargetResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodPost, "/mountTargets", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {
@@ -170,16 +176,17 @@ func(client FileStorageClient) CreateMountTarget(ctx context.Context, request Cr
 
 
 
+
  // CreateSnapshot Creates a new snapshot of the specified file system. The
  // snapshot will be accessible at `.snapshot/<name>`.
-func(client FileStorageClient) CreateSnapshot(ctx context.Context, request CreateSnapshotRequest, options ...common.RetryPolicyOption) (response CreateSnapshotResponse,  err error) {
+func(client FileStorageClient) CreateSnapshot(ctx context.Context, request CreateSnapshotRequest) (response CreateSnapshotResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodPost, "/snapshots", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {
@@ -192,74 +199,107 @@ func(client FileStorageClient) CreateSnapshot(ctx context.Context, request Creat
 
 
 
+
  // DeleteExport Delete the specified export.
-func(client FileStorageClient) DeleteExport(ctx context.Context, request DeleteExportRequest, options ...common.RetryPolicyOption) ( err error) {
+func(client FileStorageClient) DeleteExport(ctx context.Context, request DeleteExportRequest) (response DeleteExportResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodDelete, "/exports/{exportId}", request)
         if err != nil {
             return
         }
 
 
-    _, err = client.Call(ctx, &httpRequest)
+    httpResponse, err := client.Call(ctx, &httpRequest)
+    defer common.CloseBodyIfValid(httpResponse)
+    response.RawResponse = httpResponse
+    if err != nil {
+        return
+    }
+
+        err = common.UnmarshalResponse(httpResponse, &response)
     return
 }
+
 
 
 
  // DeleteFileSystem Delete the specified file system. The file system must not be
  // referenced by any non-deleted export resources. Deleting a
  // file system also deletes all of its snapshots.
-func(client FileStorageClient) DeleteFileSystem(ctx context.Context, request DeleteFileSystemRequest, options ...common.RetryPolicyOption) ( err error) {
+func(client FileStorageClient) DeleteFileSystem(ctx context.Context, request DeleteFileSystemRequest) (response DeleteFileSystemResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodDelete, "/fileSystems/{fileSystemId}", request)
         if err != nil {
             return
         }
 
 
-    _, err = client.Call(ctx, &httpRequest)
+    httpResponse, err := client.Call(ctx, &httpRequest)
+    defer common.CloseBodyIfValid(httpResponse)
+    response.RawResponse = httpResponse
+    if err != nil {
+        return
+    }
+
+        err = common.UnmarshalResponse(httpResponse, &response)
     return
 }
 
 
 
+
  // DeleteMountTarget Delete the specified mount target. This will also delete the
  // mount target's VNICs.
-func(client FileStorageClient) DeleteMountTarget(ctx context.Context, request DeleteMountTargetRequest, options ...common.RetryPolicyOption) ( err error) {
+func(client FileStorageClient) DeleteMountTarget(ctx context.Context, request DeleteMountTargetRequest) (response DeleteMountTargetResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodDelete, "/mountTargets/{mountTargetId}", request)
         if err != nil {
             return
         }
 
 
-    _, err = client.Call(ctx, &httpRequest)
+    httpResponse, err := client.Call(ctx, &httpRequest)
+    defer common.CloseBodyIfValid(httpResponse)
+    response.RawResponse = httpResponse
+    if err != nil {
+        return
+    }
+
+        err = common.UnmarshalResponse(httpResponse, &response)
     return
 }
 
 
 
+
  // DeleteSnapshot Delete the specified snapshot.
-func(client FileStorageClient) DeleteSnapshot(ctx context.Context, request DeleteSnapshotRequest, options ...common.RetryPolicyOption) ( err error) {
+func(client FileStorageClient) DeleteSnapshot(ctx context.Context, request DeleteSnapshotRequest) (response DeleteSnapshotResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodDelete, "/snapshots/{snapshotId}", request)
         if err != nil {
             return
         }
 
 
-    _, err = client.Call(ctx, &httpRequest)
+    httpResponse, err := client.Call(ctx, &httpRequest)
+    defer common.CloseBodyIfValid(httpResponse)
+    response.RawResponse = httpResponse
+    if err != nil {
+        return
+    }
+
+        err = common.UnmarshalResponse(httpResponse, &response)
     return
 }
 
 
 
+
  // GetExport Gets the specified export's information.
-func(client FileStorageClient) GetExport(ctx context.Context, request GetExportRequest, options ...common.RetryPolicyOption) (response GetExportResponse,  err error) {
+func(client FileStorageClient) GetExport(ctx context.Context, request GetExportRequest) (response GetExportResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodGet, "/exports/{exportId}", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {
@@ -272,15 +312,16 @@ func(client FileStorageClient) GetExport(ctx context.Context, request GetExportR
 
 
 
+
  // GetExportSet Gets the specified export set's information.
-func(client FileStorageClient) GetExportSet(ctx context.Context, request GetExportSetRequest, options ...common.RetryPolicyOption) (response GetExportSetResponse,  err error) {
+func(client FileStorageClient) GetExportSet(ctx context.Context, request GetExportSetRequest) (response GetExportSetResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodGet, "/exportSets/{exportSetId}", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {
@@ -293,15 +334,16 @@ func(client FileStorageClient) GetExportSet(ctx context.Context, request GetExpo
 
 
 
+
  // GetFileSystem Gets the specified file system's information.
-func(client FileStorageClient) GetFileSystem(ctx context.Context, request GetFileSystemRequest, options ...common.RetryPolicyOption) (response GetFileSystemResponse,  err error) {
+func(client FileStorageClient) GetFileSystem(ctx context.Context, request GetFileSystemRequest) (response GetFileSystemResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodGet, "/fileSystems/{fileSystemId}", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {
@@ -314,15 +356,16 @@ func(client FileStorageClient) GetFileSystem(ctx context.Context, request GetFil
 
 
 
+
  // GetMountTarget Gets the specified mount targets's information.
-func(client FileStorageClient) GetMountTarget(ctx context.Context, request GetMountTargetRequest, options ...common.RetryPolicyOption) (response GetMountTargetResponse,  err error) {
+func(client FileStorageClient) GetMountTarget(ctx context.Context, request GetMountTargetRequest) (response GetMountTargetResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodGet, "/mountTargets/{mountTargetId}", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {
@@ -335,15 +378,16 @@ func(client FileStorageClient) GetMountTarget(ctx context.Context, request GetMo
 
 
 
+
  // GetSnapshot Gets the specified snapshot's information.
-func(client FileStorageClient) GetSnapshot(ctx context.Context, request GetSnapshotRequest, options ...common.RetryPolicyOption) (response GetSnapshotResponse,  err error) {
+func(client FileStorageClient) GetSnapshot(ctx context.Context, request GetSnapshotRequest) (response GetSnapshotResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodGet, "/snapshots/{snapshotId}", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {
@@ -356,15 +400,16 @@ func(client FileStorageClient) GetSnapshot(ctx context.Context, request GetSnaps
 
 
 
+
  // ListExportSets List the export set resources in the specified compartment.
-func(client FileStorageClient) ListExportSets(ctx context.Context, request ListExportSetsRequest, options ...common.RetryPolicyOption) (response ListExportSetsResponse,  err error) {
+func(client FileStorageClient) ListExportSets(ctx context.Context, request ListExportSetsRequest) (response ListExportSetsResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodGet, "/exportSets", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {
@@ -377,16 +422,17 @@ func(client FileStorageClient) ListExportSets(ctx context.Context, request ListE
 
 
 
+
  // ListExports List the export resources in the specified compartment. Must
  // also specify an export set and / or a file system.
-func(client FileStorageClient) ListExports(ctx context.Context, request ListExportsRequest, options ...common.RetryPolicyOption) (response ListExportsResponse,  err error) {
+func(client FileStorageClient) ListExports(ctx context.Context, request ListExportsRequest) (response ListExportsResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodGet, "/exports", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {
@@ -399,15 +445,16 @@ func(client FileStorageClient) ListExports(ctx context.Context, request ListExpo
 
 
 
+
  // ListFileSystems List the file system resources in the specified compartment.
-func(client FileStorageClient) ListFileSystems(ctx context.Context, request ListFileSystemsRequest, options ...common.RetryPolicyOption) (response ListFileSystemsResponse,  err error) {
+func(client FileStorageClient) ListFileSystems(ctx context.Context, request ListFileSystemsRequest) (response ListFileSystemsResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodGet, "/fileSystems", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {
@@ -420,15 +467,16 @@ func(client FileStorageClient) ListFileSystems(ctx context.Context, request List
 
 
 
+
  // ListLockOwners List the lock owners in a given file system.
-func(client FileStorageClient) ListLockOwners(ctx context.Context, request ListLockOwnersRequest, options ...common.RetryPolicyOption) (response ListLockOwnersResponse,  err error) {
+func(client FileStorageClient) ListLockOwners(ctx context.Context, request ListLockOwnersRequest) (response ListLockOwnersResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodGet, "/fileSystems/{fileSystemId}/lockOwners", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {
@@ -441,15 +489,16 @@ func(client FileStorageClient) ListLockOwners(ctx context.Context, request ListL
 
 
 
+
  // ListMountTargets List the mount target resources in the specified compartment.
-func(client FileStorageClient) ListMountTargets(ctx context.Context, request ListMountTargetsRequest, options ...common.RetryPolicyOption) (response ListMountTargetsResponse,  err error) {
+func(client FileStorageClient) ListMountTargets(ctx context.Context, request ListMountTargetsRequest) (response ListMountTargetsResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodGet, "/mountTargets", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {
@@ -462,15 +511,16 @@ func(client FileStorageClient) ListMountTargets(ctx context.Context, request Lis
 
 
 
+
  // ListSnapshots List the snapshots of the specified file system.
-func(client FileStorageClient) ListSnapshots(ctx context.Context, request ListSnapshotsRequest, options ...common.RetryPolicyOption) (response ListSnapshotsResponse,  err error) {
+func(client FileStorageClient) ListSnapshots(ctx context.Context, request ListSnapshotsRequest) (response ListSnapshotsResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodGet, "/snapshots", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {
@@ -483,15 +533,16 @@ func(client FileStorageClient) ListSnapshots(ctx context.Context, request ListSn
 
 
 
+
  // UpdateExportSet Update the specified export set's information.
-func(client FileStorageClient) UpdateExportSet(ctx context.Context, request UpdateExportSetRequest, options ...common.RetryPolicyOption) (response UpdateExportSetResponse,  err error) {
+func(client FileStorageClient) UpdateExportSet(ctx context.Context, request UpdateExportSetRequest) (response UpdateExportSetResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodPut, "/exportSets/{exportSetId}", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {
@@ -504,15 +555,16 @@ func(client FileStorageClient) UpdateExportSet(ctx context.Context, request Upda
 
 
 
+
  // UpdateFileSystem Update the specified file system's information.
-func(client FileStorageClient) UpdateFileSystem(ctx context.Context, request UpdateFileSystemRequest, options ...common.RetryPolicyOption) (response UpdateFileSystemResponse,  err error) {
+func(client FileStorageClient) UpdateFileSystem(ctx context.Context, request UpdateFileSystemRequest) (response UpdateFileSystemResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodPut, "/fileSystems/{fileSystemId}", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {
@@ -525,15 +577,16 @@ func(client FileStorageClient) UpdateFileSystem(ctx context.Context, request Upd
 
 
 
+
  // UpdateMountTarget Update the specified mount targets's information.
-func(client FileStorageClient) UpdateMountTarget(ctx context.Context, request UpdateMountTargetRequest, options ...common.RetryPolicyOption) (response UpdateMountTargetResponse,  err error) {
+func(client FileStorageClient) UpdateMountTarget(ctx context.Context, request UpdateMountTargetRequest) (response UpdateMountTargetResponse,  err error) {
         httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodPut, "/mountTargets/{mountTargetId}", request)
         if err != nil {
             return
         }
 
 
-    httpResponse, err := client.Call(ctx, &httpRequest, options...)
+    httpResponse, err := client.Call(ctx, &httpRequest)
     defer common.CloseBodyIfValid(httpResponse)
     response.RawResponse = httpResponse
     if err != nil {

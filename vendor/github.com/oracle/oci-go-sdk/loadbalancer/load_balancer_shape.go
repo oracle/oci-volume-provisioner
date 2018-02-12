@@ -9,19 +9,26 @@
 package loadbalancer
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// LoadBalancerShape A shape is a template that determines the total pre-provisioned bandwidth (ingress plus egress) for the
-// load balancer.
-// Note that the pre-provisioned maximum capacity applies to aggregated connections, not to a single client
-// attempting to use the full bandwidth.
-type LoadBalancerShape struct {
 
-	// The name of the shape.
-	Name *string `mandatory:"true" json:"name"`
+    
+ // LoadBalancerShape A shape is a template that determines the total pre-provisioned bandwidth (ingress plus egress) for the
+ // load balancer.
+ // Note that the pre-provisioned maximum capacity applies to aggregated connections, not to a single client
+ // attempting to use the full bandwidth.
+type LoadBalancerShape struct {
+    
+ // The name of the shape.
+    Name *string `mandatory:"true" json:"name"`
 }
 
 func (m LoadBalancerShape) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

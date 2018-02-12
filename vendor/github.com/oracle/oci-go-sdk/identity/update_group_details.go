@@ -9,16 +9,23 @@
 package identity
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// UpdateGroupDetails The representation of UpdateGroupDetails
-type UpdateGroupDetails struct {
 
-	// The description you assign to the group. Does not have to be unique, and it's changeable.
-	Description *string `mandatory:"false" json:"description"`
+    
+ // UpdateGroupDetails The representation of UpdateGroupDetails
+type UpdateGroupDetails struct {
+    
+ // The description you assign to the group. Does not have to be unique, and it's changeable.
+    Description *string `mandatory:"false" json:"description"`
 }
 
 func (m UpdateGroupDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

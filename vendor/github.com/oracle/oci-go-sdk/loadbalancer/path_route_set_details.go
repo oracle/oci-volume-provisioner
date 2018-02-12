@@ -9,14 +9,22 @@
 package loadbalancer
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// PathRouteSetDetails The representation of PathRouteSetDetails
+
+    
+ // PathRouteSetDetails The representation of PathRouteSetDetails
 type PathRouteSetDetails struct {
-	PathRoutes []PathRoute `mandatory:"true" json:"pathRoutes"`
+    
+    PathRoutes []PathRoute `mandatory:"true" json:"pathRoutes"`
 }
 
 func (m PathRouteSetDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

@@ -4,38 +4,42 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
-	"net/http"
+    "github.com/oracle/oci-go-sdk/common"
+    "net/http"
 )
 
 // GetConsoleHistoryRequest wrapper for the GetConsoleHistory operation
 type GetConsoleHistoryRequest struct {
-
-	// The OCID of the console history.
-	InstanceConsoleHistoryId *string `mandatory:"true" contributesTo:"path" name:"instanceConsoleHistoryId"`
+        
+ // The OCID of the console history. 
+        InstanceConsoleHistoryId *string `mandatory:"true" contributesTo:"path" name:"instanceConsoleHistoryId"`
 }
 
 func (request GetConsoleHistoryRequest) String() string {
-	return common.PointerString(request)
+    return common.PointerString(request)
 }
 
 // GetConsoleHistoryResponse wrapper for the GetConsoleHistory operation
 type GetConsoleHistoryResponse struct {
 
-	// The underlying http response
-	RawResponse *http.Response
+    // The underlying http response
+    RawResponse *http.Response
+    
+ // The ConsoleHistory instance
+     ConsoleHistory `presentIn:"body"`
 
-	// The ConsoleHistory instance
-	ConsoleHistory `presentIn:"body"`
+    
+ // For optimistic concurrency control. See `if-match`.
+    Etag *string `presentIn:"header" name:"etag"`
+    
+ // Unique Oracle-assigned identifier for the request. If you need to contact Oracle about
+ // a particular request, please provide the request ID.
+    OpcRequestId *string `presentIn:"header" name:"opc-request-id"`
 
-	// For optimistic concurrency control. See `if-match`.
-	Etag *string `presentIn:"header" name:"etag"`
 
-	// Unique Oracle-assigned identifier for the request. If you need to contact Oracle about
-	// a particular request, please provide the request ID.
-	OpcRequestId *string `presentIn:"header" name:"opc-request-id"`
 }
 
 func (response GetConsoleHistoryResponse) String() string {
-	return common.PointerString(response)
+    return common.PointerString(response)
 }
+

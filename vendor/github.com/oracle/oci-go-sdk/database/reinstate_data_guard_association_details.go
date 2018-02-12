@@ -9,16 +9,23 @@
 package database
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// ReinstateDataGuardAssociationDetails The Data Guard association reinstate parameters.
-type ReinstateDataGuardAssociationDetails struct {
 
-	// The DB System administrator password.
-	DatabaseAdminPassword *string `mandatory:"true" json:"databaseAdminPassword"`
+    
+ // ReinstateDataGuardAssociationDetails The Data Guard association reinstate parameters.
+type ReinstateDataGuardAssociationDetails struct {
+    
+ // The DB System administrator password.
+    DatabaseAdminPassword *string `mandatory:"true" json:"databaseAdminPassword"`
 }
 
 func (m ReinstateDataGuardAssociationDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

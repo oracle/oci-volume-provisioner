@@ -9,18 +9,25 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// Shape A compute instance shape that can be used in LaunchInstance.
-// For more information, see [Overview of the Compute Service]({{DOC_SERVER_URL}}/Content/Compute/Concepts/computeoverview.htm).
-type Shape struct {
 
-	// The name of the shape. You can enumerate all available shapes by calling
-	// ListShapes.
-	Shape *string `mandatory:"true" json:"shape"`
+    
+ // Shape A compute instance shape that can be used in LaunchInstance.
+ // For more information, see [Overview of the Compute Service]({{DOC_SERVER_URL}}/Content/Compute/Concepts/computeoverview.htm).
+type Shape struct {
+    
+ // The name of the shape. You can enumerate all available shapes by calling
+ // ListShapes.
+    Shape *string `mandatory:"true" json:"shape"`
 }
 
 func (m Shape) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

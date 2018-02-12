@@ -9,17 +9,24 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// UpdateCrossConnectGroupDetails The representation of UpdateCrossConnectGroupDetails
-type UpdateCrossConnectGroupDetails struct {
 
-	// A user-friendly name. Does not have to be unique, and it's changeable.
-	// Avoid entering confidential information.
-	DisplayName *string `mandatory:"false" json:"displayName"`
+    
+ // UpdateCrossConnectGroupDetails The representation of UpdateCrossConnectGroupDetails
+type UpdateCrossConnectGroupDetails struct {
+    
+ // A user-friendly name. Does not have to be unique, and it's changeable.
+ // Avoid entering confidential information.
+    DisplayName *string `mandatory:"false" json:"displayName"`
 }
 
 func (m UpdateCrossConnectGroupDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

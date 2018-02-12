@@ -9,22 +9,29 @@
 package loadbalancer
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// PathRoute The representation of PathRoute
+
+    
+ // PathRoute The representation of PathRoute
 type PathRoute struct {
-
-	// The name of the associated backend set.
-	BackendSetName *string `mandatory:"true" json:"backendSetName"`
-
-	// The URI path on which to route requests.
-	// Example: `/foo/bar/123`
-	Path *string `mandatory:"true" json:"path"`
-
-	PathMatchType *PathMatchType `mandatory:"true" json:"pathMatchType"`
+    
+ // The name of the associated backend set.
+    BackendSetName *string `mandatory:"true" json:"backendSetName"`
+    
+ // The URI path on which to route requests.
+ // Example: `/foo/bar/123`
+    Path *string `mandatory:"true" json:"path"`
+    
+    PathMatchType *PathMatchType `mandatory:"true" json:"pathMatchType"`
 }
 
 func (m PathRoute) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

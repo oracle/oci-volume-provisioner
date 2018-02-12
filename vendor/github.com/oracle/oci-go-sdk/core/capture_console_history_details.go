@@ -9,19 +9,26 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// CaptureConsoleHistoryDetails The representation of CaptureConsoleHistoryDetails
+
+    
+ // CaptureConsoleHistoryDetails The representation of CaptureConsoleHistoryDetails
 type CaptureConsoleHistoryDetails struct {
-
-	// The OCID of the instance to get the console history from.
-	InstanceId *string `mandatory:"true" json:"instanceId"`
-
-	// A user-friendly name. Does not have to be unique, and it's changeable.
-	DisplayName *string `mandatory:"false" json:"displayName"`
+    
+ // The OCID of the instance to get the console history from.
+    InstanceId *string `mandatory:"true" json:"instanceId"`
+    
+ // A user-friendly name. Does not have to be unique, and it's changeable.
+    DisplayName *string `mandatory:"false" json:"displayName"`
 }
 
 func (m CaptureConsoleHistoryDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

@@ -9,16 +9,23 @@
 package identity
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// CreateApiKeyDetails The representation of CreateApiKeyDetails
-type CreateApiKeyDetails struct {
 
-	// The public key.  Must be an RSA key in PEM format.
-	Key *string `mandatory:"true" json:"key"`
+    
+ // CreateApiKeyDetails The representation of CreateApiKeyDetails
+type CreateApiKeyDetails struct {
+    
+ // The public key.  Must be an RSA key in PEM format.
+    Key *string `mandatory:"true" json:"key"`
 }
 
 func (m CreateApiKeyDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

@@ -5,33 +5,37 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/oracle/oci-go-sdk/common"
-	"github.com/oracle/oci-go-sdk/identity"
-	"github.com/stretchr/testify/assert"
 	"io"
 	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/exec"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/oracle/oci-go-sdk/common"
+	"github.com/oracle/oci-go-sdk/identity"
+	"github.com/stretchr/testify/assert"
 )
 
 const (
-	GoSDK2_Test_Prefix   = "GOSDK2_Test_"
-	ENV_TENANCY_OCID     = "tenancy_ocid"
-	ENV_USER_OCID        = "user_ocid"
-	ENV_COMPARTMENT_OCID = "compartment_ocid"
-	ENV_GROUP_OCID       = "group_ocid"
-	ENV_REGION           = "region"
+	GoSDK2_Test_Prefix      = "GOSDK2_Test_"
+	ENV_TENANCY_OCID        = "tenancy_ocid"
+	ENV_USER_OCID           = "user_ocid"
+	ENV_COMPARTMENT_OCID    = "compartment_ocid"
+	ENV_GROUP_OCID          = "group_ocid"
+	ENV_REGION              = "region"
+	ENV_RUN_EXPENSIVE_TESTS = "gosdk_run_expensive_tests"
 
 	DEF_ROOT_COMPARTMENT_ID = "ocidv1:tenancy:oc1:phx:1460406592660:aaaaaaaab4faofrfkxecohhjuivjq262pu"
 	DEF_USER_ID             = "ocid1.user.oc1..aaaaaaaav6gsclr6pd4yjqengmriylyck55lvon5ujjnhkok5gyxii34lvra"
 	DEF_COMPARTMENT_ID      = "ocid1.compartment.oc1..aaaaaaaa5dvrjzvfn3rub24nczhih3zb3a673b6tmbvpng3j5apobtxshlma"
 	DEF_GROUP_ID            = "ocid1.group.oc1..aaaaaaaayvxomawkk23wkp32cgdufufgqvx62qanmbn6vs3lv65xuc42r5sq"
 	DEF_REGION              = common.RegionPHX
+	DEF_RUN_EXPENSIVE_TESTS = "false"
 )
 
 func getEnvSetting(s string, defaultValue string) string {
@@ -80,15 +84,22 @@ func getRegion() common.Region {
 	region := getEnvSetting(ENV_REGION, "")
 
 	if region != "" {
-
-		r, err := common.StringToRegion(region)
-		if err != nil {
-			panic(err)
-		}
-		return r
+		return common.StringToRegion(region)
 	}
 
 	return DEF_REGION
+}
+
+// if return true, make test command will include all tests (including the expensive ones. i.e. launch database)
+func getRunExpensiveTests() bool {
+	config := getEnvSetting(ENV_RUN_EXPENSIVE_TESTS, DEF_RUN_EXPENSIVE_TESTS)
+	includeExpensiveTests, err := strconv.ParseBool(config)
+
+	if err != nil {
+		return false
+	}
+
+	return includeExpensiveTests
 }
 
 //Panics on error
@@ -240,7 +251,8 @@ func createTestUser(client identity.IdentityClient) (identity.User, error) {
 
 func deleteTestUser(client identity.IdentityClient, userID *string) error {
 	req := identity.DeleteUserRequest{UserId: userID}
-	return client.DeleteUser(context.Background(), req)
+	_, err := client.DeleteUser(context.Background(), req)
+	return err
 }
 
 func validAD() string {
@@ -268,5 +280,25 @@ func createTestGroup(client identity.IdentityClient) (identity.Group, error) {
 
 func deleteTestGroup(client identity.IdentityClient, groupId *string) error {
 	req := identity.DeleteGroupRequest{GroupId: groupId}
-	return client.DeleteGroup(context.Background(), req)
+	_, err := client.DeleteGroup(context.Background(), req)
+	return err
+}
+
+func readTestPubKey() ([]byte, error) {
+	pwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+
+	return ioutil.ReadFile(pwd + "/resources/test_rsa.pub")
+}
+
+func getRandomString(n int) string {
+	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
 }

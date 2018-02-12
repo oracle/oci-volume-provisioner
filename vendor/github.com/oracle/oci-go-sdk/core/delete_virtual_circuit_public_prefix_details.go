@@ -9,16 +9,23 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// DeleteVirtualCircuitPublicPrefixDetails The representation of DeleteVirtualCircuitPublicPrefixDetails
-type DeleteVirtualCircuitPublicPrefixDetails struct {
 
-	// An individual public IP prefix (CIDR) to remove from the public virtual circuit.
-	CidrBlock *string `mandatory:"true" json:"cidrBlock"`
+    
+ // DeleteVirtualCircuitPublicPrefixDetails The representation of DeleteVirtualCircuitPublicPrefixDetails
+type DeleteVirtualCircuitPublicPrefixDetails struct {
+    
+ // An individual public IP prefix (CIDR) to remove from the public virtual circuit.
+    CidrBlock *string `mandatory:"true" json:"cidrBlock"`
 }
 
 func (m DeleteVirtualCircuitPublicPrefixDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

@@ -4,38 +4,42 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
-	"net/http"
+    "github.com/oracle/oci-go-sdk/common"
+    "net/http"
 )
 
 // GetVolumeAttachmentRequest wrapper for the GetVolumeAttachment operation
 type GetVolumeAttachmentRequest struct {
-
-	// The OCID of the volume attachment.
-	VolumeAttachmentId *string `mandatory:"true" contributesTo:"path" name:"volumeAttachmentId"`
+        
+ // The OCID of the volume attachment. 
+        VolumeAttachmentId *string `mandatory:"true" contributesTo:"path" name:"volumeAttachmentId"`
 }
 
 func (request GetVolumeAttachmentRequest) String() string {
-	return common.PointerString(request)
+    return common.PointerString(request)
 }
 
 // GetVolumeAttachmentResponse wrapper for the GetVolumeAttachment operation
 type GetVolumeAttachmentResponse struct {
 
-	// The underlying http response
-	RawResponse *http.Response
+    // The underlying http response
+    RawResponse *http.Response
+    
+ // The VolumeAttachment instance
+     VolumeAttachment `presentIn:"body"`
 
-	// The VolumeAttachment instance
-	VolumeAttachment `presentIn:"body"`
+    
+ // For optimistic concurrency control. See `if-match`.
+    Etag *string `presentIn:"header" name:"etag"`
+    
+ // Unique Oracle-assigned identifier for the request. If you need to contact Oracle about
+ // a particular request, please provide the request ID.
+    OpcRequestId *string `presentIn:"header" name:"opc-request-id"`
 
-	// For optimistic concurrency control. See `if-match`.
-	Etag *string `presentIn:"header" name:"etag"`
 
-	// Unique Oracle-assigned identifier for the request. If you need to contact Oracle about
-	// a particular request, please provide the request ID.
-	OpcRequestId *string `presentIn:"header" name:"opc-request-id"`
 }
 
 func (response GetVolumeAttachmentResponse) String() string {
-	return common.PointerString(response)
+    return common.PointerString(response)
 }
+

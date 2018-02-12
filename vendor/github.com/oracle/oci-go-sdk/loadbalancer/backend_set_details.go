@@ -9,27 +9,35 @@
 package loadbalancer
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// BackendSetDetails The configuration details for a load balancer backend set.
-// For more information on backend set configuration, see
-// [Managing Backend Sets]({{DOC_SERVER_URL}}/Content/Balance/tasks/managingbackendsets.htm).
+
+    
+ // BackendSetDetails The configuration details for a load balancer backend set.
+ // For more information on backend set configuration, see
+ // [Managing Backend Sets]({{DOC_SERVER_URL}}/Content/Balance/tasks/managingbackendsets.htm).
 type BackendSetDetails struct {
-	HealthChecker *HealthCheckerDetails `mandatory:"true" json:"healthChecker"`
-
-	// The load balancer policy for the backend set. To get a list of available policies, use the
-	// ListPolicies operation.
-	// Example: `LEAST_CONNECTIONS`
-	Policy *string `mandatory:"true" json:"policy"`
-
-	Backends []BackendDetails `mandatory:"false" json:"backends"`
-
-	SessionPersistenceConfiguration *SessionPersistenceConfigurationDetails `mandatory:"false" json:"sessionPersistenceConfiguration"`
-
-	SslConfiguration *SslConfigurationDetails `mandatory:"false" json:"sslConfiguration"`
+    
+    HealthChecker *HealthCheckerDetails `mandatory:"true" json:"healthChecker"`
+    
+ // The load balancer policy for the backend set. To get a list of available policies, use the
+ // ListPolicies operation.
+ // Example: `LEAST_CONNECTIONS`
+    Policy *string `mandatory:"true" json:"policy"`
+    
+    Backends []BackendDetails `mandatory:"false" json:"backends"`
+    
+    SessionPersistenceConfiguration *SessionPersistenceConfigurationDetails `mandatory:"false" json:"sessionPersistenceConfiguration"`
+    
+    SslConfiguration *SslConfigurationDetails `mandatory:"false" json:"sslConfiguration"`
 }
 
 func (m BackendSetDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

@@ -9,17 +9,24 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// UpdateVolumeBackupDetails The representation of UpdateVolumeBackupDetails
-type UpdateVolumeBackupDetails struct {
 
-	// A friendly user-specified name for the volume backup.
-	// Avoid entering confidential information.
-	DisplayName *string `mandatory:"false" json:"displayName"`
+    
+ // UpdateVolumeBackupDetails The representation of UpdateVolumeBackupDetails
+type UpdateVolumeBackupDetails struct {
+    
+ // A friendly user-specified name for the volume backup.
+ // Avoid entering confidential information.
+    DisplayName *string `mandatory:"false" json:"displayName"`
 }
 
 func (m UpdateVolumeBackupDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

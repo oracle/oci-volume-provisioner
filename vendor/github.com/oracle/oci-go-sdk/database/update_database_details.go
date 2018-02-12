@@ -9,14 +9,22 @@
 package database
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// UpdateDatabaseDetails The representation of UpdateDatabaseDetails
+
+    
+ // UpdateDatabaseDetails The representation of UpdateDatabaseDetails
 type UpdateDatabaseDetails struct {
-	DbBackupConfig *DbBackupConfig `mandatory:"false" json:"dbBackupConfig"`
+    
+    DbBackupConfig *DbBackupConfig `mandatory:"false" json:"dbBackupConfig"`
 }
 
 func (m UpdateDatabaseDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

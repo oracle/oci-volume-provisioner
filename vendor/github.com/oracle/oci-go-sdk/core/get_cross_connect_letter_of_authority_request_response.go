@@ -4,35 +4,39 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
-	"net/http"
+    "github.com/oracle/oci-go-sdk/common"
+    "net/http"
 )
 
 // GetCrossConnectLetterOfAuthorityRequest wrapper for the GetCrossConnectLetterOfAuthority operation
 type GetCrossConnectLetterOfAuthorityRequest struct {
-
-	// The OCID of the cross-connect.
-	CrossConnectId *string `mandatory:"true" contributesTo:"path" name:"crossConnectId"`
+        
+ // The OCID of the cross-connect. 
+        CrossConnectId *string `mandatory:"true" contributesTo:"path" name:"crossConnectId"`
 }
 
 func (request GetCrossConnectLetterOfAuthorityRequest) String() string {
-	return common.PointerString(request)
+    return common.PointerString(request)
 }
 
 // GetCrossConnectLetterOfAuthorityResponse wrapper for the GetCrossConnectLetterOfAuthority operation
 type GetCrossConnectLetterOfAuthorityResponse struct {
 
-	// The underlying http response
-	RawResponse *http.Response
+    // The underlying http response
+    RawResponse *http.Response
+    
+ // The LetterOfAuthority instance
+     LetterOfAuthority `presentIn:"body"`
 
-	// The LetterOfAuthority instance
-	LetterOfAuthority `presentIn:"body"`
+    
+ // Unique Oracle-assigned identifier for the request. If you need to contact Oracle about
+ // a particular request, please provide the request ID.
+    OpcRequestId *string `presentIn:"header" name:"opc-request-id"`
 
-	// Unique Oracle-assigned identifier for the request. If you need to contact Oracle about
-	// a particular request, please provide the request ID.
-	OpcRequestId *string `presentIn:"header" name:"opc-request-id"`
+
 }
 
 func (response GetCrossConnectLetterOfAuthorityResponse) String() string {
-	return common.PointerString(response)
+    return common.PointerString(response)
 }
+

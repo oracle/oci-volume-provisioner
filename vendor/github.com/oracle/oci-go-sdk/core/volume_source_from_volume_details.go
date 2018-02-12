@@ -9,31 +9,36 @@
 package core
 
 import (
-	"encoding/json"
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
+        "encoding/json"
 )
 
-// VolumeSourceFromVolumeDetails Specifies the source volume.
+        
+ // VolumeSourceFromVolumeDetails Specifies the source volume.
 type VolumeSourceFromVolumeDetails struct {
-
-	// The OCID of the volume.
-	Id *string `mandatory:"true" json:"id"`
+        
+ // The OCID of the volume.
+        Id *string `mandatory:"true" json:"id"`
 }
 
 func (m VolumeSourceFromVolumeDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
 
 // MarshalJSON marshals to json representation
 func (m VolumeSourceFromVolumeDetails) MarshalJSON() (buff []byte, e error) {
-	type MarshalTypeVolumeSourceFromVolumeDetails VolumeSourceFromVolumeDetails
-	s := struct {
-		DiscriminatorParam string `json:"type"`
-		MarshalTypeVolumeSourceFromVolumeDetails
-	}{
-		"volume",
-		(MarshalTypeVolumeSourceFromVolumeDetails)(m),
-	}
+    type MarshalTypeVolumeSourceFromVolumeDetails VolumeSourceFromVolumeDetails
+    s := struct {
+        DiscriminatorParam string `json:"type"`
+        MarshalTypeVolumeSourceFromVolumeDetails
+    }{
+        "volume",
+        (MarshalTypeVolumeSourceFromVolumeDetails)(m),
+    }
 
-	return json.Marshal(&s)
+    return json.Marshal(&s)
 }
+
+
+
+

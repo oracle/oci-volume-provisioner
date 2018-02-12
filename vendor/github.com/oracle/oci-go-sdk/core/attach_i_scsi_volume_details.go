@@ -9,55 +9,57 @@
 package core
 
 import (
-	"encoding/json"
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
+        "encoding/json"
 )
 
-// AttachIScsiVolumeDetails The representation of AttachIScsiVolumeDetails
+        
+ // AttachIScsiVolumeDetails The representation of AttachIScsiVolumeDetails
 type AttachIScsiVolumeDetails struct {
-
-	// The OCID of the instance.
-	InstanceId *string `mandatory:"true" json:"instanceId"`
-
-	// The OCID of the volume.
-	VolumeId *string `mandatory:"true" json:"volumeId"`
-
-	// A user-friendly name. Does not have to be unique, and it cannot be changed. Avoid entering confidential information.
-	DisplayName *string `mandatory:"false" json:"displayName"`
-
-	// Whether to use CHAP authentication for the volume attachment. Defaults to false.
-	UseChap *bool `mandatory:"false" json:"useChap"`
+        
+ // The OCID of the instance.
+        InstanceId *string `mandatory:"true" json:"instanceId"`
+        
+ // The OCID of the volume.
+        VolumeId *string `mandatory:"true" json:"volumeId"`
+    
+ // A user-friendly name. Does not have to be unique, and it cannot be changed. Avoid entering confidential information.
+    DisplayName *string `mandatory:"false" json:"displayName"`
+    
+ // Whether to use CHAP authentication for the volume attachment. Defaults to false.
+    UseChap *bool `mandatory:"false" json:"useChap"`
 }
-
-//GetDisplayName returns DisplayName
-func (m AttachIScsiVolumeDetails) GetDisplayName() *string {
-	return m.DisplayName
-}
-
-//GetInstanceId returns InstanceId
-func (m AttachIScsiVolumeDetails) GetInstanceId() *string {
-	return m.InstanceId
-}
-
-//GetVolumeId returns VolumeId
-func (m AttachIScsiVolumeDetails) GetVolumeId() *string {
-	return m.VolumeId
-}
+        //GetDisplayName returns DisplayName
+        func (m AttachIScsiVolumeDetails) GetDisplayName() *string {
+        return m.DisplayName
+        }
+        //GetInstanceId returns InstanceId
+        func (m AttachIScsiVolumeDetails) GetInstanceId() *string {
+        return m.InstanceId
+        }
+        //GetVolumeId returns VolumeId
+        func (m AttachIScsiVolumeDetails) GetVolumeId() *string {
+        return m.VolumeId
+        }
 
 func (m AttachIScsiVolumeDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
 
 // MarshalJSON marshals to json representation
 func (m AttachIScsiVolumeDetails) MarshalJSON() (buff []byte, e error) {
-	type MarshalTypeAttachIScsiVolumeDetails AttachIScsiVolumeDetails
-	s := struct {
-		DiscriminatorParam string `json:"type"`
-		MarshalTypeAttachIScsiVolumeDetails
-	}{
-		"iscsi",
-		(MarshalTypeAttachIScsiVolumeDetails)(m),
-	}
+    type MarshalTypeAttachIScsiVolumeDetails AttachIScsiVolumeDetails
+    s := struct {
+        DiscriminatorParam string `json:"type"`
+        MarshalTypeAttachIScsiVolumeDetails
+    }{
+        "iscsi",
+        (MarshalTypeAttachIScsiVolumeDetails)(m),
+    }
 
-	return json.Marshal(&s)
+    return json.Marshal(&s)
 }
+
+
+
+

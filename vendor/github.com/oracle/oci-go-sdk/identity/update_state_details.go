@@ -9,16 +9,23 @@
 package identity
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// UpdateStateDetails The representation of UpdateStateDetails
-type UpdateStateDetails struct {
 
-	// Update state to blocked or unblocked. Only "false" is supported (for changing the state to unblocked).
-	Blocked *bool `mandatory:"false" json:"blocked"`
+    
+ // UpdateStateDetails The representation of UpdateStateDetails
+type UpdateStateDetails struct {
+    
+ // Update state to blocked or unblocked. Only "false" is supported (for changing the state to unblocked).
+    Blocked *bool `mandatory:"false" json:"blocked"`
 }
 
 func (m UpdateStateDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

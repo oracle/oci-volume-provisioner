@@ -9,16 +9,23 @@
 package database
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// SwitchoverDataGuardAssociationDetails The Data Guard association switchover parameters.
-type SwitchoverDataGuardAssociationDetails struct {
 
-	// The DB System administrator password.
-	DatabaseAdminPassword *string `mandatory:"true" json:"databaseAdminPassword"`
+    
+ // SwitchoverDataGuardAssociationDetails The Data Guard association switchover parameters.
+type SwitchoverDataGuardAssociationDetails struct {
+    
+ // The DB System administrator password.
+    DatabaseAdminPassword *string `mandatory:"true" json:"databaseAdminPassword"`
 }
 
 func (m SwitchoverDataGuardAssociationDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

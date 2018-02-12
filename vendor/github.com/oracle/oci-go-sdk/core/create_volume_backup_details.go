@@ -9,20 +9,27 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// CreateVolumeBackupDetails The representation of CreateVolumeBackupDetails
+
+    
+ // CreateVolumeBackupDetails The representation of CreateVolumeBackupDetails
 type CreateVolumeBackupDetails struct {
-
-	// The OCID of the volume that needs to be backed up.
-	VolumeId *string `mandatory:"true" json:"volumeId"`
-
-	// A user-friendly name for the volume backup. Does not have to be unique and it's changeable.
-	// Avoid entering confidential information.
-	DisplayName *string `mandatory:"false" json:"displayName"`
+    
+ // The OCID of the volume that needs to be backed up.
+    VolumeId *string `mandatory:"true" json:"volumeId"`
+    
+ // A user-friendly name for the volume backup. Does not have to be unique and it's changeable.
+ // Avoid entering confidential information.
+    DisplayName *string `mandatory:"false" json:"displayName"`
 }
 
 func (m CreateVolumeBackupDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

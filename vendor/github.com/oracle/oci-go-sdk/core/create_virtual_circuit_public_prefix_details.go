@@ -9,17 +9,24 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// CreateVirtualCircuitPublicPrefixDetails The representation of CreateVirtualCircuitPublicPrefixDetails
-type CreateVirtualCircuitPublicPrefixDetails struct {
 
-	// An individual public IP prefix (CIDR) to add to the public virtual circuit.
-	// Must be /24 or less specific.
-	CidrBlock *string `mandatory:"true" json:"cidrBlock"`
+    
+ // CreateVirtualCircuitPublicPrefixDetails The representation of CreateVirtualCircuitPublicPrefixDetails
+type CreateVirtualCircuitPublicPrefixDetails struct {
+    
+ // An individual public IP prefix (CIDR) to add to the public virtual circuit.
+ // Must be /24 or less specific.
+    CidrBlock *string `mandatory:"true" json:"cidrBlock"`
 }
 
 func (m CreateVirtualCircuitPublicPrefixDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

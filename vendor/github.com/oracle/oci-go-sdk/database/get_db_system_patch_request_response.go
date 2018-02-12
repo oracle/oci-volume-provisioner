@@ -4,38 +4,42 @@
 package database
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
-	"net/http"
+    "github.com/oracle/oci-go-sdk/common"
+    "net/http"
 )
 
 // GetDbSystemPatchRequest wrapper for the GetDbSystemPatch operation
 type GetDbSystemPatchRequest struct {
-
-	// The DB System [OCID]({{DOC_SERVER_URL}}/Content/General/Concepts/identifiers.htm).
-	DbSystemId *string `mandatory:"true" contributesTo:"path" name:"dbSystemId"`
-
-	// The OCID of the patch.
-	PatchId *string `mandatory:"true" contributesTo:"path" name:"patchId"`
+        
+ // The DB System [OCID]({{DOC_SERVER_URL}}/Content/General/Concepts/identifiers.htm). 
+        DbSystemId *string `mandatory:"true" contributesTo:"path" name:"dbSystemId"`
+        
+ // The OCID of the patch. 
+        PatchId *string `mandatory:"true" contributesTo:"path" name:"patchId"`
 }
 
 func (request GetDbSystemPatchRequest) String() string {
-	return common.PointerString(request)
+    return common.PointerString(request)
 }
 
 // GetDbSystemPatchResponse wrapper for the GetDbSystemPatch operation
 type GetDbSystemPatchResponse struct {
 
-	// The underlying http response
-	RawResponse *http.Response
+    // The underlying http response
+    RawResponse *http.Response
+    
+ // The Patch instance
+     Patch `presentIn:"body"`
 
-	// The Patch instance
-	Patch `presentIn:"body"`
+    
+ // Unique Oracle-assigned identifier for the request. If you need to contact Oracle about
+ // a particular request, please provide the request ID.
+    OpcRequestId *string `presentIn:"header" name:"opc-request-id"`
 
-	// Unique Oracle-assigned identifier for the request. If you need to contact Oracle about
-	// a particular request, please provide the request ID.
-	OpcRequestId *string `presentIn:"header" name:"opc-request-id"`
+
 }
 
 func (response GetDbSystemPatchResponse) String() string {
-	return common.PointerString(response)
+    return common.PointerString(response)
 }
+

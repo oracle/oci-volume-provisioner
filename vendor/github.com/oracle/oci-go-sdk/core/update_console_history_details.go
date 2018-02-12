@@ -9,16 +9,23 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// UpdateConsoleHistoryDetails The representation of UpdateConsoleHistoryDetails
-type UpdateConsoleHistoryDetails struct {
 
-	// A user-friendly name. Does not have to be unique, and it's changeable.
-	DisplayName *string `mandatory:"false" json:"displayName"`
+    
+ // UpdateConsoleHistoryDetails The representation of UpdateConsoleHistoryDetails
+type UpdateConsoleHistoryDetails struct {
+    
+ // A user-friendly name. Does not have to be unique, and it's changeable.
+    DisplayName *string `mandatory:"false" json:"displayName"`
 }
 
 func (m UpdateConsoleHistoryDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

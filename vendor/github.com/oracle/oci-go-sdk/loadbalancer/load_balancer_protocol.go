@@ -9,16 +9,23 @@
 package loadbalancer
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// LoadBalancerProtocol The protocol that defines the type of traffic accepted by a listener.
-type LoadBalancerProtocol struct {
 
-	// The name of the protocol.
-	Name *string `mandatory:"true" json:"name"`
+    
+ // LoadBalancerProtocol The protocol that defines the type of traffic accepted by a listener.
+type LoadBalancerProtocol struct {
+    
+ // The name of the protocol.
+    Name *string `mandatory:"true" json:"name"`
 }
 
 func (m LoadBalancerProtocol) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+
