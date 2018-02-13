@@ -19,16 +19,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/pkg/api/v1"
-
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/ffsw"
 	"github.com/oracle/oci-go-sdk/identity"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/pkg/api/v1"
+
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/plugin"
 )
@@ -54,12 +53,8 @@ func NewFilesystemProvisioner(client client.ProvisionerClient) plugin.Provisione
 	}
 }
 
-// FIXME.....
-func mapVolumeIDToName(volumeID string) string {
-	return strings.Split(volumeID, ".")[4]
-}
-
-func (filesystem *filesystemProvisioner) Provision(options controller.VolumeOptions,
+func (filesystem *filesystemProvisioner) Provision(
+	options controller.VolumeOptions,
 	availabilityDomain *identity.AvailabilityDomain) (*v1.PersistentVolume, error) {
 
 	ctx, cancel := context.WithTimeout(filesystem.client.Context(), filesystem.client.Timeout())
@@ -72,7 +67,6 @@ func (filesystem *filesystemProvisioner) Provision(options controller.VolumeOpti
 			DisplayName:        common.String(fmt.Sprintf("%s%s", os.Getenv(volumePrefixEnvVarName), options.PVC.Name)),
 		},
 	})
-
 	if err != nil {
 		glog.Errorf("Failed to create a volume:%#v, %s", options, err)
 		return nil, err
@@ -80,7 +74,7 @@ func (filesystem *filesystemProvisioner) Provision(options controller.VolumeOpti
 
 	return &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: mapVolumeIDToName(*response.FileSystem.Id),
+			Name: *response.FileSystem.Id,
 			Annotations: map[string]string{
 				ociVolumeID: *response.FileSystem.Id,
 			},
@@ -95,7 +89,7 @@ func (filesystem *filesystemProvisioner) Provision(options controller.VolumeOpti
 			},
 			PersistentVolumeSource: v1.PersistentVolumeSource{
 				FlexVolume: &v1.FlexVolumeSource{
-					Driver: "oracle/oci",
+					Driver: plugin.OCIProvisionerName,
 					FSType: "NFSv3",
 				},
 			},

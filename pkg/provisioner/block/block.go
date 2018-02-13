@@ -102,12 +102,12 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions,
 		return nil, err
 	}
 
-	volumeName := mapVolumeIDToName(*newVolume.Id)
+	//volumeName := mapVolumeIDToName(*newVolume.Id)
 	filesystemType := resolveFSType(options)
 
 	pv := &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: volumeName,
+			Name: *newVolume.Id,
 			Annotations: map[string]string{
 				ociVolumeID: *newVolume.Id,
 			},
@@ -121,7 +121,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions,
 			},
 			PersistentVolumeSource: v1.PersistentVolumeSource{
 				FlexVolume: &v1.FlexVolumeSource{
-					Driver: "oracle/oci",
+					Driver: plugin.OCIProvisionerName,
 					FSType: filesystemType,
 				},
 			},
