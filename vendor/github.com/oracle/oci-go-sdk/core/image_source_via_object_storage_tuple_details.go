@@ -9,37 +9,42 @@
 package core
 
 import (
-	"encoding/json"
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
+        "encoding/json"
 )
 
-// ImageSourceViaObjectStorageTupleDetails The representation of ImageSourceViaObjectStorageTupleDetails
+        
+ // ImageSourceViaObjectStorageTupleDetails The representation of ImageSourceViaObjectStorageTupleDetails
 type ImageSourceViaObjectStorageTupleDetails struct {
-
-	// The Object Storage bucket for the image.
-	BucketName *string `mandatory:"true" json:"bucketName"`
-
-	// The Object Storage namespace for the image.
-	NamespaceName *string `mandatory:"true" json:"namespaceName"`
-
-	// The Object Storage name for the image.
-	ObjectName *string `mandatory:"true" json:"objectName"`
+        
+ // The Object Storage bucket for the image.
+        BucketName *string `mandatory:"true" json:"bucketName"`
+        
+ // The Object Storage namespace for the image.
+        NamespaceName *string `mandatory:"true" json:"namespaceName"`
+        
+ // The Object Storage name for the image.
+        ObjectName *string `mandatory:"true" json:"objectName"`
 }
 
 func (m ImageSourceViaObjectStorageTupleDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
 
 // MarshalJSON marshals to json representation
 func (m ImageSourceViaObjectStorageTupleDetails) MarshalJSON() (buff []byte, e error) {
-	type MarshalTypeImageSourceViaObjectStorageTupleDetails ImageSourceViaObjectStorageTupleDetails
-	s := struct {
-		DiscriminatorParam string `json:"sourceType"`
-		MarshalTypeImageSourceViaObjectStorageTupleDetails
-	}{
-		"objectStorageTuple",
-		(MarshalTypeImageSourceViaObjectStorageTupleDetails)(m),
-	}
+    type MarshalTypeImageSourceViaObjectStorageTupleDetails ImageSourceViaObjectStorageTupleDetails
+    s := struct {
+        DiscriminatorParam string `json:"sourceType"`
+        MarshalTypeImageSourceViaObjectStorageTupleDetails
+    }{
+        "objectStorageTuple",
+        (MarshalTypeImageSourceViaObjectStorageTupleDetails)(m),
+    }
 
-	return json.Marshal(&s)
+    return json.Marshal(&s)
 }
+
+
+
+

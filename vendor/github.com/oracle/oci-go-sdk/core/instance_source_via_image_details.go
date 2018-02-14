@@ -9,31 +9,36 @@
 package core
 
 import (
-	"encoding/json"
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
+        "encoding/json"
 )
 
-// InstanceSourceViaImageDetails The representation of InstanceSourceViaImageDetails
+        
+ // InstanceSourceViaImageDetails The representation of InstanceSourceViaImageDetails
 type InstanceSourceViaImageDetails struct {
-
-	// The OCID of the image used to boot the instance.
-	ImageId *string `mandatory:"true" json:"imageId"`
+        
+ // The OCID of the image used to boot the instance.
+        ImageId *string `mandatory:"true" json:"imageId"`
 }
 
 func (m InstanceSourceViaImageDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
 
 // MarshalJSON marshals to json representation
 func (m InstanceSourceViaImageDetails) MarshalJSON() (buff []byte, e error) {
-	type MarshalTypeInstanceSourceViaImageDetails InstanceSourceViaImageDetails
-	s := struct {
-		DiscriminatorParam string `json:"sourceType"`
-		MarshalTypeInstanceSourceViaImageDetails
-	}{
-		"image",
-		(MarshalTypeInstanceSourceViaImageDetails)(m),
-	}
+    type MarshalTypeInstanceSourceViaImageDetails InstanceSourceViaImageDetails
+    s := struct {
+        DiscriminatorParam string `json:"sourceType"`
+        MarshalTypeInstanceSourceViaImageDetails
+    }{
+        "image",
+        (MarshalTypeInstanceSourceViaImageDetails)(m),
+    }
 
-	return json.Marshal(&s)
+    return json.Marshal(&s)
 }
+
+
+
+

@@ -9,17 +9,24 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// UpdateCpeDetails The representation of UpdateCpeDetails
-type UpdateCpeDetails struct {
 
-	// A user-friendly name. Does not have to be unique, and it's changeable.
-	// Avoid entering confidential information.
-	DisplayName *string `mandatory:"false" json:"displayName"`
+    
+ // UpdateCpeDetails The representation of UpdateCpeDetails
+type UpdateCpeDetails struct {
+    
+ // A user-friendly name. Does not have to be unique, and it's changeable.
+ // Avoid entering confidential information.
+    DisplayName *string `mandatory:"false" json:"displayName"`
 }
 
 func (m UpdateCpeDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

@@ -9,20 +9,27 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// CrossConnectLocation An individual FastConnect location.
+
+    
+ // CrossConnectLocation An individual FastConnect location.
 type CrossConnectLocation struct {
-
-	// A description of the location.
-	Description *string `mandatory:"true" json:"description"`
-
-	// The name of the location.
-	// Example: `CyrusOne, Chandler, AZ`
-	Name *string `mandatory:"true" json:"name"`
+    
+ // A description of the location.
+    Description *string `mandatory:"true" json:"description"`
+    
+ // The name of the location.
+ // Example: `CyrusOne, Chandler, AZ`
+    Name *string `mandatory:"true" json:"name"`
 }
 
 func (m CrossConnectLocation) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

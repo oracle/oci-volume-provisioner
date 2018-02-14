@@ -9,35 +9,49 @@
 package loadbalancer
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// CreateListenerDetails The configuration details for adding a listener to a backend set.
-// For more information on listener configuration, see
-// [Managing Load Balancer Listeners]({{DOC_SERVER_URL}}/Content/Balance/tasks/managinglisteners.htm).
+
+    
+ // CreateListenerDetails The configuration details for adding a listener to a backend set.
+ // For more information on listener configuration, see
+ // [Managing Load Balancer Listeners]({{DOC_SERVER_URL}}/Content/Balance/tasks/managinglisteners.htm).
 type CreateListenerDetails struct {
-
-	// The name of the associated backend set.
-	DefaultBackendSetName *string `mandatory:"true" json:"defaultBackendSetName"`
-
-	// A friendly name for the listener. It must be unique and it cannot be changed.
-	// Avoid entering confidential information.
-	// Example: `My listener`
-	Name *string `mandatory:"true" json:"name"`
-
-	// The communication port for the listener.
-	// Example: `80`
-	Port *int `mandatory:"true" json:"port"`
-
-	// The protocol on which the listener accepts connection requests.
-	// To get a list of valid protocols, use the ListProtocols
-	// operation.
-	// Example: `HTTP`
-	Protocol *string `mandatory:"true" json:"protocol"`
-
-	SslConfiguration *SslConfigurationDetails `mandatory:"false" json:"sslConfiguration"`
+    
+ // The name of the associated backend set.
+    DefaultBackendSetName *string `mandatory:"true" json:"defaultBackendSetName"`
+    
+ // A friendly name for the listener. It must be unique and it cannot be changed.
+ // Avoid entering confidential information.
+ // Example: `My listener`
+    Name *string `mandatory:"true" json:"name"`
+    
+ // The communication port for the listener.
+ // Example: `80`
+    Port *int `mandatory:"true" json:"port"`
+    
+ // The protocol on which the listener accepts connection requests.
+ // To get a list of valid protocols, use the ListProtocols
+ // operation.
+ // Example: `HTTP`
+    Protocol *string `mandatory:"true" json:"protocol"`
+    
+ // The name of the associated path-based routes applied to this listener's traffic.
+    PathRouteSetName *string `mandatory:"false" json:"pathRouteSetName"`
+    
+ // A HTTP hostname for this listener. TODO: This description needs work.
+ // Example: `app.example.com`
+    ServerName *string `mandatory:"false" json:"serverName"`
+    
+    SslConfiguration *SslConfigurationDetails `mandatory:"false" json:"sslConfiguration"`
 }
 
 func (m CreateListenerDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

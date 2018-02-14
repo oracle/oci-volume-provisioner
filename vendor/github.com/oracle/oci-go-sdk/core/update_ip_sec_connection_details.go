@@ -9,17 +9,24 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// UpdateIpSecConnectionDetails The representation of UpdateIpSecConnectionDetails
-type UpdateIpSecConnectionDetails struct {
 
-	// A user-friendly name. Does not have to be unique, and it's changeable.
-	// Avoid entering confidential information.
-	DisplayName *string `mandatory:"false" json:"displayName"`
+    
+ // UpdateIpSecConnectionDetails The representation of UpdateIpSecConnectionDetails
+type UpdateIpSecConnectionDetails struct {
+    
+ // A user-friendly name. Does not have to be unique, and it's changeable.
+ // Avoid entering confidential information.
+    DisplayName *string `mandatory:"false" json:"displayName"`
 }
 
 func (m UpdateIpSecConnectionDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

@@ -9,19 +9,26 @@
 package database
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// CreateBackupDetails The representation of CreateBackupDetails
+
+    
+ // CreateBackupDetails The representation of CreateBackupDetails
 type CreateBackupDetails struct {
-
-	// The OCID of the database.
-	DatabaseId *string `mandatory:"true" json:"databaseId"`
-
-	// The user-friendly name for the backup. It does not have to be unique.
-	DisplayName *string `mandatory:"true" json:"displayName"`
+    
+ // The OCID of the database.
+    DatabaseId *string `mandatory:"true" json:"databaseId"`
+    
+ // The user-friendly name for the backup. It does not have to be unique.
+    DisplayName *string `mandatory:"true" json:"displayName"`
 }
 
 func (m CreateBackupDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

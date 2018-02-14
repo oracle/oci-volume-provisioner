@@ -9,14 +9,22 @@
 package database
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// UpdateDbHomeDetails Describes the modification parameters for the DB Home.
+
+    
+ // UpdateDbHomeDetails Describes the modification parameters for the DB Home.
 type UpdateDbHomeDetails struct {
-	DbVersion *PatchDetails `mandatory:"false" json:"dbVersion"`
+    
+    DbVersion *PatchDetails `mandatory:"false" json:"dbVersion"`
 }
 
 func (m UpdateDbHomeDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

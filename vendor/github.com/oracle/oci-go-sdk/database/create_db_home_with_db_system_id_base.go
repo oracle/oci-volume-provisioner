@@ -9,72 +9,78 @@
 package database
 
 import (
-	"encoding/json"
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
+        "encoding/json"
 )
 
-// CreateDbHomeWithDbSystemIdBase The representation of CreateDbHomeWithDbSystemIdBase
+        
+ // CreateDbHomeWithDbSystemIdBase The representation of CreateDbHomeWithDbSystemIdBase
 type CreateDbHomeWithDbSystemIdBase interface {
-
-	// The OCID of the DB System.
-	GetDbSystemId() *string
-
-	// The user-provided name of the database home.
-	GetDisplayName() *string
+    
+ // The OCID of the DB System.
+    GetDbSystemId() *string
+    
+ // The user-provided name of the database home.
+    GetDisplayName() *string
 }
 
 type createdbhomewithdbsystemidbase struct {
-	JsonData    []byte
-	DbSystemId  *string `mandatory:"true" json:"dbSystemId"`
-	DisplayName *string `mandatory:"false" json:"displayName"`
-	Source      string  `json:"source"`
+    JsonData []byte
+    DbSystemId *string `mandatory:"true" json:"dbSystemId"`
+    DisplayName *string `mandatory:"false" json:"displayName"`
+    Source string `json:"source"`
 }
+
 
 // UnmarshalJSON unmarshals json
 func (m *createdbhomewithdbsystemidbase) UnmarshalJSON(data []byte) error {
-	m.JsonData = data
-	type Unmarshalercreatedbhomewithdbsystemidbase createdbhomewithdbsystemidbase
-	s := struct {
-		Model Unmarshalercreatedbhomewithdbsystemidbase
-	}{}
-	err := json.Unmarshal(data, &s.Model)
-	if err != nil {
-		return err
-	}
-	m.DbSystemId = s.Model.DbSystemId
-	m.DisplayName = s.Model.DisplayName
-	m.Source = s.Model.Source
+    m.JsonData = data
+    type Unmarshalercreatedbhomewithdbsystemidbase createdbhomewithdbsystemidbase
+    s := struct {
+        Model Unmarshalercreatedbhomewithdbsystemidbase
+    }{}
+    err := json.Unmarshal(data, &s.Model)
+    if err != nil {
+        return err
+    }
+        m.DbSystemId = s.Model.DbSystemId
+        m.DisplayName = s.Model.DisplayName
+    m.Source = s.Model.Source
 
-	return err
+    return err
 }
 
 // UnmarshalPolymorphicJSON unmarshals polymorphic json
 func (m *createdbhomewithdbsystemidbase) UnmarshalPolymorphicJSON(data []byte) (interface{}, error) {
-	var err error
-	switch m.Source {
-	case "DB_BACKUP":
-		mm := CreateDbHomeWithDbSystemIdFromBackupDetails{}
-		err = json.Unmarshal(data, &mm)
-		return mm, err
-	case "NONE":
-		mm := CreateDbHomeWithDbSystemIdDetails{}
-		err = json.Unmarshal(data, &mm)
-		return mm, err
-	default:
-		return m, nil
-	}
+    var err error
+    switch(m.Source) {
+       case "DB_BACKUP":
+        mm := CreateDbHomeWithDbSystemIdFromBackupDetails{}
+        err = json.Unmarshal(data, &mm)
+        return mm, err
+       case "NONE":
+        mm := CreateDbHomeWithDbSystemIdDetails{}
+        err = json.Unmarshal(data, &mm)
+        return mm, err
+    default:
+        return m, nil
+    }
 }
 
-//GetDbSystemId returns DbSystemId
-func (m createdbhomewithdbsystemidbase) GetDbSystemId() *string {
-	return m.DbSystemId
-}
-
-//GetDisplayName returns DisplayName
-func (m createdbhomewithdbsystemidbase) GetDisplayName() *string {
-	return m.DisplayName
-}
+    //GetDbSystemId returns DbSystemId
+    func (m createdbhomewithdbsystemidbase) GetDbSystemId()  *string {
+        return m.DbSystemId
+    }
+    //GetDisplayName returns DisplayName
+    func (m createdbhomewithdbsystemidbase) GetDisplayName()  *string {
+    return m.DisplayName
+    }
 
 func (m createdbhomewithdbsystemidbase) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

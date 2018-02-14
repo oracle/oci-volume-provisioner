@@ -9,52 +9,60 @@
 package core
 
 import (
-	"encoding/json"
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
+        "encoding/json"
 )
 
-// ImageSourceDetails The representation of ImageSourceDetails
+        
+ // ImageSourceDetails The representation of ImageSourceDetails
 type ImageSourceDetails interface {
 }
 
 type imagesourcedetails struct {
-	JsonData   []byte
-	SourceType string `json:"sourceType"`
+    JsonData []byte
+    SourceType string `json:"sourceType"`
 }
+
 
 // UnmarshalJSON unmarshals json
 func (m *imagesourcedetails) UnmarshalJSON(data []byte) error {
-	m.JsonData = data
-	type Unmarshalerimagesourcedetails imagesourcedetails
-	s := struct {
-		Model Unmarshalerimagesourcedetails
-	}{}
-	err := json.Unmarshal(data, &s.Model)
-	if err != nil {
-		return err
-	}
-	m.SourceType = s.Model.SourceType
+    m.JsonData = data
+    type Unmarshalerimagesourcedetails imagesourcedetails
+    s := struct {
+        Model Unmarshalerimagesourcedetails
+    }{}
+    err := json.Unmarshal(data, &s.Model)
+    if err != nil {
+        return err
+    }
+    m.SourceType = s.Model.SourceType
 
-	return err
+    return err
 }
 
 // UnmarshalPolymorphicJSON unmarshals polymorphic json
 func (m *imagesourcedetails) UnmarshalPolymorphicJSON(data []byte) (interface{}, error) {
-	var err error
-	switch m.SourceType {
-	case "objectStorageTuple":
-		mm := ImageSourceViaObjectStorageTupleDetails{}
-		err = json.Unmarshal(data, &mm)
-		return mm, err
-	case "objectStorageUri":
-		mm := ImageSourceViaObjectStorageUriDetails{}
-		err = json.Unmarshal(data, &mm)
-		return mm, err
-	default:
-		return m, nil
-	}
+    var err error
+    switch(m.SourceType) {
+       case "objectStorageTuple":
+        mm := ImageSourceViaObjectStorageTupleDetails{}
+        err = json.Unmarshal(data, &mm)
+        return mm, err
+       case "objectStorageUri":
+        mm := ImageSourceViaObjectStorageUriDetails{}
+        err = json.Unmarshal(data, &mm)
+        return mm, err
+    default:
+        return m, nil
+    }
 }
 
+
 func (m imagesourcedetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

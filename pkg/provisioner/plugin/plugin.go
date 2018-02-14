@@ -20,6 +20,11 @@ import (
 	"k8s.io/client-go/pkg/api/v1"
 )
 
+const (
+	// OCIProvisionerName is the name of the provisioner defined in the storage class definitions
+	OCIProvisionerName = "oracle/oci"
+)
+
 // ProvisionerPlugin implements the controller plugin plus some extras that are common
 type ProvisionerPlugin interface {
 	// Provision creates a volume i.e. the storage asset and returns a PV object

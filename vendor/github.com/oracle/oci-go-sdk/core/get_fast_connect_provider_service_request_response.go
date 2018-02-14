@@ -4,35 +4,39 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
-	"net/http"
+    "github.com/oracle/oci-go-sdk/common"
+    "net/http"
 )
 
 // GetFastConnectProviderServiceRequest wrapper for the GetFastConnectProviderService operation
 type GetFastConnectProviderServiceRequest struct {
-
-	// The OCID of the provider service.
-	ProviderServiceId *string `mandatory:"true" contributesTo:"path" name:"providerServiceId"`
+        
+ // The OCID of the provider service. 
+        ProviderServiceId *string `mandatory:"true" contributesTo:"path" name:"providerServiceId"`
 }
 
 func (request GetFastConnectProviderServiceRequest) String() string {
-	return common.PointerString(request)
+    return common.PointerString(request)
 }
 
 // GetFastConnectProviderServiceResponse wrapper for the GetFastConnectProviderService operation
 type GetFastConnectProviderServiceResponse struct {
 
-	// The underlying http response
-	RawResponse *http.Response
+    // The underlying http response
+    RawResponse *http.Response
+    
+ // The FastConnectProviderService instance
+     FastConnectProviderService `presentIn:"body"`
 
-	// The FastConnectProviderService instance
-	FastConnectProviderService `presentIn:"body"`
+    
+ // Unique Oracle-assigned identifier for the request. If you need to contact Oracle about
+ // a particular request, please provide the request ID.
+    OpcRequestId *string `presentIn:"header" name:"opc-request-id"`
 
-	// Unique Oracle-assigned identifier for the request. If you need to contact Oracle about
-	// a particular request, please provide the request ID.
-	OpcRequestId *string `presentIn:"header" name:"opc-request-id"`
+
 }
 
 func (response GetFastConnectProviderServiceResponse) String() string {
-	return common.PointerString(response)
+    return common.PointerString(response)
 }
+

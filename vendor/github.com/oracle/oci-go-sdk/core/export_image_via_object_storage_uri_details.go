@@ -9,32 +9,37 @@
 package core
 
 import (
-	"encoding/json"
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
+        "encoding/json"
 )
 
-// ExportImageViaObjectStorageUriDetails The representation of ExportImageViaObjectStorageUriDetails
+        
+ // ExportImageViaObjectStorageUriDetails The representation of ExportImageViaObjectStorageUriDetails
 type ExportImageViaObjectStorageUriDetails struct {
-
-	// The Object Storage URL to export the image to. See [Object Storage URLs]({{DOC_SERVER_URL}}/Content/Compute/Tasks/imageimportexport.htm#URLs)
-	// and [pre-authenticated requests]({{DOC_SERVER_URL}}/Content/Object/Tasks/managingaccess.htm#pre-auth) for constructing URLs for image import/export.
-	DestinationUri *string `mandatory:"true" json:"destinationUri"`
+        
+ // The Object Storage URL to export the image to. See [Object Storage URLs]({{DOC_SERVER_URL}}/Content/Compute/Tasks/imageimportexport.htm#URLs)
+ // and [pre-authenticated requests]({{DOC_SERVER_URL}}/Content/Object/Tasks/managingaccess.htm#pre-auth) for constructing URLs for image import/export.
+        DestinationUri *string `mandatory:"true" json:"destinationUri"`
 }
 
 func (m ExportImageViaObjectStorageUriDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
 
 // MarshalJSON marshals to json representation
 func (m ExportImageViaObjectStorageUriDetails) MarshalJSON() (buff []byte, e error) {
-	type MarshalTypeExportImageViaObjectStorageUriDetails ExportImageViaObjectStorageUriDetails
-	s := struct {
-		DiscriminatorParam string `json:"destinationType"`
-		MarshalTypeExportImageViaObjectStorageUriDetails
-	}{
-		"objectStorageUri",
-		(MarshalTypeExportImageViaObjectStorageUriDetails)(m),
-	}
+    type MarshalTypeExportImageViaObjectStorageUriDetails ExportImageViaObjectStorageUriDetails
+    s := struct {
+        DiscriminatorParam string `json:"destinationType"`
+        MarshalTypeExportImageViaObjectStorageUriDetails
+    }{
+        "objectStorageUri",
+        (MarshalTypeExportImageViaObjectStorageUriDetails)(m),
+    }
 
-	return json.Marshal(&s)
+    return json.Marshal(&s)
 }
+
+
+
+

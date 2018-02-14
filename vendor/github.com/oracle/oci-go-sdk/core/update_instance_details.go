@@ -9,18 +9,25 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// UpdateInstanceDetails The representation of UpdateInstanceDetails
-type UpdateInstanceDetails struct {
 
-	// A user-friendly name. Does not have to be unique, and it's changeable.
-	// Avoid entering confidential information.
-	// Example: `My bare metal instance`
-	DisplayName *string `mandatory:"false" json:"displayName"`
+    
+ // UpdateInstanceDetails The representation of UpdateInstanceDetails
+type UpdateInstanceDetails struct {
+    
+ // A user-friendly name. Does not have to be unique, and it's changeable.
+ // Avoid entering confidential information.
+ // Example: `My bare metal instance`
+    DisplayName *string `mandatory:"false" json:"displayName"`
 }
 
 func (m UpdateInstanceDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

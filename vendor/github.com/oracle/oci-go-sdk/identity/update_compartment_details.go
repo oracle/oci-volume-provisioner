@@ -9,19 +9,26 @@
 package identity
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// UpdateCompartmentDetails The representation of UpdateCompartmentDetails
+
+    
+ // UpdateCompartmentDetails The representation of UpdateCompartmentDetails
 type UpdateCompartmentDetails struct {
-
-	// The description you assign to the compartment. Does not have to be unique, and it's changeable.
-	Description *string `mandatory:"false" json:"description"`
-
-	// The new name you assign to the compartment. The name must be unique across all compartments in the tenancy.
-	Name *string `mandatory:"false" json:"name"`
+    
+ // The description you assign to the compartment. Does not have to be unique, and it's changeable.
+    Description *string `mandatory:"false" json:"description"`
+    
+ // The new name you assign to the compartment. The name must be unique across all compartments in the tenancy.
+    Name *string `mandatory:"false" json:"name"`
 }
 
 func (m UpdateCompartmentDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

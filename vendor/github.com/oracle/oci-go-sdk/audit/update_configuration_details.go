@@ -9,16 +9,23 @@
 package audit
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// UpdateConfigurationDetails The representation of UpdateConfigurationDetails
-type UpdateConfigurationDetails struct {
 
-	// The retention period days
-	RetentionPeriodDays *int `mandatory:"false" json:"retentionPeriodDays"`
+    
+ // UpdateConfigurationDetails The representation of UpdateConfigurationDetails
+type UpdateConfigurationDetails struct {
+    
+ // The retention period days
+    RetentionPeriodDays *int `mandatory:"false" json:"retentionPeriodDays"`
 }
 
 func (m UpdateConfigurationDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

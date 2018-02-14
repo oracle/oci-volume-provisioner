@@ -9,21 +9,28 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// VirtualCircuitBandwidthShape An individual bandwidth level for virtual circuits.
+
+    
+ // VirtualCircuitBandwidthShape An individual bandwidth level for virtual circuits.
 type VirtualCircuitBandwidthShape struct {
-
-	// The name of the bandwidth shape.
-	// Example: `10 Gbps`
-	Name *string `mandatory:"true" json:"name"`
-
-	// The bandwidth in Mbps.
-	// Example: `10000`
-	BandwidthInMbps *int `mandatory:"false" json:"bandwidthInMbps"`
+    
+ // The name of the bandwidth shape.
+ // Example: `10 Gbps`
+    Name *string `mandatory:"true" json:"name"`
+    
+ // The bandwidth in Mbps.
+ // Example: `10000`
+    BandwidthInMbps *int `mandatory:"false" json:"bandwidthInMbps"`
 }
 
 func (m VirtualCircuitBandwidthShape) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

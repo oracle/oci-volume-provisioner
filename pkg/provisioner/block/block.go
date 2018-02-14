@@ -65,15 +65,6 @@ func resolveFSType(options controller.VolumeOptions) string {
 	return fs
 }
 
-func newCreateVolumeDetails(adName, compartmentOCID, volumeNamePrefix, volumeName string, volSizeMB int) core.CreateVolumeDetails {
-	return core.CreateVolumeDetails{
-		AvailabilityDomain: common.String(adName),
-		CompartmentId:      common.String(compartmentOCID),
-		DisplayName:        common.String(fmt.Sprintf("%s%s", volumeNamePrefix, volumeName)),
-		SizeInMBs:          common.Int(volSizeMB),
-	}
-}
-
 func roundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
 	return (volumeSizeBytes + allocationUnitBytes - 1) / allocationUnitBytes
 }
@@ -95,24 +86,28 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions,
 	glog.Infof("Volume size (bytes): %v", volSizeBytes)
 	volSizeMB := int(roundUpSize(volSizeBytes, 1024*1024))
 
-	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, availabilityDomain.Name, block.client.CompartmentOCID())
+	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, *availabilityDomain.Name, block.client.CompartmentOCID())
 
-	// TODO: Consider OpcRetryToken
-	details := newCreateVolumeDetails(*availabilityDomain.Name, block.client.CompartmentOCID(), os.Getenv(volumePrefixEnvVarName), options.PVC.Name, volSizeMB)
-	request := core.CreateVolumeRequest{CreateVolumeDetails: details}
 	ctx, cancel := context.WithTimeout(block.client.Context(), block.client.Timeout())
 	defer cancel()
-	newVolume, err := block.client.BlockStorage().CreateVolume(ctx, request)
+	newVolume, err := block.client.BlockStorage().CreateVolume(ctx, core.CreateVolumeRequest{
+		CreateVolumeDetails: core.CreateVolumeDetails{
+			AvailabilityDomain: availabilityDomain.Name,
+			CompartmentId:      common.String(block.client.CompartmentOCID()),
+			DisplayName:        common.String(fmt.Sprintf("%s%s", os.Getenv(volumePrefixEnvVarName), options.PVC.Name)),
+			SizeInMBs:          common.Int(volSizeMB),
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	volumeName := mapVolumeIDToName(*newVolume.Id)
+	//volumeName := mapVolumeIDToName(*newVolume.Id)
 	filesystemType := resolveFSType(options)
 
 	pv := &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: volumeName,
+			Name: *newVolume.Id,
 			Annotations: map[string]string{
 				ociVolumeID: *newVolume.Id,
 			},
@@ -126,7 +121,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions,
 			},
 			PersistentVolumeSource: v1.PersistentVolumeSource{
 				FlexVolume: &v1.FlexVolumeSource{
-					Driver: "oracle/oci",
+					Driver: plugin.OCIProvisionerName,
 					FSType: filesystemType,
 				},
 			},
@@ -138,15 +133,15 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions,
 
 // Delete destroys a OCI volume created by Provision
 func (block *blockProvisioner) Delete(volume *v1.PersistentVolume) error {
-	glog.Infof("Deleting volume %v with volumeId %v", volume, volume.Annotations[ociVolumeID])
-
 	volID, ok := volume.Annotations[ociVolumeID]
 	if !ok {
 		return errors.New("volumeid annotation not found on PV")
 	}
+	glog.Infof("Deleting volume %v with volumeId %v", volume, volID)
 
 	request := core.DeleteVolumeRequest{VolumeId: common.String(volID)}
 	ctx, cancel := context.WithTimeout(block.client.Context(), block.client.Timeout())
 	defer cancel()
-	return block.client.BlockStorage().DeleteVolume(ctx, request)
+	_, err := block.client.BlockStorage().DeleteVolume(ctx, request)
+	return err
 }

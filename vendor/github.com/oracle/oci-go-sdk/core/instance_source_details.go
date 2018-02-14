@@ -9,52 +9,60 @@
 package core
 
 import (
-	"encoding/json"
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
+        "encoding/json"
 )
 
-// InstanceSourceDetails The representation of InstanceSourceDetails
+        
+ // InstanceSourceDetails The representation of InstanceSourceDetails
 type InstanceSourceDetails interface {
 }
 
 type instancesourcedetails struct {
-	JsonData   []byte
-	SourceType string `json:"sourceType"`
+    JsonData []byte
+    SourceType string `json:"sourceType"`
 }
+
 
 // UnmarshalJSON unmarshals json
 func (m *instancesourcedetails) UnmarshalJSON(data []byte) error {
-	m.JsonData = data
-	type Unmarshalerinstancesourcedetails instancesourcedetails
-	s := struct {
-		Model Unmarshalerinstancesourcedetails
-	}{}
-	err := json.Unmarshal(data, &s.Model)
-	if err != nil {
-		return err
-	}
-	m.SourceType = s.Model.SourceType
+    m.JsonData = data
+    type Unmarshalerinstancesourcedetails instancesourcedetails
+    s := struct {
+        Model Unmarshalerinstancesourcedetails
+    }{}
+    err := json.Unmarshal(data, &s.Model)
+    if err != nil {
+        return err
+    }
+    m.SourceType = s.Model.SourceType
 
-	return err
+    return err
 }
 
 // UnmarshalPolymorphicJSON unmarshals polymorphic json
 func (m *instancesourcedetails) UnmarshalPolymorphicJSON(data []byte) (interface{}, error) {
-	var err error
-	switch m.SourceType {
-	case "image":
-		mm := InstanceSourceViaImageDetails{}
-		err = json.Unmarshal(data, &mm)
-		return mm, err
-	case "bootVolume":
-		mm := InstanceSourceViaBootVolumeDetails{}
-		err = json.Unmarshal(data, &mm)
-		return mm, err
-	default:
-		return m, nil
-	}
+    var err error
+    switch(m.SourceType) {
+       case "image":
+        mm := InstanceSourceViaImageDetails{}
+        err = json.Unmarshal(data, &mm)
+        return mm, err
+       case "bootVolume":
+        mm := InstanceSourceViaBootVolumeDetails{}
+        err = json.Unmarshal(data, &mm)
+        return mm, err
+    default:
+        return m, nil
+    }
 }
 
+
 func (m instancesourcedetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

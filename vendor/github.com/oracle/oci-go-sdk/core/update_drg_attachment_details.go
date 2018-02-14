@@ -9,17 +9,24 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// UpdateDrgAttachmentDetails The representation of UpdateDrgAttachmentDetails
-type UpdateDrgAttachmentDetails struct {
 
-	// A user-friendly name. Does not have to be unique, and it's changeable.
-	// Avoid entering confidential information.
-	DisplayName *string `mandatory:"false" json:"displayName"`
+    
+ // UpdateDrgAttachmentDetails The representation of UpdateDrgAttachmentDetails
+type UpdateDrgAttachmentDetails struct {
+    
+ // A user-friendly name. Does not have to be unique, and it's changeable.
+ // Avoid entering confidential information.
+    DisplayName *string `mandatory:"false" json:"displayName"`
 }
 
 func (m UpdateDrgAttachmentDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

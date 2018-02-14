@@ -9,49 +9,52 @@
 package database
 
 import (
-	"encoding/json"
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
+        "encoding/json"
 )
 
-// CreateDbHomeWithDbSystemIdDetails The representation of CreateDbHomeWithDbSystemIdDetails
+        
+ // CreateDbHomeWithDbSystemIdDetails The representation of CreateDbHomeWithDbSystemIdDetails
 type CreateDbHomeWithDbSystemIdDetails struct {
-
-	// The OCID of the DB System.
-	DbSystemId *string `mandatory:"true" json:"dbSystemId"`
-
-	Database *CreateDatabaseDetails `mandatory:"true" json:"database"`
-
-	// A valid Oracle database version. To get a list of supported versions, use the ListDbVersions operation.
-	DbVersion *string `mandatory:"true" json:"dbVersion"`
-
-	// The user-provided name of the database home.
-	DisplayName *string `mandatory:"false" json:"displayName"`
+        
+ // The OCID of the DB System.
+        DbSystemId *string `mandatory:"true" json:"dbSystemId"`
+        
+        Database *CreateDatabaseDetails `mandatory:"true" json:"database"`
+        
+ // A valid Oracle database version. To get a list of supported versions, use the ListDbVersions operation.
+        DbVersion *string `mandatory:"true" json:"dbVersion"`
+    
+ // The user-provided name of the database home.
+    DisplayName *string `mandatory:"false" json:"displayName"`
 }
-
-//GetDbSystemId returns DbSystemId
-func (m CreateDbHomeWithDbSystemIdDetails) GetDbSystemId() *string {
-	return m.DbSystemId
-}
-
-//GetDisplayName returns DisplayName
-func (m CreateDbHomeWithDbSystemIdDetails) GetDisplayName() *string {
-	return m.DisplayName
-}
+        //GetDbSystemId returns DbSystemId
+        func (m CreateDbHomeWithDbSystemIdDetails) GetDbSystemId() *string {
+        return m.DbSystemId
+        }
+        //GetDisplayName returns DisplayName
+        func (m CreateDbHomeWithDbSystemIdDetails) GetDisplayName() *string {
+        return m.DisplayName
+        }
 
 func (m CreateDbHomeWithDbSystemIdDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
 
 // MarshalJSON marshals to json representation
 func (m CreateDbHomeWithDbSystemIdDetails) MarshalJSON() (buff []byte, e error) {
-	type MarshalTypeCreateDbHomeWithDbSystemIdDetails CreateDbHomeWithDbSystemIdDetails
-	s := struct {
-		DiscriminatorParam string `json:"source"`
-		MarshalTypeCreateDbHomeWithDbSystemIdDetails
-	}{
-		"NONE",
-		(MarshalTypeCreateDbHomeWithDbSystemIdDetails)(m),
-	}
+    type MarshalTypeCreateDbHomeWithDbSystemIdDetails CreateDbHomeWithDbSystemIdDetails
+    s := struct {
+        DiscriminatorParam string `json:"source"`
+        MarshalTypeCreateDbHomeWithDbSystemIdDetails
+    }{
+        "NONE",
+        (MarshalTypeCreateDbHomeWithDbSystemIdDetails)(m),
+    }
 
-	return json.Marshal(&s)
+    return json.Marshal(&s)
 }
+
+
+
+

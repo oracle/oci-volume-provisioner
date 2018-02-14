@@ -9,16 +9,23 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// ConnectLocalPeeringGatewaysDetails Information about the other local peering gateway (LPG).
-type ConnectLocalPeeringGatewaysDetails struct {
 
-	// The OCID of the LPG you want to peer with.
-	PeerId *string `mandatory:"true" json:"peerId"`
+    
+ // ConnectLocalPeeringGatewaysDetails Information about the other local peering gateway (LPG).
+type ConnectLocalPeeringGatewaysDetails struct {
+    
+ // The OCID of the LPG you want to peer with.
+    PeerId *string `mandatory:"true" json:"peerId"`
 }
 
 func (m ConnectLocalPeeringGatewaysDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+

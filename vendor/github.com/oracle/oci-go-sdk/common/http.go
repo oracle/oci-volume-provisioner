@@ -106,13 +106,13 @@ func getTaggedNilFieldNameOrError(field reflect.StructField, fieldValue reflect.
 
 	Debugf("Adjusting tag: mandatory is false and json tag is valid on field: %s", field.Name)
 
-	//If the field can not be nil, then no-op
+	// If the field can not be nil, then no-op
 	if !isNillableType(&fieldValue) {
 		Debugf("WARNING json field is tagged with mandatory flags, but the type can not be nil, field name: %s", field.Name)
 		return false, nameJSONField, nil
 	}
 
-	//If field value is nil, tag it as omitEmpty
+	// If field value is nil, tag it as omitEmpty
 	return fieldValue.IsNil(), nameJSONField, nil
 
 }
@@ -727,7 +727,16 @@ func addFromBody(response *http.Response, value *reflect.Value, field reflect.St
 	case "binary":
 		value.Set(reflect.ValueOf(response.Body))
 		return
-	case "": //If the encoding is not set. we'll decode with json
+	case "plain-text":
+		//Expects UTF-8
+		byteArr, e := ioutil.ReadAll(response.Body)
+		if e != nil {
+			return e
+		}
+		str := string(byteArr)
+		value.Set(reflect.ValueOf(&str))
+		return
+	default: //If the encoding is not set. we'll decode with json
 		iVal, err = valueFromJSONBody(response, value, unmarshaler)
 		if err != nil {
 			return
@@ -738,9 +747,6 @@ func addFromBody(response *http.Response, value *reflect.Value, field reflect.St
 			newVal = newVal.Elem()
 		}
 		value.Set(newVal)
-		return
-	default:
-		err = fmt.Errorf("Encoding: %s is invalid. Can not unmarshal body", encoding)
 		return
 	}
 }
@@ -774,12 +780,14 @@ func addFromHeaderCollection(response *http.Response, value *reflect.Value, fiel
 
 	mapCollection := make(map[string]string)
 	for name, value := range response.Header {
-		if strings.HasPrefix(name, headerPrefix) {
-			headerNoPrefix := strings.TrimPrefix(name, headerPrefix)
+		nameLowerCase := strings.ToLower(name)
+		if strings.HasPrefix(nameLowerCase, headerPrefix) {
+			headerNoPrefix := strings.TrimPrefix(nameLowerCase, headerPrefix)
 			mapCollection[headerNoPrefix] = value[0]
 		}
 	}
 
+	Debugln("Marshalled header collection is:", mapCollection)
 	value.Set(reflect.ValueOf(mapCollection))
 	return nil
 }

@@ -9,16 +9,23 @@
 package core
 
 import (
-	"github.com/oracle/oci-go-sdk/common"
+    "github.com/oracle/oci-go-sdk/common"
 )
 
-// BulkAddVirtualCircuitPublicPrefixesDetails The representation of BulkAddVirtualCircuitPublicPrefixesDetails
-type BulkAddVirtualCircuitPublicPrefixesDetails struct {
 
-	// The public IP prefixes (CIDRs) to add to the public virtual circuit.
-	PublicPrefixes []CreateVirtualCircuitPublicPrefixDetails `mandatory:"true" json:"publicPrefixes"`
+    
+ // BulkAddVirtualCircuitPublicPrefixesDetails The representation of BulkAddVirtualCircuitPublicPrefixesDetails
+type BulkAddVirtualCircuitPublicPrefixesDetails struct {
+    
+ // The public IP prefixes (CIDRs) to add to the public virtual circuit.
+    PublicPrefixes []CreateVirtualCircuitPublicPrefixDetails `mandatory:"true" json:"publicPrefixes"`
 }
 
 func (m BulkAddVirtualCircuitPublicPrefixesDetails) String() string {
-	return common.PointerString(m)
+    return common.PointerString(m)
 }
+
+
+
+
+
