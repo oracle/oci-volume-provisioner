@@ -36,7 +36,7 @@ import (
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 )
 
-// ProvisionerClient wraps the oci sub-clients required for volume provisioning.
+// ProvisionerClient wraps the OCI sub-clients required for volume provisioning.
 type provisionerClient struct {
 	cfg          *Config
 	blockStorage *core.BlockstorageClient
@@ -92,7 +92,7 @@ func (p *provisionerClient) TenancyOCID() string {
 	return p.cfg.Auth.TenancyOCID
 }
 
-// FromConfig creates an oci client from the given configuration.
+// FromConfig creates an OCI client from the given configuration.
 func FromConfig(cfg *Config) (ProvisionerClient, error) {
 	config, err := newConfigurationProvider(cfg)
 	if err != nil {
@@ -103,7 +103,7 @@ func FromConfig(cfg *Config) (ProvisionerClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = configureCustomTransport(blockStorage.BaseClient)
+	err = configureCustomTransport(&blockStorage.BaseClient)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func FromConfig(cfg *Config) (ProvisionerClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = configureCustomTransport(identity.BaseClient)
+	err = configureCustomTransport(&identity.BaseClient)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +121,7 @@ func FromConfig(cfg *Config) (ProvisionerClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = configureCustomTransport(ffsw.BaseClient)
+	err = configureCustomTransport(&ffsw.BaseClient)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +163,7 @@ func newConfigurationProvider(cfg *Config) (common.ConfigurationProvider, error)
 	return conf, nil
 }
 
-func configureCustomTransport(baseClient common.BaseClient) error {
+func configureCustomTransport(baseClient *common.BaseClient) error {
 
 	httpClient := baseClient.HTTPClient.(*http.Client)
 
@@ -188,7 +188,7 @@ func configureCustomTransport(baseClient common.BaseClient) error {
 	if ociProxy != "" {
 		proxyURL, err := url.Parse(ociProxy)
 		if err != nil {
-			return fmt.Errorf("failed to parse oci proxy url: %s, err: %v", ociProxy, err)
+			return fmt.Errorf("failed to parse OCI proxy url: %s, err: %v", ociProxy, err)
 		}
 		transport.Proxy = func(req *http.Request) (*url.URL, error) {
 			return proxyURL, nil
@@ -197,7 +197,7 @@ func configureCustomTransport(baseClient common.BaseClient) error {
 
 	trustedCACertPath := os.Getenv("TRUSTED_CA_CERT_PATH")
 	if trustedCACertPath != "" {
-		glog.Infof("configuring oci client with a new trusted ca: %s", trustedCACertPath)
+		glog.Infof("configuring OCI client with a new trusted ca: %s", trustedCACertPath)
 		trustedCACert, err := ioutil.ReadFile(trustedCACertPath)
 		if err != nil {
 			return fmt.Errorf("failed to read root certificate: %s, err: %v", trustedCACertPath, err)
