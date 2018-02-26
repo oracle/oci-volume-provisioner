@@ -16,6 +16,14 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
+	"io/ioutil"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
 	"time"
 
 	"github.com/golang/glog"
@@ -28,7 +36,7 @@ import (
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 )
 
-// ProvisionerClient wraps the oci sub-clients required for volume provisioning.
+// ProvisionerClient wraps the OCI sub-clients required for volume provisioning.
 type provisionerClient struct {
 	cfg          *Config
 	blockStorage *core.BlockstorageClient
@@ -84,7 +92,7 @@ func (p *provisionerClient) TenancyOCID() string {
 	return p.cfg.Auth.TenancyOCID
 }
 
-// FromConfig creates an oci client from the given configuration.
+// FromConfig creates an OCI client from the given configuration.
 func FromConfig(cfg *Config) (ProvisionerClient, error) {
 	config, err := newConfigurationProvider(cfg)
 	if err != nil {
@@ -95,13 +103,25 @@ func FromConfig(cfg *Config) (ProvisionerClient, error) {
 	if err != nil {
 		return nil, err
 	}
+	err = configureCustomTransport(&blockStorage.BaseClient)
+	if err != nil {
+		return nil, err
+	}
 
 	identity, err := identity.NewIdentityClientWithConfigurationProvider(config)
 	if err != nil {
 		return nil, err
 	}
+	err = configureCustomTransport(&identity.BaseClient)
+	if err != nil {
+		return nil, err
+	}
 
 	ffsw, err := ffsw.NewFileStorageClientWithConfigurationProvider(config)
+	if err != nil {
+		return nil, err
+	}
+	err = configureCustomTransport(&ffsw.BaseClient)
 	if err != nil {
 		return nil, err
 	}
@@ -141,4 +161,53 @@ func newConfigurationProvider(cfg *Config) (common.ConfigurationProvider, error)
 		conf = common.DefaultConfigProvider()
 	}
 	return conf, nil
+}
+
+func configureCustomTransport(baseClient *common.BaseClient) error {
+
+	httpClient := baseClient.HTTPClient.(*http.Client)
+
+	var transport *http.Transport
+	if httpClient.Transport == nil {
+		transport = &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+				DualStack: true,
+			}).DialContext,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		}
+	} else {
+		transport = httpClient.Transport.(*http.Transport)
+	}
+
+	ociProxy := os.Getenv("OCI_PROXY")
+	if ociProxy != "" {
+		proxyURL, err := url.Parse(ociProxy)
+		if err != nil {
+			return fmt.Errorf("failed to parse OCI proxy url: %s, err: %v", ociProxy, err)
+		}
+		transport.Proxy = func(req *http.Request) (*url.URL, error) {
+			return proxyURL, nil
+		}
+	}
+
+	trustedCACertPath := os.Getenv("TRUSTED_CA_CERT_PATH")
+	if trustedCACertPath != "" {
+		glog.Infof("configuring OCI client with a new trusted ca: %s", trustedCACertPath)
+		trustedCACert, err := ioutil.ReadFile(trustedCACertPath)
+		if err != nil {
+			return fmt.Errorf("failed to read root certificate: %s, err: %v", trustedCACertPath, err)
+		}
+		caCertPool := x509.NewCertPool()
+		ok := caCertPool.AppendCertsFromPEM(trustedCACert)
+		if !ok {
+			return fmt.Errorf("failed to parse root certificate: %s", trustedCACertPath)
+		}
+		transport.TLSClientConfig = &tls.Config{RootCAs: caCertPool}
+	}
+	return nil
 }
