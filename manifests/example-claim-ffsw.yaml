@@ -8,7 +8,7 @@ spec:
     matchLabels:
       oci-availability-domain: "PHX-AD-1"
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   resources:
     requests:
       storage: 50Gi
