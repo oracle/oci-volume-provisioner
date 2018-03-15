@@ -1,10 +1,13 @@
 # OCI Volume Provisioner
 
-The OCI Volume Provisioner enables [dynamic provisioning][1] of storage resources when running Kubernetes on Oracle OCI.
-It uses the [OCI Flexvolume Driver][2] to do the actual provisioning of block storage resources.
-
 [![wercker status](https://app.wercker.com/status/0bb764451c28a60b4260d76754f02118/s/master "wercker status")](https://app.wercker.com/project/byKey/0bb764451c28a60b4260d76754f02118)
 [![Go Report Card](https://goreportcard.com/badge/github.com/oracle/oci-volume-provisioner)](https://goreportcard.com/report/github.com/oracle/oci-volume-provisioner)
+
+The OCI Volume Provisioner enables [dynamic provisioning][1] of storage resources when running Kubernetes on Oracle Cloud Infrastructure.
+It uses the [OCI Flexvolume Driver][2] to bind storage resources to Kubernetes nodes. The volume provisioner offers support for
+
+* [Block Volumes][5]
+* [File Storage][6]
 
 ## Prerequisites
 
@@ -32,7 +35,7 @@ auth:
   key_passphrase: supersecretpassphrase
   fingerprint: 4d:f5:ff:0e:a9:10:e8:5a:d3:52:6a:f8:1e:99:a3:47
   region: us-phoenix-1
-  
+
 ````
 
 Submit this as a Kubernetes Secret.
@@ -163,3 +166,5 @@ See [LICENSE](LICENSE) for more details.
 [2]: https://github.com/oracle/oci-flexvolume-driver
 [3]: https://kubernetes.io/docs/admin/authorization/rbac/
 [4]: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims
+[5]: https://docs.us-phoenix-1.oraclecloud.com/Content/Block/Concepts/overview.htm
+[6]: https://docs.us-phoenix-1.oraclecloud.com/Content/File/Concepts/filestorageoverview.htm
