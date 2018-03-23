@@ -1,4 +1,4 @@
-// Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
 // Code generated. DO NOT EDIT.
 
 // Audit API
@@ -9,23 +9,16 @@
 package audit
 
 import (
-    "github.com/oracle/oci-go-sdk/common"
+	"github.com/oracle/oci-go-sdk/common"
 )
 
-
-    
- // Configuration The representation of Configuration
+// Configuration The representation of Configuration
 type Configuration struct {
-    
- // The retention period days
-    RetentionPeriodDays *int `mandatory:"false" json:"retentionPeriodDays"`
+
+	// The retention period days
+	RetentionPeriodDays *int `mandatory:"false" json:"retentionPeriodDays"`
 }
 
 func (m Configuration) String() string {
-    return common.PointerString(m)
+	return common.PointerString(m)
 }
-
-
-
-
-

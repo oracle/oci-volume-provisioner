@@ -1,4 +1,4 @@
-// Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
 // Code generated. DO NOT EDIT.
 
 // Core Services API
@@ -9,60 +9,52 @@
 package core
 
 import (
-    "github.com/oracle/oci-go-sdk/common"
-        "encoding/json"
+	"encoding/json"
+	"github.com/oracle/oci-go-sdk/common"
 )
 
-        
- // ImageSourceDetails The representation of ImageSourceDetails
+// ImageSourceDetails The representation of ImageSourceDetails
 type ImageSourceDetails interface {
 }
 
 type imagesourcedetails struct {
-    JsonData []byte
-    SourceType string `json:"sourceType"`
+	JsonData   []byte
+	SourceType string `json:"sourceType"`
 }
-
 
 // UnmarshalJSON unmarshals json
 func (m *imagesourcedetails) UnmarshalJSON(data []byte) error {
-    m.JsonData = data
-    type Unmarshalerimagesourcedetails imagesourcedetails
-    s := struct {
-        Model Unmarshalerimagesourcedetails
-    }{}
-    err := json.Unmarshal(data, &s.Model)
-    if err != nil {
-        return err
-    }
-    m.SourceType = s.Model.SourceType
+	m.JsonData = data
+	type Unmarshalerimagesourcedetails imagesourcedetails
+	s := struct {
+		Model Unmarshalerimagesourcedetails
+	}{}
+	err := json.Unmarshal(data, &s.Model)
+	if err != nil {
+		return err
+	}
+	m.SourceType = s.Model.SourceType
 
-    return err
+	return err
 }
 
 // UnmarshalPolymorphicJSON unmarshals polymorphic json
 func (m *imagesourcedetails) UnmarshalPolymorphicJSON(data []byte) (interface{}, error) {
-    var err error
-    switch(m.SourceType) {
-       case "objectStorageTuple":
-        mm := ImageSourceViaObjectStorageTupleDetails{}
-        err = json.Unmarshal(data, &mm)
-        return mm, err
-       case "objectStorageUri":
-        mm := ImageSourceViaObjectStorageUriDetails{}
-        err = json.Unmarshal(data, &mm)
-        return mm, err
-    default:
-        return m, nil
-    }
+	var err error
+	switch m.SourceType {
+	case "objectStorageTuple":
+		mm := ImageSourceViaObjectStorageTupleDetails{}
+		err = json.Unmarshal(data, &mm)
+		return mm, err
+	case "objectStorageUri":
+		mm := ImageSourceViaObjectStorageUriDetails{}
+		err = json.Unmarshal(data, &mm)
+		return mm, err
+	default:
+		return m, nil
+	}
 }
-
 
 func (m imagesourcedetails) String() string {
-    return common.PointerString(m)
+	return common.PointerString(m)
 }
-
-
-
-
-

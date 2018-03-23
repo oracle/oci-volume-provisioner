@@ -31,7 +31,6 @@ import (
 
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/block"
-	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/filestorage"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/plugin"
 )
 
@@ -82,7 +81,6 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1
 		storageClassProvisioners: map[string]plugin.ProvisionerPlugin{
 			"oci":      blockProvisioner,
 			"oci-ext3": blockProvisioner,
-			"ffsw":     filestorage.NewFilesystemProvisioner(client),
 		},
 	}
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
 // Code generated. DO NOT EDIT.
 
 // Database Service API
@@ -9,22 +9,14 @@
 package database
 
 import (
-    "github.com/oracle/oci-go-sdk/common"
+	"github.com/oracle/oci-go-sdk/common"
 )
 
-
-    
- // UpdateDbHomeDetails Describes the modification parameters for the DB Home.
+// UpdateDbHomeDetails Describes the modification parameters for the DB Home.
 type UpdateDbHomeDetails struct {
-    
-    DbVersion *PatchDetails `mandatory:"false" json:"dbVersion"`
+	DbVersion *PatchDetails `mandatory:"false" json:"dbVersion"`
 }
 
 func (m UpdateDbHomeDetails) String() string {
-    return common.PointerString(m)
+	return common.PointerString(m)
 }
-
-
-
-
-
