@@ -18,8 +18,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/golang/glog"
-
 	"os"
+	"strings"
 
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -91,6 +91,16 @@ func roundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
 	return (volumeSizeBytes + allocationUnitBytes - 1) / allocationUnitBytes
 }
 
+// mapAvailabilityDomainToFailureDomain maps a given Availability Domain to a
+// k8s label compat. string.
+func mapAvailabilityDomainToFailureDomain(AD string) string {
+	parts := strings.SplitN(AD, ":", 2)
+	if parts == nil {
+		return ""
+	}
+	return parts[len(parts)-1]
+}
+
 // Provision creates a storage asset and returns a PV object representing it.
 func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.PersistentVolume, error) {
 	availabilityDomainName, availabilityDomain, err := p.chooseAvailabilityDomain(options.PVC)
@@ -108,7 +118,7 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 		persistentVolume.ObjectMeta.Annotations[ociProvisionerIdentity] = ociProvisionerIdentity
 		persistentVolume.ObjectMeta.Annotations[ociAvailabilityDomain] = availabilityDomainName
 		persistentVolume.ObjectMeta.Annotations[ociCompartment] = p.client.CompartmentOCID()
-		persistentVolume.ObjectMeta.Labels[metav1.LabelZoneFailureDomain] = availabilityDomainName
+		persistentVolume.ObjectMeta.Labels[metav1.LabelZoneFailureDomain] = mapAvailabilityDomainToFailureDomain(*availabilityDomain.Name)
 	}
 	return persistentVolume, err
 }
