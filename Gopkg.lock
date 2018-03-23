@@ -107,13 +107,14 @@
   revision = "d5b7844b561a7bc640052f1b935f7b800330d7e0"
 
 [[projects]]
-  branch = "master"
   name = "github.com/oracle/oci-go-sdk"
   packages = [
-    ".",
-    "common"
+    "common",
+    "core",
+    "identity"
   ]
-  revision = "52acb91a0461799f2b920b986c6d492364a68ae1"
+  revision = "8090aeb474ad994446b2db294725e3d6c0d95327"
+  version = "v1.0.0"
 
 [[projects]]
   name = "github.com/pborman/uuid"
@@ -435,6 +436,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "1129b2609fe3ce01205dc397b7a746a2ac38cf3ca5590a05ef2f90d9e4dd6a2d"
+  inputs-digest = "b5ef2727b30f1b484cf2f3e04de39e1f92dab069bb9972fc71b50b565f39f4a3"
   solver-name = "gps-cdcl"
   solver-version = 1

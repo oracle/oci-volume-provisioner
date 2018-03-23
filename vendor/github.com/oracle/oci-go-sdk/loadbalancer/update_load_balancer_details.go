@@ -1,4 +1,4 @@
-// Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
 // Code generated. DO NOT EDIT.
 
 // Load Balancing Service API
@@ -9,25 +9,18 @@
 package loadbalancer
 
 import (
-    "github.com/oracle/oci-go-sdk/common"
+	"github.com/oracle/oci-go-sdk/common"
 )
 
-
-    
- // UpdateLoadBalancerDetails Configuration details to update a load balancer.
+// UpdateLoadBalancerDetails Configuration details to update a load balancer.
 type UpdateLoadBalancerDetails struct {
-    
- // The user-friendly display name for the load balancer. It does not have to be unique, and it is changeable.
- // Avoid entering confidential information.
- // Example: `My load balancer`
-    DisplayName *string `mandatory:"true" json:"displayName"`
+
+	// The user-friendly display name for the load balancer. It does not have to be unique, and it is changeable.
+	// Avoid entering confidential information.
+	// Example: `My load balancer`
+	DisplayName *string `mandatory:"true" json:"displayName"`
 }
 
 func (m UpdateLoadBalancerDetails) String() string {
-    return common.PointerString(m)
+	return common.PointerString(m)
 }
-
-
-
-
-

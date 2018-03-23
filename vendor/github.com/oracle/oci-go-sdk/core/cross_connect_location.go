@@ -1,4 +1,4 @@
-// Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
 // Code generated. DO NOT EDIT.
 
 // Core Services API
@@ -9,27 +9,20 @@
 package core
 
 import (
-    "github.com/oracle/oci-go-sdk/common"
+	"github.com/oracle/oci-go-sdk/common"
 )
 
-
-    
- // CrossConnectLocation An individual FastConnect location.
+// CrossConnectLocation An individual FastConnect location.
 type CrossConnectLocation struct {
-    
- // A description of the location.
-    Description *string `mandatory:"true" json:"description"`
-    
- // The name of the location.
- // Example: `CyrusOne, Chandler, AZ`
-    Name *string `mandatory:"true" json:"name"`
+
+	// A description of the location.
+	Description *string `mandatory:"true" json:"description"`
+
+	// The name of the location.
+	// Example: `CyrusOne, Chandler, AZ`
+	Name *string `mandatory:"true" json:"name"`
 }
 
 func (m CrossConnectLocation) String() string {
-    return common.PointerString(m)
+	return common.PointerString(m)
 }
-
-
-
-
-

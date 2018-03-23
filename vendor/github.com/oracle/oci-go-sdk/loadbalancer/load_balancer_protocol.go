@@ -1,4 +1,4 @@
-// Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
 // Code generated. DO NOT EDIT.
 
 // Load Balancing Service API
@@ -9,23 +9,16 @@
 package loadbalancer
 
 import (
-    "github.com/oracle/oci-go-sdk/common"
+	"github.com/oracle/oci-go-sdk/common"
 )
 
-
-    
- // LoadBalancerProtocol The protocol that defines the type of traffic accepted by a listener.
+// LoadBalancerProtocol The protocol that defines the type of traffic accepted by a listener.
 type LoadBalancerProtocol struct {
-    
- // The name of the protocol.
-    Name *string `mandatory:"true" json:"name"`
+
+	// The name of the protocol.
+	Name *string `mandatory:"true" json:"name"`
 }
 
 func (m LoadBalancerProtocol) String() string {
-    return common.PointerString(m)
+	return common.PointerString(m)
 }
-
-
-
-
-

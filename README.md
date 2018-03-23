@@ -7,7 +7,6 @@ The OCI Volume Provisioner enables [dynamic provisioning][1] of storage resource
 It uses the [OCI Flexvolume Driver][2] to bind storage resources to Kubernetes nodes. The volume provisioner offers support for
 
 * [Block Volumes][5]
-* [File Storage][6]
 
 ## Prerequisites
 
@@ -167,4 +166,3 @@ See [LICENSE](LICENSE) for more details.
 [3]: https://kubernetes.io/docs/admin/authorization/rbac/
 [4]: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims
 [5]: https://docs.us-phoenix-1.oraclecloud.com/Content/Block/Concepts/overview.htm
-[6]: https://docs.us-phoenix-1.oraclecloud.com/Content/File/Concepts/filestorageoverview.htm

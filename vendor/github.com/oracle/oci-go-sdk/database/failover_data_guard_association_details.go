@@ -1,4 +1,4 @@
-// Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
 // Code generated. DO NOT EDIT.
 
 // Database Service API
@@ -9,23 +9,16 @@
 package database
 
 import (
-    "github.com/oracle/oci-go-sdk/common"
+	"github.com/oracle/oci-go-sdk/common"
 )
 
-
-    
- // FailoverDataGuardAssociationDetails The Data Guard association failover parameters.
+// FailoverDataGuardAssociationDetails The Data Guard association failover parameters.
 type FailoverDataGuardAssociationDetails struct {
-    
- // The DB System administrator password.
-    DatabaseAdminPassword *string `mandatory:"true" json:"databaseAdminPassword"`
+
+	// The DB System administrator password.
+	DatabaseAdminPassword *string `mandatory:"true" json:"databaseAdminPassword"`
 }
 
 func (m FailoverDataGuardAssociationDetails) String() string {
-    return common.PointerString(m)
+	return common.PointerString(m)
 }
-
-
-
-
-
