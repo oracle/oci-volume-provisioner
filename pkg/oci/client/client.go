@@ -192,5 +192,6 @@ func configureCustomTransport(baseClient *common.BaseClient) error {
 		}
 		transport.TLSClientConfig = &tls.Config{RootCAs: caCertPool}
 	}
+	httpClient.Transport = transport
 	return nil
 }
