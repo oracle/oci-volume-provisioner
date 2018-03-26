@@ -28,7 +28,7 @@ import (
 
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 const (
@@ -55,6 +55,8 @@ func informerResyncPeriod(minResyncPeriod time.Duration) func() time.Duration {
 func main() {
 	syscall.Umask(0)
 
+	kubeconfig := flag.String("kubeconfig", "", "Path to Kubeconfig file with authorization and master location information.")
+	master := flag.String("master", "", "The address of the Kubernetes API server (overrides any value in kubeconfig).")
 	flag.Parse()
 	flag.Set("logtostderr", "true")
 
@@ -63,10 +65,11 @@ func main() {
 
 	// Create an InClusterConfig and use it to create a client for the controller
 	// to use to communicate with Kubernetes
-	config, err := rest.InClusterConfig()
+	config, err := clientcmd.BuildConfigFromFlags(*master, *kubeconfig)
 	if err != nil {
-		glog.Fatalf("Failed to create config: %v", err)
+		glog.Fatalf("Failed to load config: %v", err)
 	}
+
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		glog.Fatalf("Failed to create client: %v", err)

@@ -20,6 +20,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -73,6 +74,10 @@ func (p *provisionerClient) Timeout() time.Duration {
 
 func (p *provisionerClient) CompartmentOCID() (compartmentOCID string) {
 	if p.cfg.Auth.CompartmentOCID == "" {
+		if p.metadata == nil {
+			log.Fatalf("Unable to get compartment OCID. Please provide this via config")
+			return
+		}
 		glog.Infof("'CompartmentID' not given. Using compartment OCID %s from instance metadata", p.metadata.CompartmentOCID)
 		compartmentOCID = p.metadata.CompartmentOCID
 	} else {
@@ -112,8 +117,7 @@ func FromConfig(cfg *Config) (ProvisionerClient, error) {
 
 	metadata, err := instancemeta.New().Get()
 	if err != nil {
-		glog.Fatalf("Unable to retrieve instance metadata: %v", err)
-		return nil, err
+		glog.Warning("Unable to retrieve instance metadata: %v", err)
 	}
 
 	return &provisionerClient{
