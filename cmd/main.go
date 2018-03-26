@@ -52,10 +52,6 @@ func informerResyncPeriod(minResyncPeriod time.Duration) func() time.Duration {
 	}
 }
 
-func init() {
-
-}
-
 func main() {
 	syscall.Umask(0)
 
