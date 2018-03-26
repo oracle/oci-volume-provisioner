@@ -66,14 +66,32 @@ push:
 system-test:
   box:
     id: wcr.io/oracle/oci-volume-provisioner-system-test:1.0.0
-    registry: wcr.io
   steps:
     - script:
-        name: system test
-        code: |
-          cd test/system
-          ./runner.py
+      name: set ENV vars
+      code: |
+        export VERSION=$(cat dist/VERSION.txt)
+        echo "Pushing test version ${VERSION}"
 
+    - script:
+      name: prepare
+      code: |
+        mv ./dist /dist
+        mv ./manifests /manifests
+        mv ./test /test
+
+    - internal/docker-push:
+      repository: wcr.io/oracle/oci-volume-provisioner-test
+      tag: $VERSION
+      working-dir: /test/system
+      entrypoint: ./runner.py
+      user: 65534 # nobody
+
+    - script:
+        name: test
+        code: |
+          cd /test/system
+          ./runner.py
 
 release:
   box:

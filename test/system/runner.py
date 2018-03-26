@@ -332,10 +332,9 @@ def _main():
 
     success = True
 
-    # Cleanup in case any existing state exists in the cluster
-    _cleanup(display_errors=False)
-
     if not args['no_setup']:
+        # Cleanup in case any existing state exists in the cluster
+        _cleanup(display_errors=False)
         _log("Setting up the volume provisioner", as_banner=True)
         if "DOCKER_REGISTRY_USERNAME" in os.environ and "DOCKER_REGISTRY_PASSWORD" in os.environ:
             _kubectl("-n kube-system create secret docker-registry wcr-docker-pull-secret " + \
@@ -353,9 +352,7 @@ def _main():
         _kubectl("create -f ../../dist/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
         _kubectl("create -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
 
-        pod_name, _, _ = _wait_for_pod_status("Running")
-
-    # get the compartment_id of the oci-volume-provisioner
+    pod_name, _, _ = _wait_for_pod_status("Running")
     compartment_id = _get_compartment_id(pod_name)
 
     if not args['no_test']:
