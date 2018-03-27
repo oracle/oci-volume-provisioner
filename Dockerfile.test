@@ -1,0 +1,9 @@
+FROM wcr.io/oracle/oci-volume-provisioner-system-test:1.0.0
+
+COPY dist /dist
+COPY manifests /manifests
+COPY test /test
+
+WORKDIR /test/system
+
+CMD ["./runner.py"]

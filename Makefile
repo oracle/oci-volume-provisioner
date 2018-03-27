@@ -13,6 +13,7 @@ BIN := oci-volume-provisioner
 REGISTRY ?= wcr.io
 DOCKER_REGISTRY_USERNAME ?= oracle
 IMAGE ?= $(REGISTRY)/$(DOCKER_REGISTRY_USERNAME)/$(BIN)
+TEST_IMAGE ?= $(REGISTRY)/$(DOCKER_REGISTRY_USERNAME)/$(BIN)-test
 
 GOOS ?= linux
 GOARCH ?= amd64
@@ -53,12 +54,24 @@ ${DIR}/${BIN}: ${GO_SRC}
 
 .PHONY: image
 image: build
-	docker build -t ${IMAGE}:${VERSION} .
+	docker build -t ${IMAGE}:${VERSION} -f Dockerfile .
+	docker build -t ${TEST_IMAGE}:${VERSION} -f Dockerfile.test .
 
 .PHONY: push
 push: image
 	docker login -u '$(DOCKER_REGISTRY_USERNAME)' -p '$(DOCKER_REGISTRY_PASSWORD)' $(REGISTRY)
 	docker push ${IMAGE}:${VERSION}
+	docker push ${TEST_IMAGE}:${VERSION}
+
+.PHONY: system-test
+system-test:
+	docker run -it \
+		-e DOCKER_REGISTRY_USERNAME=$$DOCKER_REGISTRY_USERNAME \
+		-e DOCKER_REGISTRY_PASSWORD=$$DOCKER_REGISTRY_PASSWORD \
+		-e OCICONFIG_VAR=$$OCICONFIG_VAR \
+		-e KUBECONFIG_VAR=$$KUBECONFIG_VAR \
+		-e HTTPS_PROXY=$$HTTPS_PROXY \
+		${TEST_IMAGE}:${VERSION} ${TEST_IMAGE_ARGS} 
 
 .PHONY: clean
 clean:
