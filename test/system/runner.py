@@ -267,16 +267,16 @@ def _get_compartment_id(pod_name):
 
 def _handle_args():
     parser = argparse.ArgumentParser(description='Description of your program')
-    parser.add_argument('--no-setup',
-                        help='Dont setup the provisioner on the cluster',
+    parser.add_argument('--setup',
+                        help='Setup the provisioner on the cluster',
                         action='store_true',
                         default=False)
     parser.add_argument('--no-test',
                         help='Dont run the tests on the test cluster',
                         action='store_true',
                         default=False)
-    parser.add_argument('--no-teardown',
-                        help='Dont teardown the provisioner on the cluster',
+    parser.add_argument('--teardown',
+                        help='Teardown the provisioner on the cluster',
                         action='store_true',
                         default=False)
     return vars(parser.parse_args())
@@ -332,7 +332,7 @@ def _main():
 
     success = True
 
-    if not args['no_setup']:
+    if args['setup']:
         # Cleanup in case any existing state exists in the cluster
         _cleanup(display_errors=False)
         _log("Setting up the volume provisioner", as_banner=True)
@@ -368,7 +368,7 @@ def _main():
         _test_create_volume(compartment_id,
                             "../../manifests/example-claim-no-AD.yaml", "demooci-no-ad")
 
-    if not args['no_teardown']:
+    if args['teardown']:
         _log("Tearing down the volume provisioner", as_banner=True)
         _cleanup()
 
