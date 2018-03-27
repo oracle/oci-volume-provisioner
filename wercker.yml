@@ -91,7 +91,7 @@ system-test:
         name: test
         code: |
           cd /test/system
-          ./runner.py
+          ./runner.py --setup --teardown
 
 release:
   box:
