@@ -132,13 +132,5 @@ release:
       file: ./dist/storage-class.yaml
       filename: storage-class.yaml
       content-type: text/yaml
-      
-    - github-upload-asset:
-      token: $GITHUB_TOKEN
-      file: ./dist/storage-class-ffsw.yaml
-      filename: storage-class-ffsw.yaml
-      content-type: text/yaml
-
-          
 
       
