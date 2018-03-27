@@ -20,7 +20,7 @@ GOARCH ?= amd64
 SRC_DIRS := cmd pkg # directories which hold app source (not vendored)
 
 .PHONY: all
-all: gofmt golint govet test build 
+all: gofmt golint govet test build
 
 .PHONY: gofmt
 gofmt:
@@ -44,7 +44,6 @@ build: ${DIR}/${BIN}
 	 manifests/oci-volume-provisioner.yaml > $(DIR)/oci-volume-provisioner.yaml
 	cp manifests/storage-class.yaml $(DIR)/storage-class.yaml
 	cp manifests/storage-class-ext3.yaml $(DIR)/storage-class-ext3.yaml
-	cp manifests/storage-class-ffsw.yaml $(DIR)/storage-class-ffsw.yaml
 	cp manifests/oci-volume-provisioner-rbac.yaml $(DIR)/oci-volume-provisioner-rbac.yaml
 
 
@@ -71,7 +70,7 @@ system-test:
 		-e OCICONFIG_VAR=$$OCICONFIG_VAR \
 		-e KUBECONFIG_VAR=$$KUBECONFIG_VAR \
 		-e HTTPS_PROXY=$$HTTPS_PROXY \
-		${TEST_IMAGE}:${VERSION} ${TEST_IMAGE_ARGS} 
+		${TEST_IMAGE}:${VERSION} ${TEST_IMAGE_ARGS}
 
 .PHONY: clean
 clean:
