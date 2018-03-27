@@ -21,10 +21,11 @@ REGION = "us-phoenix-1"
 TIMEOUT = 600
 
 
-def _check_env():
-    if "OCICONFIG" not in os.environ and "OCICONFIG_VAR" not in os.environ:
-        _log("Error. Can't find either OCICONFIG or OCICONFIG_VAR in the environment.")
-        sys.exit(1)
+def _check_env(check_oci):
+    if check_oci:
+        if "OCICONFIG" not in os.environ and "OCICONFIG_VAR" not in os.environ:
+            _log("Error. Can't find either OCICONFIG or OCICONFIG_VAR in the environment.")
+            sys.exit(1)
     if "KUBECONFIG" not in os.environ and "KUBECONFIG_VAR" not in os.environ:
         _log("Error. Can't find either KUBECONFIG or KUBECONFIG_VAR in the environment.")
         sys.exit(1)
@@ -275,6 +276,10 @@ def _handle_args():
                         help='Dont run the tests on the test cluster',
                         action='store_true',
                         default=False)
+    parser.add_argument('--check-oci',
+                        help='Check with OCI that the volumes have been created/destroyed',
+                        action='store_true',
+                        default=False)
     parser.add_argument('--teardown',
                         help='Teardown the provisioner on the cluster',
                         action='store_true',
@@ -290,7 +295,7 @@ def _cleanup(exit_on_error=False, display_errors=True):
     _kubectl("delete -f ../../dist/storage-class.yaml",
              exit_on_error, display_errors)
     _kubectl("delete -f ../../dist/storage-class-ffsw.yaml",
-             exit_on_error, display_errors)    
+             exit_on_error, display_errors)
     _kubectl("delete -f ../../dist/storage-class-ext3.yaml",
              exit_on_error, display_errors)
     _kubectl("-n kube-system delete secret oci-volume-provisioner",
@@ -299,7 +304,7 @@ def _cleanup(exit_on_error=False, display_errors=True):
              exit_on_error, display_errors)
 
 
-def _test_create_volume(compartment_id, claim_target, claim_volume_name):
+def _test_create_volume(compartment_id, claim_target, claim_volume_name, check_oci):
 
     _log("Creating the volume claim")
     _kubectl("create -f " + claim_target, exit_on_error=False)
@@ -307,27 +312,29 @@ def _test_create_volume(compartment_id, claim_target, claim_volume_name):
     volume = _get_volume_and_wait(claim_volume_name)
     _log("Created volume with name: " + volume)
 
-    _log("Querying the OCI api to make sure a volume with this name exists...")
-    if not _wait_for_volume(compartment_id, volume):
-        _log("Failed to find volume with name: " + volume)
-        sys.exit(1)
-    _log("Volume: " + volume + " is present and available")
+    if check_oci:
+        _log("Querying the OCI api to make sure a volume with this name exists...")
+        if not _wait_for_volume(compartment_id, volume):
+            _log("Failed to find volume with name: " + volume)
+            sys.exit(1)
+        _log("Volume: " + volume + " is present and available")
 
     _log("Delete the volume claim")
     _kubectl("delete -f " + claim_target, exit_on_error=False)
 
-    _log("Querying the OCI api to make sure a volume with this name now doesnt exist...")
-    if not _volume_exists(compartment_id, volume, 'TERMINATED'):
-        _log("Volume with name: " + volume + " still exists")
-        sys.exit(1)
-    _log("Volume: " + volume + " has now been terminated")
+    if check_oci:
+        _log("Querying the OCI api to make sure a volume with this name now doesnt exist...")
+        if not _volume_exists(compartment_id, volume, 'TERMINATED'):
+            _log("Volume with name: " + volume + " still exists")
+            sys.exit(1)
+        _log("Volume: " + volume + " has now been terminated")
 
 
 def _main():
     _reset_debug_file()
     args = _handle_args()
 
-    _check_env()
+    _check_env(args['check_oci'])
     _create_key_files()
 
     success = True
@@ -347,7 +354,7 @@ def _main():
                  "--from-file=config.yaml=" + _get_oci_config_file(),
                  exit_on_error=False)
         _kubectl("create -f ../../dist/storage-class.yaml", exit_on_error=False)
-        _kubectl("create -f ../../dist/storage-class-ffsw.yaml", exit_on_error=False)        
+        _kubectl("create -f ../../dist/storage-class-ffsw.yaml", exit_on_error=False)
         _kubectl("create -f ../../dist/storage-class-ext3.yaml", exit_on_error=False)
         _kubectl("create -f ../../dist/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
         _kubectl("create -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
@@ -358,15 +365,18 @@ def _main():
     if not args['no_test']:
         _log("Running system test: Simple", as_banner=True)
         _test_create_volume(compartment_id,
-                            "../../manifests/example-claim.yaml", "demooci")
+                            "../../manifests/example-claim.yaml",
+                            "demooci", args['check_oci'])
 
         _log("Running system test: Ext3 file system", as_banner=True)
         _test_create_volume(compartment_id,
-                            "../../manifests/example-claim-ext3.yaml", "demo-oci-ext3")
+                            "../../manifests/example-claim-ext3.yaml",
+                            "demo-oci-ext3", args['check_oci'])
 
         _log("Running system test: No AD specified", as_banner=True)
         _test_create_volume(compartment_id,
-                            "../../manifests/example-claim-no-AD.yaml", "demooci-no-ad")
+                            "../../manifests/example-claim-no-AD.yaml",
+                            "demooci-no-ad", args['check_oci'])
 
     if args['teardown']:
         _log("Tearing down the volume provisioner", as_banner=True)
