@@ -91,7 +91,7 @@ system-test:
         name: test
         code: |
           cd /test/system
-          ./runner.py --setup --teardown
+          ./runner.py --setup --check-oci --teardown
 
 release:
   box:
