@@ -4,9 +4,6 @@ metadata:
   name: demooci
 spec:
   storageClassName: "ffsw"
-  selector:
-    matchLabels:
-      oci-availability-domain: "PHX-AD-1"
   accessModes:
     - ReadWriteMany
   resources:
