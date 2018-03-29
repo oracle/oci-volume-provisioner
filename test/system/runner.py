@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 
+import atexit
 import argparse
 import datetime
 import json
 import os
+import re
 import select
 import subprocess
 import sys
@@ -31,30 +33,32 @@ def _check_env(check_oci):
         sys.exit(1)
 
 
-def _create_key_files():
+def _create_key_files(check_oci):
     if "OCICONFIG_VAR" in os.environ:
         _run_command("echo \"$OCICONFIG_VAR\" | openssl enc -base64 -d -A > " + TMP_OCICONFIG, ".")
         _run_command("chmod 600 " + TMP_OCICONFIG, ".")
     if "KUBECONFIG_VAR" in os.environ:
         _run_command("echo \"$KUBECONFIG_VAR\" | openssl enc -base64 -d -A > " + TMP_KUBECONFIG, ".")
 
-    oci_config_file = _get_oci_config_file()
-    with open(_get_oci_config_file(), 'r') as stream:
-        try:
-            cnf = yaml.load(stream)
-            with open(TMP_OCI_API_KEY_FILE, 'w') as stream:
-                stream.write(cnf['auth']['key'])
-        except yaml.YAMLError:
-            _log("Error. Failed to parse oci config file " + oci_config_file)
-            sys.exit(1)
+    if check_oci:
+        oci_config_file = _get_oci_config_file()
+        with open(oci_config_file, 'r') as stream:
+            try:
+                cnf = yaml.load(stream)
+                with open(TMP_OCI_API_KEY_FILE, 'w') as stream:
+                    stream.write(cnf['auth']['key'])
+            except yaml.YAMLError:
+                _log("Error. Failed to parse oci config file " + oci_config_file)
+                sys.exit(1)
 
 
-def _destroy_key_files():
+def _destroy_key_files(check_oci):
     if "OCICONFIG_VAR" in os.environ:
         os.remove(TMP_OCICONFIG)
     if "KUBECONFIG_VAR" in os.environ:
         os.remove(TMP_KUBECONFIG)
-    os.remove(TMP_OCI_API_KEY_FILE)
+    if check_oci:
+        os.remove(TMP_OCI_API_KEY_FILE)
 
 
 def _get_kubeconfig():
@@ -300,12 +304,31 @@ def _cleanup(exit_on_error=False, display_errors=True):
              exit_on_error, display_errors)
     _kubectl("-n kube-system delete secret oci-volume-provisioner",
              exit_on_error, display_errors)
-    _kubectl("-n kube-system delete secret wcr-docker-pull-secret",
-             exit_on_error, display_errors)
+
+
+def _get_region():
+    nodes_json = _kubectl("get nodes -o json", log_stdout=False)
+    nodes = json.loads(nodes_json)
+    for node in nodes['items']:
+        return node['metadata']['labels']['failure-domain.beta.kubernetes.io/zone']
+    return None
+
+
+def _create_regioned_yaml(template):
+    region = _get_region()
+    if region is None:
+        _log("Region lookup failed")
+        sys.exit(1)
+    yaml_file = template + ".yaml"
+    with open(template, "r") as sources:
+        lines = sources.readlines()
+    with open(yaml_file, "w") as sources:
+        for line in lines:
+            sources.write(re.sub('{{REGION}}', region, line))
+    return yaml_file
 
 
 def _test_create_volume(compartment_id, claim_target, claim_volume_name, check_oci):
-
     _log("Creating the volume claim")
     _kubectl("create -f " + claim_target, exit_on_error=False)
 
@@ -335,7 +358,10 @@ def _main():
     args = _handle_args()
 
     _check_env(args['check_oci'])
-    _create_key_files()
+    _create_key_files(args['check_oci'])
+    def _destroy_key_files_atexit():
+        _destroy_key_files(args['check_oci'])
+    atexit.register(_destroy_key_files_atexit)
 
     success = True
 
@@ -343,13 +369,6 @@ def _main():
         # Cleanup in case any existing state exists in the cluster
         _cleanup(display_errors=False)
         _log("Setting up the volume provisioner", as_banner=True)
-        if "DOCKER_REGISTRY_USERNAME" in os.environ and "DOCKER_REGISTRY_PASSWORD" in os.environ:
-            _kubectl("-n kube-system create secret docker-registry wcr-docker-pull-secret " + \
-                     "--docker-server=\"wcr.io\" " + \
-                     "--docker-username=\"" + os.environ['DOCKER_REGISTRY_USERNAME'] +"\" " + \
-                     "--docker-password=\"" + os.environ['DOCKER_REGISTRY_PASSWORD'] +"\" " + \
-                     "--docker-email=\"k8s@oracle.com\"",
-                     exit_on_error=False)
         _kubectl("-n kube-system create secret generic oci-volume-provisioner " + \
                  "--from-file=config.yaml=" + _get_oci_config_file(),
                  exit_on_error=False)
@@ -365,7 +384,7 @@ def _main():
     if not args['no_test']:
         _log("Running system test: Simple", as_banner=True)
         _test_create_volume(compartment_id,
-                            "../../manifests/example-claim.yaml",
+                            _create_regioned_yaml("../../manifests/example-claim.template"),
                             "demooci", args['check_oci'])
 
         _log("Running system test: Ext3 file system", as_banner=True)
@@ -381,8 +400,6 @@ def _main():
     if args['teardown']:
         _log("Tearing down the volume provisioner", as_banner=True)
         _cleanup()
-
-    _destroy_key_files()
 
     if not success:
         sys.exit(1)

@@ -63,15 +63,34 @@ push: image
 	docker push ${IMAGE}:${VERSION}
 	docker push ${TEST_IMAGE}:${VERSION}
 
+.PHONY:system-test-config
+system-test-config:
+ifndef KUBECONFIG
+ifndef KUBECONFIG_VAR
+	$(error "KUBECONFIG or KUBECONFIG_VAR must be defined")
+else
+	$(eval KUBECONFIG:=/tmp/kubeconfig)
+	$(eval export KUBECONFIG)
+	$(shell echo "$${KUBECONFIG_VAR}" | openssl enc -base64 -d -A > $(KUBECONFIG))
+endif
+endif
+ifndef OCICONFIG
+ifdef OCICONFIG_VAR
+	$(eval OCICONFIG:=/tmp/ociconfig)
+	$(eval export OCICONFIG)
+	$(shell echo "$${OCICONFIG_VAR}" | openssl enc -base64 -d -A > $(OCICONFIG))
+	$(eval DOCKER_OPTIONS+=-e OCICONFIG=$(OCICONFIG) -v $(OCICONFIG):$(OCICONFIG))
+	$(eval export DOCKER_OPTIONS)
+endif
+endif
+
 .PHONY: system-test
-system-test:
-	docker run -it \
-		-e DOCKER_REGISTRY_USERNAME=$$DOCKER_REGISTRY_USERNAME \
-		-e DOCKER_REGISTRY_PASSWORD=$$DOCKER_REGISTRY_PASSWORD \
-		-e OCICONFIG_VAR=$$OCICONFIG_VAR \
-		-e KUBECONFIG_VAR=$$KUBECONFIG_VAR \
-		-e HTTPS_PROXY=$$HTTPS_PROXY \
-		${TEST_IMAGE}:${VERSION} ${TEST_IMAGE_ARGS} 
+system-test: system-test-config
+	docker run -it ${DOCKER_OPTIONS} \
+        -e KUBECONFIG=$(KUBECONFIG) \
+        -v $(KUBECONFIG):$(KUBECONFIG) \
+        -e HTTPS_PROXY=$$HTTPS_PROXY \
+        ${TEST_IMAGE}:${VERSION} ${TEST_IMAGE_ARGS} 
 
 .PHONY: clean
 clean:

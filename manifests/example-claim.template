@@ -6,7 +6,7 @@ spec:
   storageClassName: "oci"
   selector:
     matchLabels:
-      oci-availability-domain: "PHX-AD-1"
+      oci-availability-domain: "{{REGION}}"
   accessModes:
     - ReadWriteOnce
   resources:
