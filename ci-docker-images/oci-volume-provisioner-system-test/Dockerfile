@@ -2,6 +2,7 @@ FROM ubuntu:16.04
 
 ARG TERRAFORM_VERSION=0.10.7
 ARG OCI_TERRAFORM_PROVIDER_VERSION="2.0.2"
+ARG KUBECTL_VERSION=v1.9.4
 
 # Installs the required dependencies.
 RUN apt-get update && apt-get install -y \
@@ -13,7 +14,8 @@ RUN apt-get update && apt-get install -y \
     python-yaml \
     unzip \
     wget \
-    curl
+    curl \
+    jq
 
 # Installs terraform.
 RUN wget https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip
@@ -31,6 +33,6 @@ RUN pip install \
     requests[security]
 
 # Installs the kubectl client
-RUN curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+RUN curl -LO https://storage.googleapis.com/kubernetes-release/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl
 RUN chmod +x ./kubectl
 RUN mv ./kubectl /usr/local/bin/kubectl
