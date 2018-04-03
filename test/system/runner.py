@@ -28,9 +28,6 @@ def _check_env(check_oci):
         if "OCICONFIG" not in os.environ and "OCICONFIG_VAR" not in os.environ:
             _log("Error. Can't find either OCICONFIG or OCICONFIG_VAR in the environment.")
             sys.exit(1)
-    if "KUBECONFIG" not in os.environ and "KUBECONFIG_VAR" not in os.environ:
-        _log("Error. Can't find either KUBECONFIG or KUBECONFIG_VAR in the environment.")
-        sys.exit(1)
 
 
 def _create_key_files(check_oci):
@@ -146,7 +143,10 @@ def _get_timestamp(test_id):
 
 
 def _kubectl(action, exit_on_error=True, display_errors=True, log_stdout=True):
-    (stdout, _, returncode) = _run_command("KUBECONFIG=" + _get_kubeconfig() + " kubectl " + action, ".", display_errors)
+    if "KUBECONFIG" not in os.environ and "KUBECONFIG_VAR" not in os.environ:
+        (stdout, _, returncode) = _run_command("kubectl " + action, ".", display_errors)
+    else:
+        (stdout, _, returncode) = _run_command("KUBECONFIG=" + _get_kubeconfig() + " kubectl " + action, ".", display_errors)
     if exit_on_error and returncode != 0:
         _log("Error running kubectl")
         sys.exit(1)
@@ -350,10 +350,10 @@ def _test_create_volume(compartment_id, claim_target, claim_volume_name, check_o
 
     _log("Delete the volume claim")
     _kubectl("delete -f " + claim_target, exit_on_error=False)
-    _wait_for_volume_to_delete(compartment_id, volume)
 
     if check_oci:
         _log("Querying the OCI api to make sure a volume with this name now doesnt exist...")
+        _wait_for_volume_to_delete(compartment_id, volume)
         if not _volume_exists(compartment_id, volume, 'TERMINATED'):
             _log("Volume with name: " + volume + " still exists")
             sys.exit(1)
