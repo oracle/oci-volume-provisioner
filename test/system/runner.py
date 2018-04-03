@@ -248,15 +248,23 @@ def _volume_exists(compartment_id, volume, state):
     return False
 
 
-def _wait_for_volume(compartment_id, volume):
+def _wait_for_volume(compartment_id, volume, state):
     num_polls = 0
-    while not _volume_exists(compartment_id, volume, 'AVAILABLE'):
+    while not _volume_exists(compartment_id, volume, state):
         _log("    waiting...")
         time.sleep(1)
         num_polls += 1
         if num_polls == TIMEOUT:
             return False
     return True
+
+def _wait_for_volume_to_create(compartment_id, volume):
+    return _wait_for_volume(compartment_id, volume, 'AVAILABLE')
+
+
+def _wait_for_volume_to_delete(compartment_id, volume):
+    return _wait_for_volume(compartment_id, volume, 'TERMINATED')
+
 
 def _get_compartment_id(pod_name):
     """
@@ -335,13 +343,14 @@ def _test_create_volume(compartment_id, claim_target, claim_volume_name, check_o
 
     if check_oci:
         _log("Querying the OCI api to make sure a volume with this name exists...")
-        if not _wait_for_volume(compartment_id, volume):
+        if not _wait_for_volume_to_create(compartment_id, volume):
             _log("Failed to find volume with name: " + volume)
             sys.exit(1)
         _log("Volume: " + volume + " is present and available")
 
     _log("Delete the volume claim")
     _kubectl("delete -f " + claim_target, exit_on_error=False)
+    _wait_for_volume_to_delete(compartment_id, volume)
 
     if check_oci:
         _log("Querying the OCI api to make sure a volume with this name now doesnt exist...")
@@ -375,6 +384,12 @@ def _main():
         _kubectl("create -f ../../dist/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
         _kubectl("create -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
 
+    if args['teardown']:
+        def _teardown_atexit():
+            _log("Tearing down the volume provisioner", as_banner=True)
+            _cleanup()
+        atexit.register(_teardown_atexit)
+
     pod_name, _, _ = _wait_for_pod_status("Running")
     compartment_id = _get_compartment_id(pod_name)
 
@@ -393,10 +408,6 @@ def _main():
         _test_create_volume(compartment_id,
                             "../../manifests/example-claim-no-AD.yaml",
                             "demooci-no-ad", args['check_oci'])
-
-    if args['teardown']:
-        _log("Tearing down the volume provisioner", as_banner=True)
-        _cleanup()
 
     if not success:
         sys.exit(1)
