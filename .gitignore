@@ -4,4 +4,4 @@ env.sh
 .wercker
 *.log
 test/system/venv/
-test/system/run-test-image.yaml
+test/system/run-test-image.yaml*

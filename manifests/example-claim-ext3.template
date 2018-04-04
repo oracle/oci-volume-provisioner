@@ -1,7 +1,7 @@
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
-  name: demo-oci-ext3
+  name: demooci-ext3-{{TEST_ID}}
 spec:
   storageClassName: "oci-ext3"
   accessModes:

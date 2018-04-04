@@ -21,12 +21,14 @@ if [ "$#" -ne 1 ]; then
 fi
 VERSION=$1
 DOCKER_REGISTRY_USERNAME=${DOCKER_REGISTRY_USERNAME:-oracle}
+TEST_ID=$(pwgen -A 8 1)
 
 # Create the test image pod yaml
 cat $DIR/run-test-image.yaml.template | \
     sed "s/{{VERSION}}/$VERSION/g" | \
-    sed "s/{{DOCKER_REGISTRY_USERNAME}}/$DOCKER_REGISTRY_USERNAME/g" \
-    > $DIR/run-test-image.yaml
+    sed "s/{{DOCKER_REGISTRY_USERNAME}}/$DOCKER_REGISTRY_USERNAME/g" | \
+    sed "s/{{TEST_ID}}/$TEST_ID/g" \
+    > $DIR/run-test-image.yaml.$TEST_ID
 
 if [[ -z "${KUBECONFIG}" ]]; then
     if [[ -z "${KUBECONFIG_VAR}" ]]; then
@@ -39,13 +41,13 @@ if [[ -z "${KUBECONFIG}" ]]; then
 fi
 
 # Starts the test image inside the cluster and waits for it to complete.
-exitCodeCmd="kubectl get po volume-provisioner-system-test -o json | jq '.status.containerStatuses[0].state.terminated.exitCode'"
-kubectl create -f $DIR/run-test-image.yaml
+exitCodeCmd="kubectl get po volume-provisioner-system-test-$TEST_ID -o json | jq '.status.containerStatuses[0].state.terminated.exitCode'"
+kubectl create -f $DIR/run-test-image.yaml.$TEST_ID
 while [ "$(eval $exitCodeCmd)" == null ]; do
     echo -n "."
-    sleep 30
+    sleep 10
 done
-kubectl logs volume-provisioner-system-test
+kubectl logs volume-provisioner-system-test-$TEST_ID
 exitCode=$(eval $exitCodeCmd)
-kubectl delete -f $DIR/run-test-image.yaml
+kubectl delete -f $DIR/run-test-image.yaml.$TEST_ID
 exit $exitCode

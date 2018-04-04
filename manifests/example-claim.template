@@ -1,7 +1,7 @@
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
-  name: demooci
+  name: demooci-{{TEST_ID}}
 spec:
   storageClassName: "oci"
   selector:

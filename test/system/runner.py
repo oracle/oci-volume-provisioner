@@ -10,6 +10,7 @@ import select
 import subprocess
 import sys
 import time
+import uuid
 import oci
 import yaml
 
@@ -317,20 +318,21 @@ def _get_region():
     nodes = json.loads(nodes_json)
     for node in nodes['items']:
         return node['metadata']['labels']['failure-domain.beta.kubernetes.io/zone']
-    return None
+    _log("Region lookup failed")
+    sys.exit(1)
 
 
-def _create_regioned_yaml(template):
-    region = _get_region()
-    if region is None:
-        _log("Region lookup failed")
-        sys.exit(1)
+def _create_yaml(template, test_id, region):
     yaml_file = template + ".yaml"
     with open(template, "r") as sources:
         lines = sources.readlines()
     with open(yaml_file, "w") as sources:
         for line in lines:
-            sources.write(re.sub('{{REGION}}', region, line))
+            patched_line = line
+            patched_line = re.sub('{{TEST_ID}}', test_id, patched_line)
+            if region is not None:
+                patched_line = re.sub('{{REGION}}', region, patched_line)
+            sources.write(patched_line)
     return yaml_file
 
 
@@ -370,6 +372,8 @@ def _main():
         _destroy_key_files(args['check_oci'])
     atexit.register(_destroy_key_files_atexit)
 
+    test_id = str(uuid.uuid4())[:8]
+
     success = True
 
     if args['setup']:
@@ -396,18 +400,18 @@ def _main():
     if not args['no_test']:
         _log("Running system test: Simple", as_banner=True)
         _test_create_volume(compartment_id,
-                            _create_regioned_yaml("../../manifests/example-claim.template"),
-                            "demooci", args['check_oci'])
+                            _create_yaml("../../manifests/example-claim.template", test_id, _get_region()),
+                            "demooci-" + test_id, args['check_oci'])
 
         _log("Running system test: Ext3 file system", as_banner=True)
         _test_create_volume(compartment_id,
-                            "../../manifests/example-claim-ext3.yaml",
-                            "demo-oci-ext3", args['check_oci'])
+                            _create_yaml("../../manifests/example-claim-ext3.template", test_id, None),
+                            "demooci-ext3-" + test_id, args['check_oci'])
 
         _log("Running system test: No AD specified", as_banner=True)
         _test_create_volume(compartment_id,
-                            "../../manifests/example-claim-no-AD.yaml",
-                            "demooci-no-ad", args['check_oci'])
+                            _create_yaml("../../manifests/example-claim-no-AD.template", test_id, None),
+                            "demooci-no-ad-" + test_id, args['check_oci'])
 
     if not success:
         sys.exit(1)
