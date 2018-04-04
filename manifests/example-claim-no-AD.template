@@ -1,7 +1,7 @@
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
-  name: demooci-no-ad
+  name: demooci-no-ad-{{TEST_ID}}
 spec:
   storageClassName: "oci"
   accessModes:

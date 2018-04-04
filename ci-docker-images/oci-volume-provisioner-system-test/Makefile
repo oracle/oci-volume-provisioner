@@ -1,6 +1,6 @@
 DOCKER_REGISTRY ?= wcr.io
 DOCKER_IMAGE_NAME ?= oci-volume-provisioner-system-test
-DOCKER_IMAGE_TAG ?= 1.0.1
+DOCKER_IMAGE_TAG ?= 1.0.2
 
 .PHONY: build
 build:

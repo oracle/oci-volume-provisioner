@@ -15,7 +15,8 @@ RUN apt-get update && apt-get install -y \
     unzip \
     wget \
     curl \
-    jq
+    jq \
+    pwgen
 
 # Installs terraform.
 RUN wget https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip
