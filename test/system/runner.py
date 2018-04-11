@@ -290,14 +290,20 @@ def _handle_args():
                         action='store_true',
                         default=False)
     parser.add_argument('--check-oci',
-                        help='Check with OCI that the volumes have been created/destroyed',
+                        help='Check with OCI that the volumes have been created/destroyed (requires --setup)',
                         action='store_true',
                         default=False)
     parser.add_argument('--teardown',
                         help='Teardown the provisioner on the cluster',
                         action='store_true',
                         default=False)
-    return vars(parser.parse_args())
+    args = vars(parser.parse_args())
+
+    if args['check_oci'] and not args['setup']:
+        _log("If --check-oci is specified, then --setup also needs to be set.")
+        sys.exit(1)
+
+    return args
 
 
 def _cleanup(exit_on_error=False, display_errors=True):
@@ -387,15 +393,16 @@ def _main():
         _kubectl("create -f ../../dist/storage-class-ext3.yaml", exit_on_error=False)
         _kubectl("create -f ../../dist/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
         _kubectl("create -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
+        pod_name, _, _ = _wait_for_pod_status("Running")
+        compartment_id = _get_compartment_id(pod_name)
+    else:
+        compartment_id = None
 
     if args['teardown']:
         def _teardown_atexit():
             _log("Tearing down the volume provisioner", as_banner=True)
             _cleanup()
         atexit.register(_teardown_atexit)
-
-    pod_name, _, _ = _wait_for_pod_status("Running")
-    compartment_id = _get_compartment_id(pod_name)
 
     if not args['no_test']:
         _log("Running system test: Simple", as_banner=True)
