@@ -35,6 +35,7 @@ import (
 
 const (
 	ociVolumeID            = "ociVolumeID"
+	ociVolumeBackupID      = "volumeBackupId"
 	volumePrefixEnvVarName = "OCI_VOLUME_NAME_PREFIX"
 	fsType                 = "fsType"
 )
@@ -88,15 +89,22 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions,
 
 	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, *availabilityDomain.Name, block.client.CompartmentOCID())
 
+	volumeDetails := core.CreateVolumeDetails{
+		AvailabilityDomain: availabilityDomain.Name,
+		CompartmentId:      common.String(block.client.CompartmentOCID()),
+		DisplayName:        common.String(fmt.Sprintf("%s%s", os.Getenv(volumePrefixEnvVarName), options.PVC.Name)),
+		SizeInMBs:          common.Int(volSizeMB),
+	}
+
+	// Maybe add a check to see if this is a valid backup?
+	if value, ok := options.PVC.Labels[ociVolumeBackupID]; ok {
+		volumeDetails.SourceDetails = &core.VolumeSourceFromVolumeBackupDetails{Id: common.String(value)}
+	}
+
 	ctx, cancel := context.WithTimeout(block.client.Context(), block.client.Timeout())
 	defer cancel()
 	newVolume, err := block.client.BlockStorage().CreateVolume(ctx, core.CreateVolumeRequest{
-		CreateVolumeDetails: core.CreateVolumeDetails{
-			AvailabilityDomain: availabilityDomain.Name,
-			CompartmentId:      common.String(block.client.CompartmentOCID()),
-			DisplayName:        common.String(fmt.Sprintf("%s%s", os.Getenv(volumePrefixEnvVarName), options.PVC.Name)),
-			SizeInMBs:          common.Int(volSizeMB),
-		},
+		CreateVolumeDetails: volumeDetails,
 	})
 	if err != nil {
 		return nil, err
