@@ -95,8 +95,10 @@ Next we'll create a [PersistentVolumeClaim][4] (PVC).
 
 The storageClassName must match the "oci" storage class supported by the provisioner.
 
-The matchLabels should contain the (shortened) Availability Domain (AD) you want to provision a volume in.
-For example in Phoenix that would be `PHX-AD-1` and in Ashburn `US-ASHBURN-AD-1`.
+The matchLabels should contain the (shortened) Availability Domain (AD) within
+which you want to provision the volume. For example in Phoenix that might be
+`PHX-AD-1`, in Ashburn `US-ASHBURN-AD-1`, in Frankfurt `EU-FRANKFURT-1-AD-1`,
+and in London `UK-LONDON-1-AD-1`.
 
 ```yaml
 kind: PersistentVolumeClaim
