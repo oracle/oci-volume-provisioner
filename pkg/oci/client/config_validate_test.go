@@ -104,6 +104,33 @@ func TestValidateConfig(t *testing.T) {
 			errs: field.ErrorList{
 				&field.Error{Type: field.ErrorTypeRequired, Field: "auth.fingerprint", BadValue: ""},
 			},
+		}, {
+			name: "valid with instance principals enabled",
+			in: &Config{
+				Auth: AuthConfig{
+					UseInstancePrincipals: true,
+				},
+			},
+			errs: field.ErrorList{},
+		}, {
+			name: "mixing instance principals with other auth flags",
+			in: &Config{
+				Auth: AuthConfig{
+					UseInstancePrincipals: true,
+					Region:                "us-phoenix-1",
+					TenancyOCID:           "ocid1.tenancy.oc1..aaaaaaaatyn7scrtwtqedvgrxgr2xunzeo6uanvyhzxqblctwkrpisvke4kq",
+					UserOCID:              "ocid1.user.oc1..aaaaaaaai77mql2xerv7cn6wu3nhxang3y4jk56vo5bn5l5lysl34avnui3q",
+					PrivateKey:            "-----BEGIN RSA PRIVATE KEY----- (etc)",
+					Fingerprint:           "8c:bf:17:7b:5f:e0:7d:13:75:11:d6:39:0d:e2:84:74",
+				},
+			},
+			errs: field.ErrorList{
+				&field.Error{Type: field.ErrorTypeForbidden, Field: "auth.region", Detail: "cannot be used when useInstancePrincipals is enabled", BadValue: ""},
+				&field.Error{Type: field.ErrorTypeForbidden, Field: "auth.tenancy", Detail: "cannot be used when useInstancePrincipals is enabled", BadValue: ""},
+				&field.Error{Type: field.ErrorTypeForbidden, Field: "auth.user", Detail: "cannot be used when useInstancePrincipals is enabled", BadValue: ""},
+				&field.Error{Type: field.ErrorTypeForbidden, Field: "auth.key", Detail: "cannot be used when useInstancePrincipals is enabled", BadValue: ""},
+				&field.Error{Type: field.ErrorTypeForbidden, Field: "auth.fingerprint", Detail: "cannot be used when useInstancePrincipals is enabled", BadValue: ""},
+			},
 		},
 	}
 

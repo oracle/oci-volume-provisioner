@@ -25,13 +25,14 @@ import (
 // AuthConfig holds the configuration required for communicating with the OCI
 // API.
 type AuthConfig struct {
-	TenancyOCID          string `yaml:"tenancy"`
-	UserOCID             string `yaml:"user"`
-	CompartmentOCID      string `yaml:"compartment"`
-	PrivateKey           string `yaml:"key"`
-	Fingerprint          string `yaml:"fingerprint"`
-	Region               string `yaml:"region"`
-	PrivateKeyPassphrase string `yaml:"key_passphrase"`
+	TenancyOCID           string `yaml:"tenancy"`
+	UserOCID              string `yaml:"user"`
+	CompartmentOCID       string `yaml:"compartment"`
+	PrivateKey            string `yaml:"key"`
+	Fingerprint           string `yaml:"fingerprint"`
+	Region                string `yaml:"region"`
+	PrivateKeyPassphrase  string `yaml:"key_passphrase"`
+	UseInstancePrincipals bool   `yaml:"useInstancePrincipals"`
 }
 
 // Config holds the OCI cloud-provider config passed to Kubernetes compontents.
