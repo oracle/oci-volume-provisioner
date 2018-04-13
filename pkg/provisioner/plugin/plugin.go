@@ -23,6 +23,11 @@ import (
 const (
 	// OCIProvisionerName is the name of the provisioner defined in the storage class definitions
 	OCIProvisionerName = "oracle/oci"
+
+	// LabelZoneFailureDomain the availability domain in which the PD resides.
+	LabelZoneFailureDomain = "failure-domain.beta.kubernetes.io/zone"
+	// LabelZoneRegion the region in which the PD resides.
+	LabelZoneRegion = "failure-domain.beta.kubernetes.io/region"
 )
 
 // ProvisionerPlugin implements the controller plugin plus some extras that are common
