@@ -7,6 +7,11 @@ dev:
 build:
   base-path: "/go/src/github.com/oracle/oci-volume-provisioner"
   steps:
+
+    - script:
+      name: check boilerplate
+      code: ./hack/verify-boilerplate.sh
+
     - script:
       name: validate source code
       code: |
@@ -26,7 +31,7 @@ build:
       code: |
         make version > dist/VERSION.txt
         cat dist/VERSION.txt
-      
+
 copy:
   steps:
     - script:
@@ -147,5 +152,3 @@ release:
       file: ./dist/storage-class.yaml
       filename: storage-class.yaml
       content-type: text/yaml
-
-      
