@@ -20,7 +20,7 @@ GOARCH ?= amd64
 SRC_DIRS := cmd pkg # directories which hold app source (not vendored)
 
 .PHONY: all
-all: gofmt golint govet test build 
+all: gofmt golint govet test build
 
 .PHONY: gofmt
 gofmt:
@@ -89,7 +89,7 @@ system-test: system-test-config
         -e KUBECONFIG=$(KUBECONFIG) \
         -v $(KUBECONFIG):$(KUBECONFIG) \
         -e HTTPS_PROXY=$$HTTPS_PROXY \
-        ${TEST_IMAGE}:${VERSION} ${TEST_IMAGE_ARGS} 
+        ${TEST_IMAGE}:${VERSION} ${TEST_IMAGE_ARGS}
 
 .PHONY: clean
 clean:
@@ -98,3 +98,9 @@ clean:
 .PHONY: version
 version:
 	@echo ${VERSION}
+
+.PHONY: run-dev
+run-dev:
+	NODE_NAME=localhost go run cmd/main.go \
+		--kubeconfig=${KUBECONFIG} \
+		-v=4
