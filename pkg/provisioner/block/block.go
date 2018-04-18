@@ -103,6 +103,11 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions,
 
 	ctx, cancel := context.WithTimeout(block.client.Context(), block.client.Timeout())
 	defer cancel()
+	prefix := strings.TrimSpace(os.Getenv(volumePrefixEnvVarName))
+	if prefix != "" && !strings.HasSuffix(prefix, "-") {
+		prefix = fmt.Sprintf("%s%s", prefix, "-")
+	}
+
 	newVolume, err := block.client.BlockStorage().CreateVolume(ctx, core.CreateVolumeRequest{
 		CreateVolumeDetails: volumeDetails,
 	})
