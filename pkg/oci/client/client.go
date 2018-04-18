@@ -31,6 +31,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/oracle/oci-go-sdk/common"
+	"github.com/oracle/oci-go-sdk/common/auth"
 	"github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-go-sdk/identity"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
@@ -137,6 +138,15 @@ func newConfigurationProvider(cfg *Config) (common.ConfigurationProvider, error)
 		if err != nil {
 			return nil, errors.Wrap(err, "invalid client config")
 		}
+		if cfg.Auth.UseInstancePrincipals {
+			glog.V(2).Info("Using instance principals configuration provider")
+			cp, err := auth.InstancePrincipalConfigurationProvider()
+			if err != nil {
+				return nil, errors.Wrap(err, "InstancePrincipalConfigurationProvider")
+			}
+			return cp, nil
+		}
+		glog.V(2).Info("Using raw configuration provider")
 		conf = common.NewRawConfigurationProvider(
 			cfg.Auth.TenancyOCID,
 			cfg.Auth.UserOCID,
