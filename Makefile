@@ -100,7 +100,7 @@ version:
 	@echo ${VERSION}
 
 .PHONY: run-dev
-run-dev:
-	NODE_NAME=localhost go run cmd/main.go \
+run-dev: build
+	NODE_NAME=localhost ./dist/oci-volume-provisioner \
 		--kubeconfig=${KUBECONFIG} \
 		-v=4
