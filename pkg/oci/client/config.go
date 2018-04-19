@@ -31,7 +31,7 @@ type AuthConfig struct {
 	PrivateKey            string `yaml:"key"`
 	Fingerprint           string `yaml:"fingerprint"`
 	Region                string `yaml:"region"`
-	PrivateKeyPassphrase  string `yaml:"key_passphrase"`
+	PrivateKeyPassphrase  string `yaml:"passphrase"`
 	UseInstancePrincipals bool   `yaml:"useInstancePrincipals"`
 }
 
