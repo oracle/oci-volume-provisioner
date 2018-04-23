@@ -19,6 +19,7 @@ import argparse
 import datetime
 import json
 import os
+import shutil
 import re
 import select
 import subprocess
@@ -36,13 +37,28 @@ TMP_KUBECONFIG = "/tmp/kubeconfig.conf"
 TMP_OCI_API_KEY_FILE = "/tmp/oci_api_key.pem"
 REGION = "us-phoenix-1"
 TIMEOUT = 600
+WRITE_REPORT=True
+REPORT_DIR_PATH="/tmp/results"
+REPORT_FILE="done"
+
+# On exit return 0 for success or any other integer for a failure.
+# If write_report is true then write a completion file to the Sonabuoy plugin result file.
+# The default location is: /tmp/results/done
+def _finish_with_exit_code(exit_code, write_report=True, report_dir_path=REPORT_DIR_PATH, report_file=REPORT_FILE):
+    if write_report:
+        if os.path.exists(report_dir_path):
+            shutil.rmtree(REPORT_DIR_PATH) 
+            os.makedirs(REPORT_DIR_PATH)
+            with open(REPORT_DIR_PATH + "/" + REPORT_FILE, "w") as file: 
+                file.write(exit_code)
+    sys.exit(exit_code)          
 
 
 def _check_env(check_oci):
     if check_oci:
         if "OCICONFIG" not in os.environ and "OCICONFIG_VAR" not in os.environ:
             _log("Error. Can't find either OCICONFIG or OCICONFIG_VAR in the environment.")
-            sys.exit(1)
+            _finish_with_exit_code(1)
 
 
 def _create_key_files(check_oci):
@@ -61,7 +77,7 @@ def _create_key_files(check_oci):
                     stream.write(cnf['auth']['key'])
             except yaml.YAMLError:
                 _log("Error. Failed to parse oci config file " + oci_config_file)
-                sys.exit(1)
+                _finish_with_exit_code(1)
 
 
 def _destroy_key_files(check_oci):
@@ -164,7 +180,7 @@ def _kubectl(action, exit_on_error=True, display_errors=True, log_stdout=True):
         (stdout, _, returncode) = _run_command("KUBECONFIG=" + _get_kubeconfig() + " kubectl " + action, ".", display_errors)
     if exit_on_error and returncode != 0:
         _log("Error running kubectl")
-        sys.exit(1)
+        _finish_with_exit_code(1)
     if log_stdout:
         _log(stdout)
     return stdout
@@ -197,7 +213,7 @@ def _wait_for_pod_status(desired_status):
                 _log("Error: Pod: " + i[0] + " " + \
                      "failed to achieve status: " + desired_status + "." + \
                      "Final status was: " + i[1])
-            sys.exit(1)
+            _finish_with_exit_code(1)
         infos = _get_pod_infos()
     return (infos[0][0], infos[0][1], infos[0][2])
 
@@ -233,7 +249,7 @@ def _get_json_doc(response):
         doc = decoder.decode(response)
     except (ValueError, UnicodeError) as _:
         _log('Invalid JSON in response: %s' % str(response))
-        sys.exit(1)
+        _finish_with_exit_code(1)
     return doc
 
 
@@ -251,7 +267,7 @@ def _oci_config():
             return config
         except yaml.YAMLError:
             _log("Error. Failed to parse oci config file " + oci_config_file)
-            sys.exit(1)
+            _finish_with_exit_code(1)
 
 
 def _volume_exists(compartment_id, volume, state):
@@ -315,7 +331,7 @@ def _handle_args():
 
     if args['check_oci'] and not args['setup']:
         _log("If --check-oci is specified, then --setup also needs to be set.")
-        sys.exit(1)
+        _finish_with_exit_code(1)
 
     return args
 
@@ -339,7 +355,7 @@ def _get_region():
     for node in nodes['items']:
         return node['metadata']['labels']['failure-domain.beta.kubernetes.io/zone']
     _log("Region lookup failed")
-    sys.exit(1)
+    _finish_with_exit_code(1)
 
 
 def _create_yaml(template, test_id, region):
@@ -367,7 +383,7 @@ def _test_create_volume(compartment_id, claim_target, claim_volume_name, check_o
         _log("Querying the OCI api to make sure a volume with this name exists...")
         if not _wait_for_volume_to_create(compartment_id, volume):
             _log("Failed to find volume with name: " + volume)
-            sys.exit(1)
+            _finish_with_exit_code(1)
         _log("Volume: " + volume + " is present and available")
 
     _log("Delete the volume claim")
@@ -378,7 +394,7 @@ def _test_create_volume(compartment_id, claim_target, claim_volume_name, check_o
         _wait_for_volume_to_delete(compartment_id, volume)
         if not _volume_exists(compartment_id, volume, 'TERMINATED'):
             _log("Volume with name: " + volume + " still exists")
-            sys.exit(1)
+            _finish_with_exit_code(1)
         _log("Volume: " + volume + " has now been terminated")
 
 
@@ -435,8 +451,11 @@ def _main():
                             "demooci-no-ad-" + test_id, args['check_oci'])
 
     if not success:
-        sys.exit(1)
+        _finish_with_exit_code(1)
+    else: 
+        _finish_with_exit_code(0)
 
 
 if __name__ == "__main__":
     _main()
+
