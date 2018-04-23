@@ -45,12 +45,13 @@ REPORT_FILE="done"
 # If write_report is true then write a completion file to the Sonabuoy plugin result file.
 # The default location is: /tmp/results/done
 def _finish_with_exit_code(exit_code, write_report=True, report_dir_path=REPORT_DIR_PATH, report_file=REPORT_FILE):
+    print "trjl> finishing with exit code: " + str(exit_code)
     if write_report:
-        if os.path.exists(report_dir_path):
-            print "deleting report_dir_path: " + report_dir_path
-            shutil.rmtree(report_dir_path) 
-        os.makedirs(report_dir_path)
-        print "created file report_dir_path: " + report_dir_path
+        # if os.path.exists(report_dir_path):
+        #     print "deleting report_dir_path: " + report_dir_path
+        #     shutil.rmtree(report_dir_path) 
+        # os.makedirs(report_dir_path)
+        # print "created file report_dir_path: " + report_dir_path
         with open(report_dir_path + "/" + report_file, "w+") as file: 
             file.write(str(exit_code))
     sys.exit(exit_code)          
