@@ -463,6 +463,5 @@ def _main():
 
 
 if __name__ == "__main__":
-    # _main()
-    _finish_with_exit_code(0)
+    _main()
 
