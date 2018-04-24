@@ -17,10 +17,11 @@ package block
 import (
 	"encoding/json"
 	"fmt"
-	"oci-volume-provisioner/pkg/oci/client"
-	"oci-volume-provisioner/pkg/utils"
 	"os"
 	"testing"
+
+	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
+	"github.com/oracle/oci-volume-provisioner/pkg/utils"
 
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/oracle/oci-go-sdk/core"
@@ -89,7 +90,7 @@ func TestCreateVolumeFromBackup(t *testing.T) {
 	byteResp, _ := json.Marshal(_createVolumeResp)
 	resp := string(byteResp)
 	m := map[string]*string{fmt.Sprintf("/%s/volumes", block.client.BlockStorage().BasePath): &resp}
-	server := testutils.OCIResponseStub(m)
+	server := utils.OCIResponseStub(m)
 	defer server.Close()
 	block.client.BlockStorage().Host = server.URL
 	provisionedVolume, err := block.Provision(options, &availabilityDomain)
