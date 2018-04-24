@@ -85,7 +85,7 @@ func (p *provisionerClient) Timeout() time.Duration {
 }
 
 func (p *provisionerClient) CompartmentOCID() (compartmentOCID string) {
-	if p.cfg.Auth.CompartmentOCID == "" {
+	if p.cfg.CompartmentOCID == "" {
 		if p.metadata == nil {
 			log.Fatalf("Unable to get compartment OCID. Please provide this via config")
 			return
@@ -93,7 +93,7 @@ func (p *provisionerClient) CompartmentOCID() (compartmentOCID string) {
 		glog.Infof("'CompartmentID' not given. Using compartment OCID %s from instance metadata", p.metadata.CompartmentOCID)
 		compartmentOCID = p.metadata.CompartmentOCID
 	} else {
-		compartmentOCID = p.cfg.Auth.CompartmentOCID
+		compartmentOCID = p.cfg.CompartmentOCID
 	}
 	return
 }
@@ -149,7 +149,7 @@ func newConfigurationProvider(cfg *Config) (common.ConfigurationProvider, error)
 		if err != nil {
 			return nil, errors.Wrap(err, "invalid client config")
 		}
-		if cfg.Auth.UseInstancePrincipals {
+		if cfg.UseInstancePrincipals {
 			glog.V(2).Info("Using instance principals configuration provider")
 			cp, err := auth.InstancePrincipalConfigurationProvider()
 			if err != nil {
