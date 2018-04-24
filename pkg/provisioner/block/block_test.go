@@ -89,7 +89,7 @@ func TestCreateVolumeFromBackup(t *testing.T) {
 	byteResp, _ := json.Marshal(_createVolumeResp)
 	resp := string(byteResp)
 	m := map[string]*string{fmt.Sprintf("/%s/volumes", block.client.BlockStorage().BasePath): &resp}
-	server := testutils.OCIResponseStub(m)
+	server := utils.OCIResponseStub(m)
 	defer server.Close()
 	block.client.BlockStorage().Host = server.URL
 	provisionedVolume, err := block.Provision(options, &availabilityDomain)
