@@ -97,8 +97,8 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions,
 	}
 
 	// Maybe add a check to see if this is a valid backup?
-	if value, ok := options.PVC.Labels[ociVolumeBackupID]; ok {
-		volumeDetails.SourceDetails = &core.VolumeSourceFromVolumeBackupDetails{Id: common.String(value)}
+	if value, ok := options.PVC.Annotations[ociVolumeBackupID]; ok {
+		volumeDetails.SourceDetails = &core.VolumeSourceFromVolumeBackupDetails{Id: &value}
 	}
 
 	ctx, cancel := context.WithTimeout(block.client.Context(), block.client.Timeout())
