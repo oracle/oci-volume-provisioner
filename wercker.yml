@@ -7,11 +7,11 @@ dev:
 build:
   base-path: "/go/src/github.com/oracle/oci-volume-provisioner"
   steps:
-    - script:
-      name: validate source code
-      code: |
-        go get -u github.com/golang/lint/golint
-        make gofmt golint govet
+    # - script:
+    #   name: validate source code
+    #   code: |
+    #     go get -u github.com/golang/lint/golint
+    #     make gofmt golint govet
 
     - script:
       name: run unit tests
