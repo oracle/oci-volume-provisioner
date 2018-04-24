@@ -21,7 +21,7 @@ The oci-volume-provisioner is provided as a Kubernetes deployment.
 
 Create a config.yaml file with contents similar to the following. This file will contain authentication
 information necessary to authenticate with the OCI APIs and provision block storage volumes.
-The `key_passphrase` field can be left out if your key has no passphrase.
+The `passphrase` field can be left out if your key has no passphrase.
 
 ```yaml
 auth:
@@ -31,7 +31,7 @@ auth:
     -----BEGIN RSA PRIVATE KEY-----
     MIIEowIBAAKCAQEUjVBnOgC4wA3j6CeTc6hIA9B3iwuJKyR8i7w...
     -----END RSA PRIVATE KEY-----
-  key_passphrase: supersecretpassphrase
+  passphrase: supersecretpassphrase
   fingerprint: 4d:f5:ff:0e:a9:10:e8:5a:d3:52:6a:f8:1e:99:a3:47
   region: us-phoenix-1
 
@@ -95,8 +95,10 @@ Next we'll create a [PersistentVolumeClaim][4] (PVC).
 
 The storageClassName must match the "oci" storage class supported by the provisioner.
 
-The matchLabels should contain the (shortened) Availability Domain (AD) you want to provision a volume in.
-For example in Phoenix that would be `PHX-AD-1` and in Ashburn `US-ASHBURN-AD-1`.
+The matchLabels should contain the (shortened) Availability Domain (AD) within
+which you want to provision the volume. For example in Phoenix that might be
+`PHX-AD-1`, in Ashburn `US-ASHBURN-AD-1`, in Frankfurt `EU-FRANKFURT-1-AD-1`,
+and in London `UK-LONDON-1-AD-1`.
 
 ```yaml
 kind: PersistentVolumeClaim

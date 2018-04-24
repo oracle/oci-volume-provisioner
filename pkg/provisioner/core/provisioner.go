@@ -17,9 +17,10 @@ package core
 import (
 	"errors"
 	"fmt"
-	"github.com/golang/glog"
 	"os"
 	"strings"
+
+	"github.com/golang/glog"
 
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -55,9 +56,14 @@ type OCIProvisioner struct {
 
 // NewOCIProvisioner creates a new OCI provisioner.
 func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1.NodeInformer, nodeName string) *OCIProvisioner {
-	f, err := os.Open(configFilePath)
+	configPath, ok := os.LookupEnv("CONFIG_YAML_FILENAME")
+	if !ok {
+		configPath = configFilePath
+	}
+
+	f, err := os.Open(configPath)
 	if err != nil {
-		glog.Fatalf("Unable to load volume provisioner configuration file: %v", configFilePath)
+		glog.Fatalf("Unable to load volume provisioner configuration file: %v", configPath)
 	}
 	defer f.Close()
 
