@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (c) 2018 Oracle and/or its affiliates. All rights reserved.
+# Copyright 2014 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,11 +18,18 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-export CGO_ENABLED=0
+KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
 
-TARGETS=$(for d in "$@"; do echo ./$d/...; done)
+boilerDir="${KUBE_ROOT}/hack/boilerplate"
+boiler="${boilerDir}/boilerplate.py"
 
-echo "Building tests..."
-go test -i -installsuffix "static" ${TARGETS}
-echo "Running tests..."
-go test -v -installsuffix "static" ${TARGETS}
+files_need_boilerplate=($(${boiler} "$@"))
+
+# Run boilerplate check
+if [[ ${#files_need_boilerplate[@]} -gt 0 ]]; then
+  for file in "${files_need_boilerplate[@]}"; do
+    echo "Boilerplate header is wrong for: ${file}"
+  done
+
+  exit 1
+fi
