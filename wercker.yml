@@ -7,7 +7,6 @@ dev:
 build:
   base-path: "/go/src/github.com/oracle/oci-volume-provisioner"
   steps:
-
     - script:
       name: check boilerplate
       code: ./hack/verify-boilerplate.sh
