@@ -39,10 +39,6 @@ type HTTPRequestDispatcher interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-type ServiceEndpoint struct {
-	Host string
-}
-
 // BaseClient struct implements all basic operations to call oci web services.
 type BaseClient struct {
 	//HTTPClient performs the http network operations
@@ -55,7 +51,7 @@ type BaseClient struct {
 	Interceptor RequestInterceptor
 
 	//The host of the service
-	ServiceEndpoint
+	Host string
 
 	//The user agent
 	UserAgent string
