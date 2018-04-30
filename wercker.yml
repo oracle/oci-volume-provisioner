@@ -52,6 +52,14 @@ push:
         echo "Pushing version ${VERSION}"
 
     - script:
+        name: Ensure version is unique
+        code: |
+          if curl -s https://api.github.com/repos/oracle/oci-volume-provisioner/git/refs/tags | grep "tags/$VERSION"; then
+            echo "Tag $VERSION already exists. Doing nothing."
+            exit 1
+          fi
+
+    - script:
       name: prepare
       code: |
         cp ./dist/oci-volume-provisioner /oci-volume-provisioner
@@ -122,6 +130,14 @@ release:
         code: |
           export VERSION=$(cat dist/VERSION.txt)
           echo "${VERSION}"
+
+    - script:
+        name: Ensure version is unique
+        code: |
+          if curl -s https://api.github.com/repos/oracle/oci-volume-provisioner/git/refs/tags | grep "tags/$VERSION"; then
+            echo "Tag $VERSION already exists. Doing nothing."
+            exit 1
+          fi
 
     - github-create-release:
       token: $GITHUB_TOKEN
