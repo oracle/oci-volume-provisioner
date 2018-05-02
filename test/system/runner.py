@@ -215,14 +215,14 @@ def _get_pod_infos(test_id, pod_type):
     @return: Tuple containing the name of the resource, its status and the 
     node it's running on
     @rtype: C{Tuple}'''
-    _namespace = "-n kube-system" if pod_type ==POD_VOLUME else ""
+    _namespace = "-n kube-system" if pod_type == POD_VOLUME else ""
     stdout = _kubectl(_namespace + " get pods -o wide")
     infos = []
     for line in stdout.split("\n"):
         line_array = line.split()
         if len(line_array) > 0:
             name = line_array[0]
-            if name.startswith('oci-volume-provisioner' + test_id) and pod_type == POD_VOLUME:
+            if name.startswith('oci-volume-provisioner')and pod_type == POD_VOLUME:
                 status = line_array[2]
                 node = line_array[6]
                 infos.append((name, status, node))
@@ -674,7 +674,8 @@ def _main():
         _kubectl("create -f ../../dist/storage-class-ext3.yaml", exit_on_error=False)
         _kubectl("create -f ../../dist/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
         _kubectl("create -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
-        __pod_name, _, _ = _wait_for_pod_status("Running", test_id, POD_VOLUME) 
+        pod_name, _, _ = _wait_for_pod_status("Running", test_id, POD_VOLUME)
+        compartment_id = _get_compartment_id(pod_name)
     else:
         compartment_id = None
 
