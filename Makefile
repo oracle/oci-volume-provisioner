@@ -24,7 +24,7 @@ else
 endif
 DIR := dist
 BIN := oci-volume-provisioner
-REGISTRY ?= wcr.io
+REGISTRY ?= iad.ocir.io
 DOCKER_REGISTRY_USERNAME ?= oracle
 IMAGE ?= $(REGISTRY)/$(DOCKER_REGISTRY_USERNAME)/$(BIN)
 TEST_IMAGE ?= $(REGISTRY)/$(DOCKER_REGISTRY_USERNAME)/$(BIN)-test
