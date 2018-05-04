@@ -604,7 +604,7 @@ def  _setup_create_volume_from_backup(terraform_env, test_id):
     @rtype: C{Str}'''
     _log("Creating test volume (using terraform)", as_banner=True)
     _terraform("init", TERRAFORM_DIR, terraform_env)
-    _terraform("apply -auto-approve", TERRAFORM_DIR, terraform_env)
+    _terraform("apply", TERRAFORM_DIR, terraform_env)
     _availability_domain = _get_terraform_output_var(terraform_env, TERRAFORM_AVAILABILITY_DOMAIN)
     _log(_terraform("output -json", TERRAFORM_DIR, terraform_env))
     # Create replication controller and write data to the generated volume
@@ -625,7 +625,7 @@ def _tear_down_create_volume_from_backup(terraform_env, backup_ocid):
     @type backup_ocid: C{Str}'''
     def _destroy_test_volume_atexit():
         _log("Destroying test volume (using terraform)", as_banner=True)
-        _terraform("destroy -auto-approve", TERRAFORM_DIR, terraform_env)
+        _terraform("destroy -f", TERRAFORM_DIR, terraform_env)
     atexit.register(_destroy_test_volume_atexit)
     _delete_backup(backup_ocid)
 
