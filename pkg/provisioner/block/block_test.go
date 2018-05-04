@@ -30,7 +30,7 @@ import (
 )
 
 var (
-	volumeBackupID string = "dummyVolumeBackupId"
+	volumeBackupID = "dummyVolumeBackupId"
 )
 
 func TestResolveFSTypeWhenNotConfigured(t *testing.T) {
