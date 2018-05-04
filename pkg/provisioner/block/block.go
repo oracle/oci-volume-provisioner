@@ -35,7 +35,7 @@ import (
 
 const (
 	ociVolumeID            = "ociVolumeID"
-	ociVolumeBackupID      = "volumeBackupId"
+	ociVolumeBackupID      = "volume.beta.kubernetes.io/oci-volume-source"
 	volumePrefixEnvVarName = "OCI_VOLUME_NAME_PREFIX"
 	fsType                 = "fsType"
 )
@@ -98,6 +98,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions,
 
 	// Maybe add a check to see if this is a valid backup?
 	if value, ok := options.PVC.Annotations[ociVolumeBackupID]; ok {
+		glog.Infof("Creating volume from backup ID %s", value)
 		volumeDetails.SourceDetails = &core.VolumeSourceFromVolumeBackupDetails{Id: &value}
 	}
 

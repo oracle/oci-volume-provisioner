@@ -17,12 +17,10 @@ package block
 import (
 	"context"
 	"net/http"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
-	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/oracle/oci-go-sdk/common"
@@ -31,25 +29,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/pkg/api/v1"
 )
-
-// LoadConfig loads confuration data from a given path
-func loadConfig(configFilePath string, t *testing.T) *client.ProvisionerClient {
-	f, err := os.Open(configFilePath)
-	if err != nil {
-		t.Fatalf("Unable to load volume provisioner configuration file: %v", configFilePath)
-	}
-	defer f.Close()
-
-	cfg, err := client.LoadConfig(f)
-	if err != nil {
-		t.Fatalf("Unable to load volume provisioner client: %v", err)
-	}
-	pc, err := client.FromConfig(cfg)
-	if err != nil {
-		t.Fatalf("Unable to load volume provisioner client details: %v", err)
-	}
-	return &pc
-}
 
 func TestResolveFSTypeWhenNotConfigured(t *testing.T) {
 	options := controller.VolumeOptions{Parameters: make(map[string]string)}
@@ -75,14 +54,11 @@ type mockBlockStorageClient struct {
 }
 
 func (c *mockBlockStorageClient) CreateVolume(ctx context.Context, request core.CreateVolumeRequest) (response core.CreateVolumeResponse, err error) {
-	volID := "dummyVolumeId"
-	createVolumeResp := &core.CreateVolumeResponse{Volume: core.Volume{Id: &volID}}
-	return *createVolumeResp, nil
+	return core.CreateVolumeResponse{Volume: core.Volume{Id: common.String("dummyVolumeId")}}, nil
 }
 
 func (c *mockBlockStorageClient) DeleteVolume(ctx context.Context, request core.DeleteVolumeRequest) (response core.DeleteVolumeResponse, err error) {
-	deleteVolumeResp := &core.DeleteVolumeResponse{}
-	return *deleteVolumeResp, nil
+	return core.DeleteVolumeResponse{}, nil
 }
 
 type mockIdentityClient struct {
@@ -108,12 +84,6 @@ func (client mockIdentityClient) ListAvailabilityDomains(ctx context.Context, re
 }
 
 type mockProvisionerClient struct {
-	cfg          *client.Config
-	blockStorage *core.BlockstorageClient
-	identity     *identity.IdentityClient
-	context      context.Context
-	timeout      time.Duration
-	metadata     *instancemeta.InstanceMetadata
 }
 
 func (p *mockProvisionerClient) BlockStorage() client.BlockStorage {
@@ -125,11 +95,11 @@ func (p *mockProvisionerClient) Identity() client.Identity {
 }
 
 func (p *mockProvisionerClient) Context() context.Context {
-	return p.context
+	return context.Background()
 }
 
 func (p *mockProvisionerClient) Timeout() time.Duration {
-	return p.timeout
+	return 30 * time.Second
 }
 
 func (p *mockProvisionerClient) CompartmentOCID() (compartmentOCID string) {
@@ -137,42 +107,34 @@ func (p *mockProvisionerClient) CompartmentOCID() (compartmentOCID string) {
 }
 
 func (p *mockProvisionerClient) TenancyOCID() string {
-	return p.cfg.Auth.TenancyOCID
+	return "ocid1.tenancy.oc1..aaaaaaaatyn7scrtwtqedvgrxgr2xunzeo6uanvyhzxqblctwkrpisvke4kq"
 }
 
 // NewClientProvisioner creates an OCI client from the given configuration.
 func NewClientProvisioner(pcData client.ProvisionerClient) client.ProvisionerClient {
-	return &mockProvisionerClient{
-		context: pcData.Context(),
-		timeout: pcData.Timeout()}
+	return &mockProvisionerClient{}
 }
 
 func TestCreateVolumeFromBackup(t *testing.T) {
 	// test creating a volume from an existing backup
-	options := controller.VolumeOptions{PVName: "dummyVolumeOptions"}
-	volumeBackupID := "dummyVolumeBackupId"
-	pv := &v1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Annotations: map[string]string{
-				ociVolumeBackupID: "dummy",
+	options := controller.VolumeOptions{PVName: "dummyVolumeOptions",
+		PVC: &v1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					ociVolumeBackupID: "dummy",
+				},
 			},
-		},
-	}
-	options.PVC = pv
-	adName := "dummyAdName"
-	adCompartmentID := "dummyCompartmentId"
-	availabilityDomain := identity.AvailabilityDomain{Name: &adName, CompartmentId: &adCompartmentID}
-	configFilePath := "config/blockProvision.yaml"
-	pcData := loadConfig(configFilePath, t)
-	pc := NewClientProvisioner(*pcData)
-	block := blockProvisioner{client: pc}
-	volID := "dummyVolumeId"
+		}}
+	volumeBackupID := common.String("dummyVolumeBackupId")
+	availabilityDomain := identity.AvailabilityDomain{Name: common.String("dummyAdName"), CompartmentId: common.String("dummyCompartmentId")}
+	block := blockProvisioner{client: NewClientProvisioner(nil)}
 	provisionedVolume, err := block.Provision(options, &availabilityDomain)
 	if err != nil {
 		t.Fatalf("Failed to provision volume from block storage: %v", err)
 	}
-	if provisionedVolume.Annotations[ociVolumeID] != volID {
-		t.Fatalf("Failed to assign the id of the blockID: %s, assigned %s instead", volumeBackupID,
+	expectedVolID := "dummyVolumeId"
+	if provisionedVolume.Annotations[ociVolumeID] != expectedVolID {
+		t.Fatalf("Failed to assign the id of the blockID: %s, assigned %s instead", *volumeBackupID,
 			provisionedVolume.Annotations[ociVolumeID])
 	}
 }
