@@ -16,7 +16,6 @@ package block
 
 import (
 	"context"
-	"net/http"
 	"testing"
 	"time"
 
@@ -28,6 +27,10 @@ import (
 	"github.com/oracle/oci-go-sdk/identity"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/pkg/api/v1"
+)
+
+var (
+	volumeBackupID string = "dummyVolumeBackupId"
 )
 
 func TestResolveFSTypeWhenNotConfigured(t *testing.T) {
@@ -49,12 +52,10 @@ func TestResolveFSTypeWhenConfigured(t *testing.T) {
 }
 
 type mockBlockStorageClient struct {
-	common.BaseClient
-	config *common.ConfigurationProvider
 }
 
 func (c *mockBlockStorageClient) CreateVolume(ctx context.Context, request core.CreateVolumeRequest) (response core.CreateVolumeResponse, err error) {
-	return core.CreateVolumeResponse{Volume: core.Volume{Id: common.String("dummyVolumeId")}}, nil
+	return core.CreateVolumeResponse{Volume: core.Volume{Id: common.String(volumeBackupID)}}, nil
 }
 
 func (c *mockBlockStorageClient) DeleteVolume(ctx context.Context, request core.DeleteVolumeRequest) (response core.DeleteVolumeResponse, err error) {
@@ -63,23 +64,9 @@ func (c *mockBlockStorageClient) DeleteVolume(ctx context.Context, request core.
 
 type mockIdentityClient struct {
 	common.BaseClient
-	config *common.ConfigurationProvider
 }
 
 func (client mockIdentityClient) ListAvailabilityDomains(ctx context.Context, request identity.ListAvailabilityDomainsRequest) (response identity.ListAvailabilityDomainsResponse, err error) {
-	httpRequest, err := common.MakeDefaultHTTPRequestWithTaggedStruct(http.MethodGet, "/availabilityDomains/", request)
-	if err != nil {
-		return
-	}
-
-	httpResponse, err := client.Call(ctx, &httpRequest)
-	defer common.CloseBodyIfValid(httpResponse)
-	response.RawResponse = httpResponse
-	if err != nil {
-		return
-	}
-
-	err = common.UnmarshalResponse(httpResponse, &response)
 	return
 }
 
@@ -121,20 +108,18 @@ func TestCreateVolumeFromBackup(t *testing.T) {
 		PVC: &v1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					ociVolumeBackupID: "dummy",
+					ociVolumeBackupID: volumeBackupID,
 				},
 			},
 		}}
-	volumeBackupID := common.String("dummyVolumeBackupId")
-	availabilityDomain := identity.AvailabilityDomain{Name: common.String("dummyAdName"), CompartmentId: common.String("dummyCompartmentId")}
+	ad := identity.AvailabilityDomain{Name: common.String("dummyAdName"), CompartmentId: common.String("dummyCompartmentId")}
 	block := blockProvisioner{client: NewClientProvisioner(nil)}
-	provisionedVolume, err := block.Provision(options, &availabilityDomain)
+	provisionedVolume, err := block.Provision(options, &ad)
 	if err != nil {
 		t.Fatalf("Failed to provision volume from block storage: %v", err)
 	}
-	expectedVolID := "dummyVolumeId"
-	if provisionedVolume.Annotations[ociVolumeID] != expectedVolID {
-		t.Fatalf("Failed to assign the id of the blockID: %s, assigned %s instead", *volumeBackupID,
+	if provisionedVolume.Annotations[ociVolumeID] != volumeBackupID {
+		t.Fatalf("Failed to assign the id of the blockID: %s, assigned %s instead", volumeBackupID,
 			provisionedVolume.Annotations[ociVolumeID])
 	}
 }

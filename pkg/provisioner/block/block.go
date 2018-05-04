@@ -96,7 +96,6 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions,
 		SizeInMBs:          common.Int(volSizeMB),
 	}
 
-	// Maybe add a check to see if this is a valid backup?
 	if value, ok := options.PVC.Annotations[ociVolumeBackupID]; ok {
 		glog.Infof("Creating volume from backup ID %s", value)
 		volumeDetails.SourceDetails = &core.VolumeSourceFromVolumeBackupDetails{Id: &value}
