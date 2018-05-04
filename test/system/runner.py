@@ -647,7 +647,7 @@ def _volume_from_backup_check(test_id, availability_domain, volume, file_name='h
     if file_name not in stdout.split("\n"):
         _log("Error: Failed to find file %s in mounted volume" % file_name)
     _log("Deleting the replication controller (deletes the single nginx pod).")
-    _kubectl("delete --force=true " + _rc_config)
+    _kubectl("delete -f " + _rc_config)
 
 def _main():
     _reset_debug_file()
