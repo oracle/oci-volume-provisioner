@@ -1,0 +1,16 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: demooci-from-backup-{{TEST_ID}}
+  annotations:
+    volumeBackupId: {{BACKUP_ID}}
+spec:
+  storageClassName: "oci"
+  selector:
+    matchLabels:
+      oci-availability-domain: "{{REGION}}"
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
