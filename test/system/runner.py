@@ -89,7 +89,7 @@ def _create_key_files(check_oci):
                 with open(TMP_OCI_API_KEY_FILE, 'w') as stream:
                     stream.write(cnf['auth']['key'])
             except yaml.YAMLError as err:
-                _log("Error. Failed to parse oci config file " + oci_config_file + " " + err)
+                _log("Error. Failed to parse oci config file %s. Error: %s " % (oci_config_file, err))
                 _finish_with_exit_code(1)
 
 
@@ -450,7 +450,7 @@ def _test_create_volume(compartment_id, claim_target, claim_volume_name, check_o
     _log("Created volume with name: " + volume)
 
     if check_oci:
-        _log("Querying the OCI api to mah_gbke sure a volume with this name exists...")
+        _log("Querying the OCI api to make sure a volume with this name exists...")
         if not _wait_for_volume_to_create(compartment_id, volume):
             _log("Failed to find volume with name: " + volume)
             _finish_with_exit_code(1)
@@ -506,7 +506,7 @@ def _create_rc_yaml(using_oci, volume_name, test_id, availability_domain):
                                      volume_name, test_id, availability_domain)
 
 def _get_terraform_output_var(terraform_env, var_name):
-    '''Retrieve variable value from terraform output from  state file
+    '''Retrieve variable value from terraform output from state file
     @param terraform_env: Terraform test id
     @type terraform_env: C{Str}
     @param var_name: Name of variable to retrieve from output
@@ -518,7 +518,7 @@ def _get_terraform_output_var(terraform_env, var_name):
     return jsn[var_name]["value"]
 
 def _get_volume_name(terraform_env):
-    '''Retrieve volume name from rterraform status output
+    '''Retrieve volume name from terraform status output
     @param terraform_env: Terraform test id
     @type terraform_env: C{Str}
     @return: Volume OCID
