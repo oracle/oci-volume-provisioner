@@ -23,6 +23,7 @@
 
 [[constraint]]
   name = "github.com/golang/glog"
+  branch = "master"
 
 [[constraint]]
   name = "github.com/kubernetes-incubator/external-storage"
@@ -33,12 +34,15 @@
 
 [[constraint]]
   name = "k8s.io/apimachinery"
+  branch = "release-1.10"
 
 [[constraint]]
   name = "k8s.io/client-go"
+  version = "~6.0"
 
 [[constraint]]
   name = "k8s.io/kubernetes"
+  branch = "release-1.10"
 
 [[constraint]]
   version = "v1.0.0"
