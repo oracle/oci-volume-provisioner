@@ -136,6 +136,7 @@ system-test:
         name: test
         code: |
           cd /test/system
+          echo "Running system test"
           ./runner.py --setup --check-oci
 
 validate-test-image:
