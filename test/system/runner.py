@@ -650,6 +650,7 @@ def _volume_from_backup_check(test_id, availability_domain, volume, file_name='h
     _kubectl("delete -f " + _rc_config)
 
 def _main():
+    _log(">>>>>>>>.Starting system test")
     _reset_debug_file()
     args = _handle_args()
 
