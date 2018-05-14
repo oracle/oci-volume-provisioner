@@ -73,7 +73,7 @@ def _check_env(check_oci):
             _finish_with_exit_code(1)
 
 
-def _create_kekubectl y_files(check_oci):
+def _create_key_files(check_oci):
     _log("Setting environment variables")
     if "OCICONFIG_VAR" in os.environ:
         _run_command("echo \"$OCICONFIG_VAR\" | openssl enc -base64 -d -A > " + TMP_OCICONFIG, ".")
