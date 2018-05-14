@@ -136,7 +136,6 @@ system-test:
         name: test
         code: |
           cd /test/system
-          echo "Running system testexit"
           ./runner.py --setup --check-oci
 
 validate-test-image:
@@ -153,7 +152,6 @@ validate-test-image:
         name: validate test image
         code: |
           cd ./test/system
-          ./runner.py --setup --check-oci
           ./run-test-image.sh $VERSION
 
 release:
