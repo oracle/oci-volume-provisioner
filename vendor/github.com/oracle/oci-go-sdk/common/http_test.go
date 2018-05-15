@@ -28,9 +28,10 @@ type TestupdateUserDetails struct {
 }
 
 type listCompartmentsRequest struct {
-	CompartmentID string `mandatory:"true" contributesTo:"query" name:"compartmentId"`
-	Page          string `mandatory:"false" contributesTo:"query" name:"page"`
-	Limit         int32  `mandatory:"false" contributesTo:"query" name:"limit"`
+	CompartmentID string   `mandatory:"true" contributesTo:"query" name:"compartmentId"`
+	Page          string   `mandatory:"false" contributesTo:"query" name:"page"`
+	Limit         int32    `mandatory:"false" contributesTo:"query" name:"limit"`
+	Fields        []string `mandatory:"true" contributesTo:"query" name:"fields" collectionFormat:"csv"`
 }
 
 type updateUserRequest struct {
@@ -69,19 +70,21 @@ func TestHttpMarshallerInvalidStruct(t *testing.T) {
 }
 
 func TestHttpRequestMarshallerQuery(t *testing.T) {
-	s := listCompartmentsRequest{CompartmentID: "ocid1", Page: "p", Limit: 23}
+	s := listCompartmentsRequest{CompartmentID: "ocid1", Page: "p", Limit: 23, Fields: []string{"one", "two", "three"}}
 	request := MakeDefaultHTTPRequest(http.MethodPost, "/")
-	HTTPRequestMarshaller(s, &request)
+	e := HTTPRequestMarshaller(s, &request)
 	query := request.URL.Query()
+	assert.NoError(t, e)
 	assert.True(t, query.Get("compartmentId") == "ocid1")
 	assert.True(t, query.Get("page") == "p")
 	assert.True(t, query.Get("limit") == "23")
+	assert.True(t, query.Get("fields") == "one,two,three")
 }
 
 func TestMakeDefault(t *testing.T) {
 	r := MakeDefaultHTTPRequest(http.MethodPost, "/one/two")
-	assert.NotEmpty(t, r.Header.Get("Date"))
-	assert.NotEmpty(t, r.Header.Get("Opc-Client-Info"))
+	assert.NotEmpty(t, r.Header.Get(requestHeaderDate))
+	assert.NotEmpty(t, r.Header.Get(requestHeaderOpcClientInfo))
 }
 
 func TestHttpMarshallerSimpleHeader(t *testing.T) {
@@ -89,7 +92,7 @@ func TestHttpMarshallerSimpleHeader(t *testing.T) {
 	request := MakeDefaultHTTPRequest(http.MethodPost, "/random")
 	HTTPRequestMarshaller(s, &request)
 	header := request.Header
-	assert.True(t, header.Get("if-match") == "n=as")
+	assert.True(t, header.Get(requestHeaderIfMatch) == "n=as")
 }
 
 func TestHttpMarshallerSimpleStruct(t *testing.T) {
@@ -116,20 +119,72 @@ func TestHttpMarshallerSimpleBody(t *testing.T) {
 	if val, ok := content["description"]; !ok || val != desc {
 		assert.Fail(t, "Should contain: "+desc)
 	}
+}
 
+func TestHttpMarshallerEmptyPath(t *testing.T) {
+	type testData struct {
+		userID      string
+		httpMethod  string
+		expectError bool
+	}
+
+	testDataSet := []testData{
+		{
+			userID:      "id1",
+			httpMethod:  http.MethodGet,
+			expectError: false,
+		},
+		{
+			userID:      "",
+			httpMethod:  http.MethodGet,
+			expectError: true,
+		},
+		{
+			userID:      "",
+			httpMethod:  http.MethodPut,
+			expectError: true,
+		},
+		{
+			userID:      "",
+			httpMethod:  http.MethodHead,
+			expectError: true,
+		},
+		{
+			userID:      "",
+			httpMethod:  http.MethodDelete,
+			expectError: true,
+		},
+		{
+			userID:      "",
+			httpMethod:  http.MethodPost,
+			expectError: true,
+		},
+	}
+
+	for _, testData := range testDataSet {
+		// user id contributes to path
+		s := updateUserRequest{UserID: testData.userID}
+		request := MakeDefaultHTTPRequest(testData.httpMethod, "/")
+		err := HTTPRequestMarshaller(s, &request)
+		assert.Equal(t, testData.expectError, err != nil)
+	}
 }
 
 func TestHttpMarshalerAll(t *testing.T) {
 	desc := "theDescription"
+	type inc string
+	includes := []inc{inc("One"), inc("Two")}
+
 	s := struct {
 		ID      string                `contributesTo:"path"`
 		Name    string                `contributesTo:"query" name:"name"`
 		When    *SDKTime              `contributesTo:"query" name:"when"`
 		Income  float32               `contributesTo:"query" name:"income"`
+		Include []inc                 `contributesTo:"query" name:"includes" collectionFormat:"csv"`
 		Male    bool                  `contributesTo:"header" name:"male"`
 		Details TestupdateUserDetails `contributesTo:"body"`
 	}{
-		"101", "tapir", now(), 3.23, true, TestupdateUserDetails{Description: desc},
+		"101", "tapir", now(), 3.23, includes, true, TestupdateUserDetails{Description: desc},
 	}
 	request := MakeDefaultHTTPRequest(http.MethodPost, "/")
 	e := HTTPRequestMarshaller(s, &request)
@@ -142,8 +197,9 @@ func TestHttpMarshalerAll(t *testing.T) {
 	assert.True(t, request.URL.Query().Get("name") == s.Name)
 	assert.True(t, request.URL.Query().Get("income") == strconv.FormatFloat(float64(s.Income), 'f', 6, 32))
 	assert.True(t, request.URL.Query().Get("when") == when)
+	assert.True(t, request.URL.Query().Get("includes") == "One,Two")
 	assert.Contains(t, content, "description")
-	assert.Equal(t, request.Header.Get("Content-Type"), "application/json")
+	assert.Equal(t, request.Header.Get(requestHeaderContentType), "application/json")
 	if val, ok := content["description"]; !ok || val != desc {
 		assert.Fail(t, "Should contain: "+desc)
 	}
@@ -205,7 +261,7 @@ func TestHttpMarshallerSimpleStructPointers(t *testing.T) {
 	HTTPRequestMarshaller(s, &request)
 	all, _ := ioutil.ReadAll(request.Body)
 	assert.True(t, len(all) > 2)
-	assert.Equal(t, "", request.Header.Get("opc-retry-token"))
+	assert.Equal(t, "", request.Header.Get(requestHeaderOpcRetryToken))
 	assert.True(t, strings.Contains(request.URL.Path, "111"))
 	assert.True(t, strings.Contains(string(all), "thekey"))
 	assert.Contains(t, string(all), now.Format(time.RFC3339))
@@ -218,7 +274,7 @@ func TestHttpMarshallerSimpleStructPointersFilled(t *testing.T) {
 		TestcreateAPIKeyDetailsPtr: TestcreateAPIKeyDetailsPtr{Key: String("thekey")}}
 	request := MakeDefaultHTTPRequest(http.MethodPost, "/random")
 	HTTPRequestMarshaller(s, &request)
-	assert.Equal(t, "token", request.Header.Get("opc-retry-token"))
+	assert.Equal(t, "token", request.Header.Get(requestHeaderOpcRetryToken))
 	assert.True(t, strings.Contains(request.URL.Path, "111"))
 
 }
@@ -630,6 +686,34 @@ func TestEmptyQueryParam(t *testing.T) {
 	assert.NotContains(t, r.URL.RawQuery, "meta")
 }
 
+type responseWithWrongCsvType struct {
+	Meta    string            `contributesTo:"query" omitEmpty:"true" name:"meta"`
+	QParam  string            `contributesTo:"query" omitEmpty:"false" name:"qp"`
+	QParam2 string            `contributesTo:"query" name:"qp2"`
+	QParam3 map[string]string `contributesTo:"query" name:"qp2" collectionFormat:"csv"`
+}
+
+func TestWrongTypeQueryParamEncodingWrongType(t *testing.T) {
+	m := make(map[string]string)
+	m["one"] = "one"
+	s := responseWithWrongCsvType{QParam3: m}
+	_, err := MakeDefaultHTTPRequestWithTaggedStruct("GET", "/", s)
+	assert.Error(t, err)
+}
+
+type responseUnsupportedQueryEncoding struct {
+	Meta    string   `contributesTo:"query" omitEmpty:"true" name:"meta"`
+	QParam  string   `contributesTo:"query" omitEmpty:"false" name:"qp"`
+	QParam2 string   `contributesTo:"query" name:"qp2"`
+	QParam3 []string `contributesTo:"query" name:"qp2" collectionFormat:"xml"`
+}
+
+func TestWrongTypeQueryParamWrongEncoding(t *testing.T) {
+	s := responseUnsupportedQueryEncoding{QParam3: []string{"one ", "two"}}
+	_, err := MakeDefaultHTTPRequestWithTaggedStruct("GET", "/", s)
+	assert.Error(t, err)
+}
+
 func TestOmitFieldsInJson_SimpleStruct(t *testing.T) {
 	type Nested struct {
 		N   *string `mandatory:"false" json:"n"`
@@ -877,4 +961,26 @@ func TestOmitFieldsInJson_SimpleStructWithTime(t *testing.T) {
 	assert.Contains(t, mapRet, "n")
 	assert.Contains(t, mapRet, "theTime")
 	assert.Equal(t, theTime, mapRet.(map[string]interface{})["theTime"])
+}
+
+func TestAddRequestID(t *testing.T) {
+	type testStructType struct {
+		OpcRequestID *string `mandatory:"false" contributesTo:"header" name:"opc-request-id"`
+	}
+
+	inputTestDataSet := []testStructType{
+		{},
+		{OpcRequestID: String("testid")},
+	}
+
+	for _, testData := range inputTestDataSet {
+		request := MakeDefaultHTTPRequest(http.MethodPost, "/random")
+		HTTPRequestMarshaller(testData, &request)
+		assert.NotEmpty(t, request.Header["Opc-Request-Id"])
+		assert.Equal(t, 1, len(request.Header["Opc-Request-Id"]))
+
+		if testData.OpcRequestID != nil {
+			assert.Equal(t, "testid", request.Header["Opc-Request-Id"][0])
+		}
+	}
 }

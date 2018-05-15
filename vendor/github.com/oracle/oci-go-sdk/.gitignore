@@ -8,4 +8,6 @@
 .idea/
 *.swp
 .vscode/*
-
+target/
+bin/
+temp/
