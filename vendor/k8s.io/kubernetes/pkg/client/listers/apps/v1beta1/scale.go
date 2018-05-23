@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Kubernetes Authors.
+Copyright 2018 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/cache"
-	apps "k8s.io/kubernetes/pkg/apis/apps"
 	v1beta1 "k8s.io/kubernetes/pkg/apis/apps/v1beta1"
 )
 
@@ -89,7 +88,7 @@ func (s scaleNamespaceLister) Get(name string) (*v1beta1.Scale, error) {
 		return nil, err
 	}
 	if !exists {
-		return nil, errors.NewNotFound(apps.Resource("scale"), name)
+		return nil, errors.NewNotFound(v1beta1.Resource("scale"), name)
 	}
 	return obj.(*v1beta1.Scale), nil
 }
