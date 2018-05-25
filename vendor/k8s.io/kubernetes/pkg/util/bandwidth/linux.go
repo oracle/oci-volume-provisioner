@@ -28,7 +28,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/kubernetes/pkg/util/exec"
+	"k8s.io/utils/exec"
 
 	"github.com/golang/glog"
 )
@@ -101,7 +101,7 @@ func hexCIDR(cidr string) (string, error) {
 		return "", err
 	}
 	ip = ip.Mask(ipnet.Mask)
-	hexIP := hex.EncodeToString([]byte(ip.To4()))
+	hexIP := hex.EncodeToString([]byte(ip))
 	hexMask := ipnet.Mask.String()
 	return hexIP + "/" + hexMask, nil
 }
@@ -119,21 +119,24 @@ func asciiCIDR(cidr string) (string, error) {
 	ip := net.IP(ipData)
 
 	maskData, err := hex.DecodeString(parts[1])
+	if err != nil {
+		return "", err
+	}
 	mask := net.IPMask(maskData)
 	size, _ := mask.Size()
 
 	return fmt.Sprintf("%s/%d", ip.String(), size), nil
 }
 
-func (t *tcShaper) findCIDRClass(cidr string) (class, handle string, found bool, err error) {
+func (t *tcShaper) findCIDRClass(cidr string) (classAndHandleList [][]string, found bool, err error) {
 	data, err := t.e.Command("tc", "filter", "show", "dev", t.iface).CombinedOutput()
 	if err != nil {
-		return "", "", false, err
+		return classAndHandleList, false, err
 	}
 
 	hex, err := hexCIDR(cidr)
 	if err != nil {
-		return "", "", false, err
+		return classAndHandleList, false, err
 	}
 	spec := fmt.Sprintf("match %s", hex)
 
@@ -153,12 +156,17 @@ func (t *tcShaper) findCIDRClass(cidr string) (class, handle string, found bool,
 			// expected tc line:
 			// filter parent 1: protocol ip pref 1 u32 fh 800::800 order 2048 key ht 800 bkt 0 flowid 1:1
 			if len(parts) != 19 {
-				return "", "", false, fmt.Errorf("unexpected output from tc: %s %d (%v)", filter, len(parts), parts)
+				return classAndHandleList, false, fmt.Errorf("unexpected output from tc: %s %d (%v)", filter, len(parts), parts)
+			} else {
+				resultTmp := []string{parts[18], parts[9]}
+				classAndHandleList = append(classAndHandleList, resultTmp)
 			}
-			return parts[18], parts[9], true, nil
 		}
 	}
-	return "", "", false, nil
+	if len(classAndHandleList) > 0 {
+		return classAndHandleList, true, nil
+	}
+	return classAndHandleList, false, nil
 }
 
 func makeKBitString(rsrc *resource.Quantity) string {
@@ -234,7 +242,7 @@ func (t *tcShaper) interfaceExists() (bool, string, error) {
 }
 
 func (t *tcShaper) ReconcileCIDR(cidr string, upload, download *resource.Quantity) error {
-	_, _, found, err := t.findCIDRClass(cidr)
+	_, found, err := t.findCIDRClass(cidr)
 	if err != nil {
 		return err
 	}
@@ -269,22 +277,31 @@ func (t *tcShaper) initializeInterface() error {
 }
 
 func (t *tcShaper) Reset(cidr string) error {
-	class, handle, found, err := t.findCIDRClass(cidr)
+	classAndHandle, found, err := t.findCIDRClass(cidr)
 	if err != nil {
 		return err
 	}
 	if !found {
 		return fmt.Errorf("Failed to find cidr: %s on interface: %s", cidr, t.iface)
 	}
-	if err := t.execAndLog("tc", "filter", "del",
-		"dev", t.iface,
-		"parent", "1:",
-		"proto", "ip",
-		"prio", "1",
-		"handle", handle, "u32"); err != nil {
-		return err
+	for i := 0; i < len(classAndHandle); i++ {
+		if err := t.execAndLog("tc", "filter", "del",
+			"dev", t.iface,
+			"parent", "1:",
+			"proto", "ip",
+			"prio", "1",
+			"handle", classAndHandle[i][1], "u32"); err != nil {
+			return err
+		}
+		if err := t.execAndLog("tc", "class", "del",
+			"dev", t.iface,
+			"parent", "1:",
+			"classid", classAndHandle[i][0]); err != nil {
+			return err
+		}
 	}
-	return t.execAndLog("tc", "class", "del", "dev", t.iface, "parent", "1:", "classid", class)
+	return nil
+
 }
 
 func (t *tcShaper) deleteInterface(class string) error {

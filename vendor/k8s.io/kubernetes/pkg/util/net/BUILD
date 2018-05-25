@@ -1,17 +1,6 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
 package(default_visibility = ["//visibility:public"])
-
-licenses(["notice"])
-
-load(
-    "@io_bazel_rules_go//go:def.bzl",
-    "go_library",
-)
-
-go_library(
-    name = "go_default_library",
-    srcs = ["doc.go"],
-    tags = ["automanaged"],
-)
 
 filegroup(
     name = "package-srcs",
@@ -27,4 +16,16 @@ filegroup(
         "//pkg/util/net/sets:all-srcs",
     ],
     tags = ["automanaged"],
+)
+
+go_library(
+    name = "go_default_library",
+    srcs = ["net.go"],
+    importpath = "k8s.io/kubernetes/pkg/util/net",
+)
+
+go_test(
+    name = "go_default_test",
+    srcs = ["net_test.go"],
+    embed = [":go_default_library"],
 )

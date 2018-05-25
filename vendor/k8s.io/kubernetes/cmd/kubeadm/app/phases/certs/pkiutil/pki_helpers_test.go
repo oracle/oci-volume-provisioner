@@ -21,10 +21,12 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"io/ioutil"
+	"net"
 	"os"
 	"testing"
 
 	certutil "k8s.io/client-go/util/cert"
+	kubeadmapi "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm"
 )
 
 func TestNewCertificateAuthority(t *testing.T) {
@@ -82,6 +84,45 @@ func TestNewCertAndKey(t *testing.T) {
 				"failed NewCertAndKey:\n\texpected: %t\n\t  actual: %t",
 				rt.expected,
 				(actual == nil),
+			)
+		}
+	}
+}
+
+func TestHasServerAuth(t *testing.T) {
+	caCert, caKey, _ := NewCertificateAuthority()
+
+	var tests = []struct {
+		config   certutil.Config
+		expected bool
+	}{
+		{
+			config: certutil.Config{
+				CommonName: "test",
+				Usages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			},
+			expected: true,
+		},
+		{
+			config: certutil.Config{
+				CommonName: "test",
+				Usages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+			},
+			expected: false,
+		},
+	}
+
+	for _, rt := range tests {
+		cert, _, err := NewCertAndKey(caCert, caKey, rt.config)
+		if err != nil {
+			t.Fatalf("Couldn't create cert: %v", err)
+		}
+		actual := HasServerAuth(cert)
+		if actual != rt.expected {
+			t.Errorf(
+				"failed HasServerAuth:\n\texpected: %t\n\t  actual: %t",
+				rt.expected,
+				actual,
 			)
 		}
 	}
@@ -391,5 +432,156 @@ func TestPathForPublicKey(t *testing.T) {
 	pubPath := pathForPublicKey("/foo", "bar")
 	if pubPath != "/foo/bar.pub" {
 		t.Errorf("unexpected certificate path: %s", pubPath)
+	}
+}
+
+func TestGetAPIServerAltNames(t *testing.T) {
+	hostname := "valid-hostname"
+	advertiseIP := "1.2.3.4"
+	controlPlaneEndpoint := "api.k8s.io"
+	cfg := &kubeadmapi.MasterConfiguration{
+		API:               kubeadmapi.API{AdvertiseAddress: advertiseIP, ControlPlaneEndpoint: controlPlaneEndpoint},
+		Networking:        kubeadmapi.Networking{ServiceSubnet: "10.96.0.0/12", DNSDomain: "cluster.local"},
+		NodeName:          hostname,
+		APIServerCertSANs: []string{"10.1.245.94", "10.1.245.95", "1.2.3.L", "invalid,commas,in,DNS"},
+	}
+
+	altNames, err := GetAPIServerAltNames(cfg)
+	if err != nil {
+		t.Fatalf("failed calling GetAPIServerAltNames: %v", err)
+	}
+
+	expectedDNSNames := []string{hostname, "kubernetes", "kubernetes.default", "kubernetes.default.svc", "kubernetes.default.svc.cluster.local", controlPlaneEndpoint}
+	for _, DNSName := range expectedDNSNames {
+		found := false
+		for _, val := range altNames.DNSNames {
+			if val == DNSName {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			t.Errorf("altNames does not contain DNSName %s", DNSName)
+		}
+	}
+
+	expectedIPAddresses := []string{"10.96.0.1", advertiseIP, "10.1.245.94", "10.1.245.95"}
+	for _, IPAddress := range expectedIPAddresses {
+		found := false
+		for _, val := range altNames.IPs {
+			if val.Equal(net.ParseIP(IPAddress)) {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			t.Errorf("altNames does not contain IPAddress %s", IPAddress)
+		}
+	}
+}
+
+func TestGetEtcdAltNames(t *testing.T) {
+	proxy := "user-etcd-proxy"
+	proxyIP := "10.10.10.100"
+	cfg := &kubeadmapi.MasterConfiguration{
+		Etcd: kubeadmapi.Etcd{
+			ServerCertSANs: []string{
+				proxy,
+				proxyIP,
+				"1.2.3.L",
+				"invalid,commas,in,DNS",
+			},
+		},
+	}
+
+	altNames, err := GetEtcdAltNames(cfg)
+	if err != nil {
+		t.Fatalf("failed calling GetEtcdAltNames: %v", err)
+	}
+
+	expectedDNSNames := []string{"localhost", proxy}
+	for _, DNSName := range expectedDNSNames {
+		found := false
+		for _, val := range altNames.DNSNames {
+			if val == DNSName {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			t.Errorf("altNames does not contain DNSName %s", DNSName)
+		}
+	}
+
+	expectedIPAddresses := []string{"127.0.0.1", proxyIP}
+	for _, IPAddress := range expectedIPAddresses {
+		found := false
+		for _, val := range altNames.IPs {
+			if val.Equal(net.ParseIP(IPAddress)) {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			t.Errorf("altNames does not contain IPAddress %s", IPAddress)
+		}
+	}
+}
+
+func TestGetEtcdPeerAltNames(t *testing.T) {
+	hostname := "valid-hostname"
+	proxy := "user-etcd-proxy"
+	proxyIP := "10.10.10.100"
+	advertiseIP := "1.2.3.4"
+	cfg := &kubeadmapi.MasterConfiguration{
+		API:      kubeadmapi.API{AdvertiseAddress: advertiseIP},
+		NodeName: hostname,
+		Etcd: kubeadmapi.Etcd{
+			PeerCertSANs: []string{
+				proxy,
+				proxyIP,
+				"1.2.3.L",
+				"invalid,commas,in,DNS",
+			},
+		},
+	}
+
+	altNames, err := GetEtcdPeerAltNames(cfg)
+	if err != nil {
+		t.Fatalf("failed calling GetEtcdPeerAltNames: %v", err)
+	}
+
+	expectedDNSNames := []string{hostname, proxy}
+	for _, DNSName := range expectedDNSNames {
+		found := false
+		for _, val := range altNames.DNSNames {
+			if val == DNSName {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			t.Errorf("altNames does not contain DNSName %s", DNSName)
+		}
+	}
+
+	expectedIPAddresses := []string{advertiseIP, proxyIP}
+	for _, IPAddress := range expectedIPAddresses {
+		found := false
+		for _, val := range altNames.IPs {
+			if val.Equal(net.ParseIP(IPAddress)) {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			t.Errorf("altNames does not contain IPAddress %s", IPAddress)
+		}
 	}
 }

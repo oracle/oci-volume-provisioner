@@ -24,14 +24,15 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/client-go/rest/fake"
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/v1"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	cmdtesting "k8s.io/kubernetes/pkg/kubectl/cmd/testing"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
+	"k8s.io/kubernetes/pkg/kubectl/scheme"
 )
 
 func generateNodeAndTaintedNode(oldTaints []v1.Taint, newTaints []v1.Taint) (*v1.Node, *v1.Node) {
@@ -49,10 +50,9 @@ func generateNodeAndTaintedNode(oldTaints []v1.Taint, newTaints []v1.Taint) (*v1
 		},
 		Status: v1.NodeStatus{},
 	}
-	clone, _ := api.Scheme.DeepCopy(node)
 
 	// A copy of the same node, but tainted.
-	taintedNode = clone.(*v1.Node)
+	taintedNode = node.DeepCopy()
 	taintedNode.Spec.Taints = newTaints
 
 	return node, taintedNode
@@ -236,98 +236,151 @@ func TestTaint(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		oldNode, expectNewNode := generateNodeAndTaintedNode(test.oldTaints, test.newTaints)
+		t.Run(test.description, func(t *testing.T) {
+			oldNode, expectNewNode := generateNodeAndTaintedNode(test.oldTaints, test.newTaints)
+			new_node := &v1.Node{}
+			tainted := false
+			tf := cmdtesting.NewTestFactory()
+			defer tf.Cleanup()
 
-		new_node := &v1.Node{}
-		tainted := false
-		f, tf, codec, ns := cmdtesting.NewAPIFactory()
+			codec := legacyscheme.Codecs.LegacyCodec(scheme.Versions...)
+			ns := legacyscheme.Codecs
 
-		tf.Client = &fake.RESTClient{
-			APIRegistry:          api.Registry,
-			NegotiatedSerializer: ns,
-			Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
-				m := &MyReq{req}
-				switch {
-				case m.isFor("GET", "/nodes/node-name"):
-					return &http.Response{StatusCode: 200, Header: defaultHeader(), Body: objBody(codec, oldNode)}, nil
-				case m.isFor("PATCH", "/nodes/node-name"):
-					tainted = true
-					data, err := ioutil.ReadAll(req.Body)
-					if err != nil {
-						t.Fatalf("%s: unexpected error: %v", test.description, err)
-					}
-					defer req.Body.Close()
+			tf.Client = &fake.RESTClient{
+				NegotiatedSerializer: ns,
+				Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
+					m := &MyReq{req}
+					switch {
+					case m.isFor("GET", "/nodes"):
+						return &http.Response{StatusCode: 200, Header: defaultHeader(), Body: objBody(codec, oldNode)}, nil
+					case m.isFor("GET", "/nodes/node-name"):
+						return &http.Response{StatusCode: 200, Header: defaultHeader(), Body: objBody(codec, oldNode)}, nil
+					case m.isFor("PATCH", "/nodes/node-name"):
+						tainted = true
+						data, err := ioutil.ReadAll(req.Body)
+						if err != nil {
+							t.Fatalf("%s: unexpected error: %v", test.description, err)
+						}
+						defer req.Body.Close()
 
-					// apply the patch
-					oldJSON, err := runtime.Encode(codec, oldNode)
-					if err != nil {
-						t.Fatalf("%s: unexpected error: %v", test.description, err)
-					}
-					appliedPatch, err := strategicpatch.StrategicMergePatch(oldJSON, data, &v1.Node{})
-					if err != nil {
-						t.Fatalf("%s: unexpected error: %v", test.description, err)
-					}
+						// apply the patch
+						oldJSON, err := runtime.Encode(codec, oldNode)
+						if err != nil {
+							t.Fatalf("%s: unexpected error: %v", test.description, err)
+						}
+						appliedPatch, err := strategicpatch.StrategicMergePatch(oldJSON, data, &v1.Node{})
+						if err != nil {
+							t.Fatalf("%s: unexpected error: %v", test.description, err)
+						}
 
-					// decode the patch
-					if err := runtime.DecodeInto(codec, appliedPatch, new_node); err != nil {
-						t.Fatalf("%s: unexpected error: %v", test.description, err)
+						// decode the patch
+						if err := runtime.DecodeInto(codec, appliedPatch, new_node); err != nil {
+							t.Fatalf("%s: unexpected error: %v", test.description, err)
+						}
+						if !equalTaints(expectNewNode.Spec.Taints, new_node.Spec.Taints) {
+							t.Fatalf("%s: expected:\n%v\nsaw:\n%v\n", test.description, expectNewNode.Spec.Taints, new_node.Spec.Taints)
+						}
+						return &http.Response{StatusCode: 200, Header: defaultHeader(), Body: objBody(codec, new_node)}, nil
+					case m.isFor("PUT", "/nodes/node-name"):
+						tainted = true
+						data, err := ioutil.ReadAll(req.Body)
+						if err != nil {
+							t.Fatalf("%s: unexpected error: %v", test.description, err)
+						}
+						defer req.Body.Close()
+						if err := runtime.DecodeInto(codec, data, new_node); err != nil {
+							t.Fatalf("%s: unexpected error: %v", test.description, err)
+						}
+						if !equalTaints(expectNewNode.Spec.Taints, new_node.Spec.Taints) {
+							t.Fatalf("%s: expected:\n%v\nsaw:\n%v\n", test.description, expectNewNode.Spec.Taints, new_node.Spec.Taints)
+						}
+						return &http.Response{StatusCode: 200, Header: defaultHeader(), Body: objBody(codec, new_node)}, nil
+					default:
+						t.Fatalf("%s: unexpected request: %v %#v\n%#v", test.description, req.Method, req.URL, req)
+						return nil, nil
 					}
-					if !equalTaints(expectNewNode.Spec.Taints, new_node.Spec.Taints) {
-						t.Fatalf("%s: expected:\n%v\nsaw:\n%v\n", test.description, expectNewNode.Spec.Taints, new_node.Spec.Taints)
-					}
-					return &http.Response{StatusCode: 200, Header: defaultHeader(), Body: objBody(codec, new_node)}, nil
-				case m.isFor("PUT", "/nodes/node-name"):
-					tainted = true
-					data, err := ioutil.ReadAll(req.Body)
-					if err != nil {
-						t.Fatalf("%s: unexpected error: %v", test.description, err)
-					}
-					defer req.Body.Close()
-					if err := runtime.DecodeInto(codec, data, new_node); err != nil {
-						t.Fatalf("%s: unexpected error: %v", test.description, err)
-					}
-					if !equalTaints(expectNewNode.Spec.Taints, new_node.Spec.Taints) {
-						t.Fatalf("%s: expected:\n%v\nsaw:\n%v\n", test.description, expectNewNode.Spec.Taints, new_node.Spec.Taints)
-					}
-					return &http.Response{StatusCode: 200, Header: defaultHeader(), Body: objBody(codec, new_node)}, nil
-				default:
-					t.Fatalf("%s: unexpected request: %v %#v\n%#v", test.description, req.Method, req.URL, req)
-					return nil, nil
-				}
-			}),
-		}
-		tf.ClientConfig = defaultClientConfig()
+				}),
+			}
+			tf.ClientConfigVal = defaultClientConfig()
 
-		buf := bytes.NewBuffer([]byte{})
-		cmd := NewCmdTaint(f, buf)
+			buf := bytes.NewBuffer([]byte{})
+			cmd := NewCmdTaint(tf, buf)
 
-		saw_fatal := false
-		func() {
-			defer func() {
-				// Recover from the panic below.
-				_ = recover()
-				// Restore cmdutil behavior
-				cmdutil.DefaultBehaviorOnFatal()
+			saw_fatal := false
+			func() {
+				defer func() {
+					// Recover from the panic below.
+					_ = recover()
+					// Restore cmdutil behavior
+					cmdutil.DefaultBehaviorOnFatal()
+				}()
+				cmdutil.BehaviorOnFatal(func(e string, code int) { saw_fatal = true; panic(e) })
+				cmd.SetArgs(test.args)
+				cmd.Execute()
 			}()
-			cmdutil.BehaviorOnFatal(func(e string, code int) { saw_fatal = true; panic(e) })
-			cmd.SetArgs(test.args)
-			cmd.Execute()
-		}()
 
+			if test.expectFatal {
+				if !saw_fatal {
+					t.Fatalf("%s: unexpected non-error", test.description)
+				}
+			}
+
+			if test.expectTaint {
+				if !tainted {
+					t.Fatalf("%s: node not tainted", test.description)
+				}
+			}
+			if !test.expectTaint {
+				if tainted {
+					t.Fatalf("%s: unexpected taint", test.description)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateFlags(t *testing.T) {
+	tests := []struct {
+		taintOpts   TaintOptions
+		description string
+		expectFatal bool
+	}{
+
+		{
+			taintOpts:   TaintOptions{selector: "myLabel=X", all: false},
+			description: "With Selector and without All flag",
+			expectFatal: false,
+		},
+		{
+			taintOpts:   TaintOptions{selector: "", all: true},
+			description: "Without selector and All flag",
+			expectFatal: false,
+		},
+		{
+			taintOpts:   TaintOptions{selector: "myLabel=X", all: true},
+			description: "With Selector and with All flag",
+			expectFatal: true,
+		},
+		{
+			taintOpts:   TaintOptions{selector: "", all: false, resources: []string{"node"}},
+			description: "Without Selector and All flags and if node name is not provided",
+			expectFatal: true,
+		},
+		{
+			taintOpts:   TaintOptions{selector: "", all: false, resources: []string{"node", "node-name"}},
+			description: "Without Selector and ALL flags and if node name is provided",
+			expectFatal: false,
+		},
+	}
+	for _, test := range tests {
+		sawFatal := false
+		err := test.taintOpts.validateFlags()
+		if err != nil {
+			sawFatal = true
+		}
 		if test.expectFatal {
-			if !saw_fatal {
-				t.Fatalf("%s: unexpected non-error", test.description)
-			}
-		}
-
-		if test.expectTaint {
-			if !tainted {
-				t.Fatalf("%s: node not tainted", test.description)
-			}
-		}
-		if !test.expectTaint {
-			if tainted {
-				t.Fatalf("%s: unexpected taint", test.description)
+			if !sawFatal {
+				t.Fatalf("%s expected not to fail", test.description)
 			}
 		}
 	}

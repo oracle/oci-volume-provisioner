@@ -21,12 +21,16 @@ import (
 	"fmt"
 	"testing"
 
-	"k8s.io/kubernetes/pkg/api/v1"
+	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/volume"
 	volumetest "k8s.io/kubernetes/pkg/volume/testing"
 
 	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/types"
+	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
+	"strings"
 )
 
 func TestGetDeviceName_Volume(t *testing.T) {
@@ -46,7 +50,7 @@ func TestGetDeviceName_Volume(t *testing.T) {
 func TestGetDeviceName_PersistentVolume(t *testing.T) {
 	plugin := newPlugin()
 	name := "my-pd-pv"
-	spec := createPVSpec(name, true)
+	spec := createPVSpec(name, true, nil)
 
 	deviceName, err := plugin.GetVolumeName(spec)
 	if err != nil {
@@ -72,10 +76,39 @@ type testcase struct {
 	expectedReturn error
 }
 
+func TestAttachDetachRegional(t *testing.T) {
+	diskName := "disk"
+	nodeName := types.NodeName("instance")
+	readOnly := false
+	regional := true
+	spec := createPVSpec(diskName, readOnly, []string{"zone1", "zone2"})
+	// Successful Attach call
+	testcase := testcase{
+		name:           "Attach_Regional_Positive",
+		diskIsAttached: diskIsAttachedCall{diskName, nodeName, false, nil},
+		attach:         attachCall{diskName, nodeName, readOnly, regional, nil},
+		test: func(testcase *testcase) error {
+			attacher := newAttacher(testcase)
+			devicePath, err := attacher.Attach(spec, nodeName)
+			if devicePath != "/dev/disk/by-id/google-disk" {
+				return fmt.Errorf("devicePath incorrect. Expected<\"/dev/disk/by-id/google-disk\"> Actual: <%q>", devicePath)
+			}
+			return err
+		},
+	}
+
+	err := testcase.test(&testcase)
+	if err != testcase.expectedReturn {
+		t.Errorf("%s failed: expected err=%q, got %q", testcase.name, testcase.expectedReturn.Error(), err.Error())
+	}
+	t.Logf("Test %q succeeded", testcase.name)
+}
+
 func TestAttachDetach(t *testing.T) {
 	diskName := "disk"
 	nodeName := types.NodeName("instance")
 	readOnly := false
+	regional := false
 	spec := createVolSpec(diskName, readOnly)
 	attachError := errors.New("Fake attach error")
 	detachError := errors.New("Fake detach error")
@@ -85,7 +118,7 @@ func TestAttachDetach(t *testing.T) {
 		{
 			name:           "Attach_Positive",
 			diskIsAttached: diskIsAttachedCall{diskName, nodeName, false, nil},
-			attach:         attachCall{diskName, nodeName, readOnly, nil},
+			attach:         attachCall{diskName, nodeName, readOnly, regional, nil},
 			test: func(testcase *testcase) error {
 				attacher := newAttacher(testcase)
 				devicePath, err := attacher.Attach(spec, nodeName)
@@ -114,7 +147,7 @@ func TestAttachDetach(t *testing.T) {
 		{
 			name:           "Attach_Positive_CheckFails",
 			diskIsAttached: diskIsAttachedCall{diskName, nodeName, false, diskCheckError},
-			attach:         attachCall{diskName, nodeName, readOnly, nil},
+			attach:         attachCall{diskName, nodeName, readOnly, regional, nil},
 			test: func(testcase *testcase) error {
 				attacher := newAttacher(testcase)
 				devicePath, err := attacher.Attach(spec, nodeName)
@@ -129,7 +162,7 @@ func TestAttachDetach(t *testing.T) {
 		{
 			name:           "Attach_Negative",
 			diskIsAttached: diskIsAttachedCall{diskName, nodeName, false, diskCheckError},
-			attach:         attachCall{diskName, nodeName, readOnly, attachError},
+			attach:         attachCall{diskName, nodeName, readOnly, regional, attachError},
 			test: func(testcase *testcase) error {
 				attacher := newAttacher(testcase)
 				devicePath, err := attacher.Attach(spec, nodeName)
@@ -202,7 +235,8 @@ func newPlugin() *gcePersistentDiskPlugin {
 	host := volumetest.NewFakeVolumeHost(
 		"/tmp", /* rootDir */
 		nil,    /* kubeClient */
-		nil /* plugins */)
+		nil,    /* plugins */
+	)
 	plugins := ProbeVolumePlugins()
 	plugin := plugins[0]
 	plugin.Init(host)
@@ -235,8 +269,8 @@ func createVolSpec(name string, readOnly bool) *volume.Spec {
 	}
 }
 
-func createPVSpec(name string, readOnly bool) *volume.Spec {
-	return &volume.Spec{
+func createPVSpec(name string, readOnly bool, zones []string) *volume.Spec {
+	spec := &volume.Spec{
 		PersistentVolume: &v1.PersistentVolume{
 			Spec: v1.PersistentVolumeSpec{
 				PersistentVolumeSource: v1.PersistentVolumeSource{
@@ -248,6 +282,15 @@ func createPVSpec(name string, readOnly bool) *volume.Spec {
 			},
 		},
 	}
+
+	if zones != nil {
+		zonesLabel := strings.Join(zones, kubeletapis.LabelMultiZoneDelimiter)
+		spec.PersistentVolume.ObjectMeta.Labels = map[string]string{
+			kubeletapis.LabelZoneFailureDomain: zonesLabel,
+		}
+	}
+
+	return spec
 }
 
 // Fake GCE implementation
@@ -256,6 +299,7 @@ type attachCall struct {
 	diskName string
 	nodeName types.NodeName
 	readOnly bool
+	regional bool
 	ret      error
 }
 
@@ -272,7 +316,7 @@ type diskIsAttachedCall struct {
 	ret        error
 }
 
-func (testcase *testcase) AttachDisk(diskName string, nodeName types.NodeName, readOnly bool) error {
+func (testcase *testcase) AttachDisk(diskName string, nodeName types.NodeName, readOnly bool, regional bool) error {
 	expected := &testcase.attach
 
 	if expected.diskName == "" && expected.nodeName == "" {
@@ -295,6 +339,11 @@ func (testcase *testcase) AttachDisk(diskName string, nodeName types.NodeName, r
 	if expected.readOnly != readOnly {
 		testcase.t.Errorf("Unexpected AttachDisk call: expected readOnly %v, got %v", expected.readOnly, readOnly)
 		return errors.New("Unexpected AttachDisk call: wrong readOnly")
+	}
+
+	if expected.regional != regional {
+		testcase.t.Errorf("Unexpected AttachDisk call: expected regional %v, got %v", expected.regional, regional)
+		return errors.New("Unexpected AttachDisk call: wrong regional")
 	}
 
 	glog.V(4).Infof("AttachDisk call: %s, %s, %v, returning %v", diskName, nodeName, readOnly, expected.ret)
@@ -360,10 +409,21 @@ func (testcase *testcase) CreateDisk(name string, diskType string, zone string, 
 	return errors.New("Not implemented")
 }
 
+func (testcase *testcase) CreateRegionalDisk(name string, diskType string, replicaZones sets.String, sizeGb int64, tags map[string]string) error {
+	return errors.New("Not implemented")
+}
+
 func (testcase *testcase) DeleteDisk(diskToDelete string) error {
 	return errors.New("Not implemented")
 }
 
 func (testcase *testcase) GetAutoLabelsForPD(name string, zone string) (map[string]string, error) {
 	return map[string]string{}, errors.New("Not implemented")
+}
+
+func (testcase *testcase) ResizeDisk(
+	diskName string,
+	oldSize resource.Quantity,
+	newSize resource.Quantity) (resource.Quantity, error) {
+	return oldSize, errors.New("Not implemented")
 }

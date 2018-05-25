@@ -26,6 +26,7 @@ import (
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	"k8s.io/kubernetes/pkg/apis/rbac"
 	rbacregistryvalidation "k8s.io/kubernetes/pkg/registry/rbac/validation"
+	"k8s.io/kubernetes/plugin/pkg/auth/authorizer/rbac/bootstrappolicy"
 )
 
 func newRule(verbs, apiGroups, resources, nonResourceURLs string) rbac.PolicyRule {
@@ -223,13 +224,19 @@ func TestAuthorizer(t *testing.T) {
 		{
 			// test subresource resolution
 			clusterRoles: []*rbac.ClusterRole{
-				newClusterRole("admin", newRule("*", "*", "pods/status", "*")),
+				newClusterRole("admin",
+					newRule("*", "*", "pods/status", "*"),
+					newRule("*", "*", "*/scale", "*"),
+				),
 			},
 			roleBindings: []*rbac.RoleBinding{
 				newRoleBinding("ns1", "admin", bindToClusterRole, "User:admin", "Group:admins"),
 			},
 			shouldPass: []authorizer.Attributes{
 				&defaultAttributes{"admin", "", "get", "pods", "status", "ns1", ""},
+				&defaultAttributes{"admin", "", "get", "pods", "scale", "ns1", ""},
+				&defaultAttributes{"admin", "", "get", "deployments", "scale", "ns1", ""},
+				&defaultAttributes{"admin", "", "get", "anything", "scale", "ns1", ""},
 			},
 			shouldFail: []authorizer.Attributes{
 				&defaultAttributes{"admin", "", "get", "pods", "", "ns1", ""},
@@ -240,13 +247,13 @@ func TestAuthorizer(t *testing.T) {
 		ruleResolver, _ := rbacregistryvalidation.NewTestRuleResolver(tt.roles, tt.roleBindings, tt.clusterRoles, tt.clusterRoleBindings)
 		a := RBACAuthorizer{ruleResolver}
 		for _, attr := range tt.shouldPass {
-			if authorized, _, _ := a.Authorize(attr); !authorized {
+			if decision, _, _ := a.Authorize(attr); decision != authorizer.DecisionAllow {
 				t.Errorf("case %d: incorrectly restricted %s", i, attr)
 			}
 		}
 
 		for _, attr := range tt.shouldFail {
-			if authorized, _, _ := a.Authorize(attr); authorized {
+			if decision, _, _ := a.Authorize(attr); decision == authorizer.DecisionAllow {
 				t.Errorf("case %d: incorrectly passed %s", i, attr)
 			}
 		}
@@ -381,7 +388,7 @@ func TestRuleMatches(t *testing.T) {
 	}
 	for _, tc := range tests {
 		for request, expected := range tc.requestsToExpected {
-			if e, a := expected, RuleAllows(request, tc.rule); e != a {
+			if e, a := expected, RuleAllows(request, &tc.rule); e != a {
 				t.Errorf("%q: expected %v, got %v for %v", tc.name, e, a, request)
 			}
 		}
@@ -431,4 +438,85 @@ func (r *requestAttributeBuilder) URL(url string) *requestAttributeBuilder {
 
 func (r *requestAttributeBuilder) New() authorizer.AttributesRecord {
 	return r.request
+}
+
+func BenchmarkAuthorize(b *testing.B) {
+	bootstrapRoles := []rbac.ClusterRole{}
+	bootstrapRoles = append(bootstrapRoles, bootstrappolicy.ControllerRoles()...)
+	bootstrapRoles = append(bootstrapRoles, bootstrappolicy.ClusterRoles()...)
+
+	bootstrapBindings := []rbac.ClusterRoleBinding{}
+	bootstrapBindings = append(bootstrapBindings, bootstrappolicy.ClusterRoleBindings()...)
+	bootstrapBindings = append(bootstrapBindings, bootstrappolicy.ControllerRoleBindings()...)
+
+	clusterRoles := []*rbac.ClusterRole{}
+	for i := range bootstrapRoles {
+		clusterRoles = append(clusterRoles, &bootstrapRoles[i])
+	}
+	clusterRoleBindings := []*rbac.ClusterRoleBinding{}
+	for i := range bootstrapBindings {
+		clusterRoleBindings = append(clusterRoleBindings, &bootstrapBindings[i])
+	}
+
+	_, resolver := rbacregistryvalidation.NewTestRuleResolver(nil, nil, clusterRoles, clusterRoleBindings)
+
+	authz := New(resolver, resolver, resolver, resolver)
+
+	nodeUser := &user.DefaultInfo{Name: "system:node:node1", Groups: []string{"system:nodes", "system:authenticated"}}
+	requests := []struct {
+		name  string
+		attrs authorizer.Attributes
+	}{
+		{
+			"allow list pods",
+			authorizer.AttributesRecord{
+				ResourceRequest: true,
+				User:            nodeUser,
+				Verb:            "list",
+				Resource:        "pods",
+				Subresource:     "",
+				Name:            "",
+				Namespace:       "",
+				APIGroup:        "",
+				APIVersion:      "v1",
+			},
+		},
+		{
+			"allow update pods/status",
+			authorizer.AttributesRecord{
+				ResourceRequest: true,
+				User:            nodeUser,
+				Verb:            "update",
+				Resource:        "pods",
+				Subresource:     "status",
+				Name:            "mypods",
+				Namespace:       "myns",
+				APIGroup:        "",
+				APIVersion:      "v1",
+			},
+		},
+		{
+			"forbid educate dolphins",
+			authorizer.AttributesRecord{
+				ResourceRequest: true,
+				User:            nodeUser,
+				Verb:            "educate",
+				Resource:        "dolphins",
+				Subresource:     "",
+				Name:            "",
+				Namespace:       "",
+				APIGroup:        "",
+				APIVersion:      "v1",
+			},
+		},
+	}
+
+	b.ResetTimer()
+	for _, request := range requests {
+		b.Run(request.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				authz.Authorize(request.attrs)
+			}
+		})
+	}
 }

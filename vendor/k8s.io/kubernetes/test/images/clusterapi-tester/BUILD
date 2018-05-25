@@ -1,7 +1,5 @@
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])
-
 load(
     "@io_bazel_rules_go//go:def.bzl",
     "go_binary",
@@ -10,18 +8,17 @@ load(
 
 go_binary(
     name = "clusterapi-tester",
-    library = ":go_default_library",
-    tags = ["automanaged"],
+    embed = [":go_default_library"],
 )
 
 go_library(
     name = "go_default_library",
-    srcs = ["main.go"],
-    tags = ["automanaged"],
+    srcs = ["clusterapi-tester.go"],
+    importpath = "k8s.io/kubernetes/test/images/clusterapi-tester",
     deps = [
         "//pkg/client/clientset_generated/internalclientset:go_default_library",
-        "//vendor:k8s.io/apimachinery/pkg/apis/meta/v1",
-        "//vendor:k8s.io/client-go/rest",
+        "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
+        "//vendor/k8s.io/client-go/rest:go_default_library",
     ],
 )
 

@@ -39,6 +39,10 @@ type AuthorizationRuleResolver interface {
 	// PolicyRules may not be complete, but it contains all retrievable rules.  This is done because policy rules are purely additive and policy determinations
 	// can be made on the basis of those rules that are found.
 	RulesFor(user user.Info, namespace string) ([]rbac.PolicyRule, error)
+
+	// VisitRulesFor invokes visitor() with each rule that applies to a given user in a given namespace, and each error encountered resolving those rules.
+	// If visitor() returns false, visiting is short-circuited.
+	VisitRulesFor(user user.Info, namespace string, visitor func(source fmt.Stringer, rule *rbac.PolicyRule, err error) bool)
 }
 
 // ConfirmNoEscalation determines if the roles for a given user in a given namespace encompass the provided role.
@@ -60,7 +64,6 @@ func ConfirmNoEscalation(ctx genericapirequest.Context, ruleResolver Authorizati
 
 	ownerRightsCover, missingRights := Covers(ownerRules, rules)
 	if !ownerRightsCover {
-		user, _ := genericapirequest.UserFrom(ctx)
 		return apierrors.NewUnauthorized(fmt.Sprintf("attempt to grant extra privileges: %v user=%v ownerrules=%v ruleResolutionErrors=%v", missingRights, user, ownerRules, ruleResolutionErrors))
 	}
 	return nil
@@ -94,46 +97,124 @@ type ClusterRoleBindingLister interface {
 }
 
 func (r *DefaultRuleResolver) RulesFor(user user.Info, namespace string) ([]rbac.PolicyRule, error) {
-	policyRules := []rbac.PolicyRule{}
-	errorlist := []error{}
+	visitor := &ruleAccumulator{}
+	r.VisitRulesFor(user, namespace, visitor.visit)
+	return visitor.rules, utilerrors.NewAggregate(visitor.errors)
+}
 
+type ruleAccumulator struct {
+	rules  []rbac.PolicyRule
+	errors []error
+}
+
+func (r *ruleAccumulator) visit(source fmt.Stringer, rule *rbac.PolicyRule, err error) bool {
+	if rule != nil {
+		r.rules = append(r.rules, *rule)
+	}
+	if err != nil {
+		r.errors = append(r.errors, err)
+	}
+	return true
+}
+
+func describeSubject(s *rbac.Subject, bindingNamespace string) string {
+	switch s.Kind {
+	case rbac.ServiceAccountKind:
+		if len(s.Namespace) > 0 {
+			return fmt.Sprintf("%s %q", s.Kind, s.Name+"/"+s.Namespace)
+		}
+		return fmt.Sprintf("%s %q", s.Kind, s.Name+"/"+bindingNamespace)
+	default:
+		return fmt.Sprintf("%s %q", s.Kind, s.Name)
+	}
+}
+
+type clusterRoleBindingDescriber struct {
+	binding *rbac.ClusterRoleBinding
+	subject *rbac.Subject
+}
+
+func (d *clusterRoleBindingDescriber) String() string {
+	return fmt.Sprintf("ClusterRoleBinding %q of %s %q to %s",
+		d.binding.Name,
+		d.binding.RoleRef.Kind,
+		d.binding.RoleRef.Name,
+		describeSubject(d.subject, ""),
+	)
+}
+
+type roleBindingDescriber struct {
+	binding *rbac.RoleBinding
+	subject *rbac.Subject
+}
+
+func (d *roleBindingDescriber) String() string {
+	return fmt.Sprintf("RoleBinding %q of %s %q to %s",
+		d.binding.Name+"/"+d.binding.Namespace,
+		d.binding.RoleRef.Kind,
+		d.binding.RoleRef.Name,
+		describeSubject(d.subject, d.binding.Namespace),
+	)
+}
+
+func (r *DefaultRuleResolver) VisitRulesFor(user user.Info, namespace string, visitor func(source fmt.Stringer, rule *rbac.PolicyRule, err error) bool) {
 	if clusterRoleBindings, err := r.clusterRoleBindingLister.ListClusterRoleBindings(); err != nil {
-		errorlist = append(errorlist, err)
-
+		if !visitor(nil, nil, err) {
+			return
+		}
 	} else {
+		sourceDescriber := &clusterRoleBindingDescriber{}
 		for _, clusterRoleBinding := range clusterRoleBindings {
-			if !appliesTo(user, clusterRoleBinding.Subjects, "") {
+			subjectIndex, applies := appliesTo(user, clusterRoleBinding.Subjects, "")
+			if !applies {
 				continue
 			}
 			rules, err := r.GetRoleReferenceRules(clusterRoleBinding.RoleRef, "")
 			if err != nil {
-				errorlist = append(errorlist, err)
+				if !visitor(nil, nil, err) {
+					return
+				}
 				continue
 			}
-			policyRules = append(policyRules, rules...)
+			sourceDescriber.binding = clusterRoleBinding
+			sourceDescriber.subject = &clusterRoleBinding.Subjects[subjectIndex]
+			for i := range rules {
+				if !visitor(sourceDescriber, &rules[i], nil) {
+					return
+				}
+			}
 		}
 	}
 
 	if len(namespace) > 0 {
 		if roleBindings, err := r.roleBindingLister.ListRoleBindings(namespace); err != nil {
-			errorlist = append(errorlist, err)
-
+			if !visitor(nil, nil, err) {
+				return
+			}
 		} else {
+			sourceDescriber := &roleBindingDescriber{}
 			for _, roleBinding := range roleBindings {
-				if !appliesTo(user, roleBinding.Subjects, namespace) {
+				subjectIndex, applies := appliesTo(user, roleBinding.Subjects, namespace)
+				if !applies {
 					continue
 				}
 				rules, err := r.GetRoleReferenceRules(roleBinding.RoleRef, namespace)
 				if err != nil {
-					errorlist = append(errorlist, err)
+					if !visitor(nil, nil, err) {
+						return
+					}
 					continue
 				}
-				policyRules = append(policyRules, rules...)
+				sourceDescriber.binding = roleBinding
+				sourceDescriber.subject = &roleBinding.Subjects[subjectIndex]
+				for i := range rules {
+					if !visitor(sourceDescriber, &rules[i], nil) {
+						return
+					}
+				}
 			}
 		}
 	}
-
-	return policyRules, utilerrors.NewAggregate(errorlist)
 }
 
 // GetRoleReferenceRules attempts to resolve the RoleBinding or ClusterRoleBinding.
@@ -157,13 +238,16 @@ func (r *DefaultRuleResolver) GetRoleReferenceRules(roleRef rbac.RoleRef, bindin
 		return nil, fmt.Errorf("unsupported role reference kind: %q", kind)
 	}
 }
-func appliesTo(user user.Info, bindingSubjects []rbac.Subject, namespace string) bool {
-	for _, bindingSubject := range bindingSubjects {
+
+// appliesTo returns whether any of the bindingSubjects applies to the specified subject,
+// and if true, the index of the first subject that applies
+func appliesTo(user user.Info, bindingSubjects []rbac.Subject, namespace string) (int, bool) {
+	for i, bindingSubject := range bindingSubjects {
 		if appliesToUser(user, bindingSubject, namespace) {
-			return true
+			return i, true
 		}
 	}
-	return false
+	return 0, false
 }
 
 func appliesToUser(user user.Info, subject rbac.Subject, namespace string) bool {

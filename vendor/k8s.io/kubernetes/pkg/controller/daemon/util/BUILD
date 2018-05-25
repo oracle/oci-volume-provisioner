@@ -1,7 +1,5 @@
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])
-
 load(
     "@io_bazel_rules_go//go:def.bzl",
     "go_library",
@@ -11,13 +9,20 @@ load(
 go_library(
     name = "go_default_library",
     srcs = ["daemonset_util.go"],
-    tags = ["automanaged"],
+    importpath = "k8s.io/kubernetes/pkg/controller/daemon/util",
     deps = [
-        "//pkg/api:go_default_library",
-        "//pkg/api/v1:go_default_library",
-        "//pkg/apis/extensions/v1beta1:go_default_library",
-        "//pkg/util/labels:go_default_library",
-        "//vendor:k8s.io/apimachinery/pkg/apis/meta/v1",
+        "//pkg/api/v1/pod:go_default_library",
+        "//pkg/apis/core/v1/helper:go_default_library",
+        "//pkg/features:go_default_library",
+        "//pkg/kubelet/apis:go_default_library",
+        "//pkg/kubelet/types:go_default_library",
+        "//pkg/scheduler/algorithm:go_default_library",
+        "//vendor/k8s.io/api/apps/v1:go_default_library",
+        "//vendor/k8s.io/api/core/v1:go_default_library",
+        "//vendor/k8s.io/api/extensions/v1beta1:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/api/equality:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
+        "//vendor/k8s.io/apiserver/pkg/util/feature:go_default_library",
     ],
 )
 
@@ -37,12 +42,12 @@ filegroup(
 go_test(
     name = "go_default_test",
     srcs = ["daemonset_util_test.go"],
-    library = ":go_default_library",
-    tags = ["automanaged"],
+    embed = [":go_default_library"],
     deps = [
         "//pkg/api/testapi:go_default_library",
-        "//pkg/api/v1:go_default_library",
-        "//pkg/apis/extensions:go_default_library",
-        "//vendor:k8s.io/apimachinery/pkg/apis/meta/v1",
+        "//pkg/kubelet/apis:go_default_library",
+        "//vendor/k8s.io/api/core/v1:go_default_library",
+        "//vendor/k8s.io/api/extensions/v1beta1:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
     ],
 )

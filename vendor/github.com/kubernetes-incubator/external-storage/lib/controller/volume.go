@@ -19,7 +19,7 @@ package controller
 import (
 	"fmt"
 
-	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/api/core/v1"
 )
 
 // Provisioner is an interface that creates templates for PersistentVolumes
@@ -36,6 +36,15 @@ type Provisioner interface {
 	// May return IgnoredError to indicate that the call has been ignored and no
 	// action taken.
 	Delete(*v1.PersistentVolume) error
+}
+
+// Qualifier is an optional interface implemented by provisioners to determine
+// whether a claim should be provisioned as early as possible (e.g. prior to
+// leader election).
+type Qualifier interface {
+	// ShouldProvision returns whether provisioning for the claim should
+	// be attempted.
+	ShouldProvision(*v1.PersistentVolumeClaim) bool
 }
 
 // IgnoredError is the value for Delete to return to indicate that the call has

@@ -17,31 +17,36 @@ limitations under the License.
 package framework
 
 import (
+	"bufio"
 	"bytes"
-	"encoding/json"
 	"fmt"
-	"reflect"
+	"os"
+	"path"
 	"strings"
 	"sync"
 	"time"
 
+	"k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/discovery"
+	cacheddiscovery "k8s.io/client-go/discovery/cached"
 	"k8s.io/client-go/dynamic"
-	staging "k8s.io/client-go/kubernetes"
-	clientreporestclient "k8s.io/client-go/rest"
-	restclient "k8s.io/client-go/rest"
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/v1"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
+	"k8s.io/client-go/informers"
+	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	scaleclient "k8s.io/client-go/scale"
+	"k8s.io/client-go/tools/clientcmd"
+	aggregatorclient "k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
-	"k8s.io/kubernetes/pkg/metrics"
+	"k8s.io/kubernetes/pkg/kubemark"
+	"k8s.io/kubernetes/test/e2e/framework/metrics"
 	testutils "k8s.io/kubernetes/test/utils"
 
 	. "github.com/onsi/ginkgo"
@@ -50,6 +55,9 @@ import (
 
 const (
 	maxKubectlExecRetries = 5
+	// TODO(mikedanese): reset this to 5 minutes once #47135 is resolved.
+	// ref https://github.com/kubernetes/kubernetes/issues/47135
+	DefaultNamespaceDeletionTimeout = 10 * time.Minute
 )
 
 // Framework supports common operations used by e2e tests; it will keep a client & a namespace for you.
@@ -57,21 +65,25 @@ const (
 type Framework struct {
 	BaseName string
 
-	// ClientSet uses internal objects, you should use ClientSet where possible.
-	ClientSet clientset.Interface
+	ClientSet                        clientset.Interface
+	KubemarkExternalClusterClientSet clientset.Interface
 
 	InternalClientset *internalclientset.Clientset
-	StagingClient     *staging.Clientset
+	AggregatorClient  *aggregatorclient.Clientset
 	ClientPool        dynamic.ClientPool
 
-	Namespace                *v1.Namespace   // Every test has at least one namespace
+	ScalesGetter scaleclient.ScalesGetter
+
+	SkipNamespaceCreation    bool            // Whether to skip creating a namespace
+	Namespace                *v1.Namespace   // Every test has at least one namespace unless creation is skipped
 	namespacesToDelete       []*v1.Namespace // Some tests have more than one.
 	NamespaceDeletionTimeout time.Duration
+	SkipPrivilegedPSPBinding bool // Whether to skip creating a binding to the privileged PSP in the test namespace
 
-	gatherer *containerResourceGatherer
+	gatherer *ContainerResourceGatherer
 	// Constraints that passed to a check which is executed after data is gathered to
-	// see if 99% of results are within acceptable bounds. It as to be injected in the test,
-	// as expectations vary greatly. Constraints are groupped by the container names.
+	// see if 99% of results are within acceptable bounds. It has to be injected in the test,
+	// as expectations vary greatly. Constraints are grouped by the container names.
 	AddonResourceConstraints map[string]ResourceConstraint
 
 	logsSizeWaitGroup    sync.WaitGroup
@@ -85,9 +97,19 @@ type Framework struct {
 
 	// configuration for framework's client
 	Options FrameworkOptions
+
+	// Place where various additional data is stored during test run to be printed to ReportDir,
+	// or stdout if ReportDir is not set once test ends.
+	TestSummaries []TestDataSummary
+
+	kubemarkControllerCloseChannel chan struct{}
+
+	// Place to keep ClusterAutoscaler metrics from before test in order to compute delta.
+	clusterAutoscalerMetricsBeforeTest metrics.MetricsCollection
 }
 
 type TestDataSummary interface {
+	SummaryKind() string
 	PrintHumanReadable() string
 	PrintJSON() string
 }
@@ -122,38 +144,6 @@ func NewFramework(baseName string, options FrameworkOptions, client clientset.In
 	return f
 }
 
-// getClientRepoConfig copies k8s.io/kubernetes/pkg/client/restclient.Config to
-// a k8s.io/client-go/pkg/client/restclient.Config. It's not a deep copy. Two
-// configs may share some common struct.
-func getClientRepoConfig(src *restclient.Config) (dst *clientreporestclient.Config) {
-	skippedFields := sets.NewString("Transport", "WrapTransport", "RateLimiter", "AuthConfigPersister")
-	dst = &clientreporestclient.Config{}
-	dst.Transport = src.Transport
-	dst.WrapTransport = src.WrapTransport
-	dst.RateLimiter = src.RateLimiter
-	dst.AuthConfigPersister = src.AuthConfigPersister
-	sv := reflect.ValueOf(src).Elem()
-	dv := reflect.ValueOf(dst).Elem()
-	for i := 0; i < sv.NumField(); i++ {
-		if skippedFields.Has(sv.Type().Field(i).Name) {
-			continue
-		}
-		sf := sv.Field(i).Interface()
-		data, err := json.Marshal(sf)
-		if err != nil {
-			Expect(err).NotTo(HaveOccurred())
-		}
-		if !dv.Field(i).CanAddr() {
-			Failf("unaddressable field: %v", dv.Type().Field(i).Name)
-		} else {
-			if err := json.Unmarshal(data, dv.Field(i).Addr().Interface()); err != nil {
-				Expect(err).NotTo(HaveOccurred())
-			}
-		}
-	}
-	return dst
-}
-
 // BeforeEach gets a client and makes a namespace.
 func (f *Framework) BeforeEach() {
 	// The fact that we need this feels like a bug in ginkgo.
@@ -175,37 +165,80 @@ func (f *Framework) BeforeEach() {
 		Expect(err).NotTo(HaveOccurred())
 		f.InternalClientset, err = internalclientset.NewForConfig(config)
 		Expect(err).NotTo(HaveOccurred())
-		clientRepoConfig := getClientRepoConfig(config)
-		f.StagingClient, err = staging.NewForConfig(clientRepoConfig)
+		f.AggregatorClient, err = aggregatorclient.NewForConfig(config)
 		Expect(err).NotTo(HaveOccurred())
-		f.ClientPool = dynamic.NewClientPool(config, api.Registry.RESTMapper(), dynamic.LegacyAPIPathResolverFunc)
+		f.ClientPool = dynamic.NewClientPool(config, legacyscheme.Registry.RESTMapper(), dynamic.LegacyAPIPathResolverFunc)
+
+		// create scales getter, set GroupVersion and NegotiatedSerializer to default values
+		// as they are required when creating a REST client.
+		if config.GroupVersion == nil {
+			config.GroupVersion = &schema.GroupVersion{}
+		}
+		if config.NegotiatedSerializer == nil {
+			config.NegotiatedSerializer = legacyscheme.Codecs
+		}
+		restClient, err := rest.RESTClientFor(config)
+		Expect(err).NotTo(HaveOccurred())
+		discoClient, err := discovery.NewDiscoveryClientForConfig(config)
+		Expect(err).NotTo(HaveOccurred())
+		cachedDiscoClient := cacheddiscovery.NewMemCacheClient(discoClient)
+		restMapper := discovery.NewDeferredDiscoveryRESTMapper(cachedDiscoClient, meta.InterfacesForUnstructured)
+		restMapper.Reset()
+		resolver := scaleclient.NewDiscoveryScaleKindResolver(cachedDiscoClient)
+		f.ScalesGetter = scaleclient.New(restClient, restMapper, dynamic.LegacyAPIPathResolverFunc, resolver)
+
+		if ProviderIs("kubemark") && TestContext.KubemarkExternalKubeConfig != "" && TestContext.CloudConfig.KubemarkController == nil {
+			externalConfig, err := clientcmd.BuildConfigFromFlags("", TestContext.KubemarkExternalKubeConfig)
+			externalConfig.QPS = f.Options.ClientQPS
+			externalConfig.Burst = f.Options.ClientBurst
+			Expect(err).NotTo(HaveOccurred())
+			externalClient, err := clientset.NewForConfig(externalConfig)
+			Expect(err).NotTo(HaveOccurred())
+			f.KubemarkExternalClusterClientSet = externalClient
+			f.kubemarkControllerCloseChannel = make(chan struct{})
+			externalInformerFactory := informers.NewSharedInformerFactory(externalClient, 0)
+			kubemarkInformerFactory := informers.NewSharedInformerFactory(f.ClientSet, 0)
+			kubemarkNodeInformer := kubemarkInformerFactory.Core().V1().Nodes()
+			go kubemarkNodeInformer.Informer().Run(f.kubemarkControllerCloseChannel)
+			TestContext.CloudConfig.KubemarkController, err = kubemark.NewKubemarkController(f.KubemarkExternalClusterClientSet, externalInformerFactory, f.ClientSet, kubemarkNodeInformer)
+			Expect(err).NotTo(HaveOccurred())
+			externalInformerFactory.Start(f.kubemarkControllerCloseChannel)
+			Expect(TestContext.CloudConfig.KubemarkController.WaitForCacheSync(f.kubemarkControllerCloseChannel)).To(BeTrue())
+			go TestContext.CloudConfig.KubemarkController.Run(f.kubemarkControllerCloseChannel)
+		}
 	}
 
-	By("Building a namespace api object")
-	namespace, err := f.CreateNamespace(f.BaseName, map[string]string{
-		"e2e-framework": f.BaseName,
-	})
-	Expect(err).NotTo(HaveOccurred())
-
-	f.Namespace = namespace
-
-	if TestContext.VerifyServiceAccount {
-		By("Waiting for a default service account to be provisioned in namespace")
-		err = WaitForDefaultServiceAccountInNamespace(f.ClientSet, namespace.Name)
+	if !f.SkipNamespaceCreation {
+		By("Building a namespace api object")
+		namespace, err := f.CreateNamespace(f.BaseName, map[string]string{
+			"e2e-framework": f.BaseName,
+		})
 		Expect(err).NotTo(HaveOccurred())
-	} else {
-		Logf("Skipping waiting for service account")
+
+		f.Namespace = namespace
+
+		if TestContext.VerifyServiceAccount {
+			By("Waiting for a default service account to be provisioned in namespace")
+			err = WaitForDefaultServiceAccountInNamespace(f.ClientSet, namespace.Name)
+			Expect(err).NotTo(HaveOccurred())
+		} else {
+			Logf("Skipping waiting for service account")
+		}
 	}
 
 	if TestContext.GatherKubeSystemResourceUsageData != "false" && TestContext.GatherKubeSystemResourceUsageData != "none" {
+		var err error
 		f.gatherer, err = NewResourceUsageGatherer(f.ClientSet, ResourceGathererOptions{
-			inKubemark: ProviderIs("kubemark"),
-			masterOnly: TestContext.GatherKubeSystemResourceUsageData == "master",
-		})
+			InKubemark:                  ProviderIs("kubemark"),
+			MasterOnly:                  TestContext.GatherKubeSystemResourceUsageData == "master",
+			ResourceDataGatheringPeriod: 60 * time.Second,
+			ProbeDuration:               15 * time.Second,
+			PrintVerboseLogs:            false,
+		}, nil)
 		if err != nil {
 			Logf("Error while creating NewResourceUsageGatherer: %v", err)
 		} else {
-			go f.gatherer.startGatheringData()
+			go f.gatherer.StartGatheringData()
 		}
 	}
 
@@ -218,6 +251,22 @@ func (f *Framework) BeforeEach() {
 			f.logsSizeVerifier.Run()
 			f.logsSizeWaitGroup.Done()
 		}()
+	}
+
+	gatherMetricsAfterTest := TestContext.GatherMetricsAfterTest == "true" || TestContext.GatherMetricsAfterTest == "master"
+	if gatherMetricsAfterTest && TestContext.IncludeClusterAutoscalerMetrics {
+		grabber, err := metrics.NewMetricsGrabber(f.ClientSet, f.KubemarkExternalClusterClientSet, !ProviderIs("kubemark"), false, false, false, TestContext.IncludeClusterAutoscalerMetrics)
+		if err != nil {
+			Logf("Failed to create MetricsGrabber (skipping ClusterAutoscaler metrics gathering before test): %v", err)
+		} else {
+			f.clusterAutoscalerMetricsBeforeTest, err = grabber.Grab()
+			if err != nil {
+				Logf("MetricsGrabber failed to grab CA metrics before test (skipping metrics gathering): %v", err)
+			} else {
+				Logf("Gathered ClusterAutoscaler metrics before test")
+			}
+		}
+
 	}
 }
 
@@ -235,7 +284,7 @@ func (f *Framework) AfterEach() {
 		if TestContext.DeleteNamespace && (TestContext.DeleteNamespaceOnFailure || !CurrentGinkgoTestDescription().Failed) {
 			for _, ns := range f.namespacesToDelete {
 				By(fmt.Sprintf("Destroying namespace %q for this suite.", ns.Name))
-				timeout := 5 * time.Minute
+				timeout := DefaultNamespaceDeletionTimeout
 				if f.NamespaceDeletionTimeout != 0 {
 					timeout = f.NamespaceDeletionTimeout
 				}
@@ -248,12 +297,11 @@ func (f *Framework) AfterEach() {
 				}
 			}
 		} else {
-			if TestContext.DeleteNamespace {
+			if !TestContext.DeleteNamespace {
 				Logf("Found DeleteNamespace=false, skipping namespace deletion!")
-			} else if TestContext.DeleteNamespaceOnFailure {
-				Logf("Found DeleteNamespaceOnFailure=false, skipping namespace deletion!")
+			} else {
+				Logf("Found DeleteNamespaceOnFailure=false and current test failed, skipping namespace deletion!")
 			}
-
 		}
 
 		// Paranoia-- prevent reuse!
@@ -274,59 +322,66 @@ func (f *Framework) AfterEach() {
 	// Print events if the test failed.
 	if CurrentGinkgoTestDescription().Failed && TestContext.DumpLogsOnFailure {
 		// Pass both unversioned client and and versioned clientset, till we have removed all uses of the unversioned client.
-		DumpAllNamespaceInfo(f.ClientSet, f.Namespace.Name)
-		By(fmt.Sprintf("Dumping a list of prepulled images on each node"))
-		LogContainersInPodsWithLabels(f.ClientSet, metav1.NamespaceSystem, ImagePullerLabels, "image-puller", Logf)
+		if !f.SkipNamespaceCreation {
+			DumpAllNamespaceInfo(f.ClientSet, f.Namespace.Name)
+		}
+
+		logFunc := Logf
+		if TestContext.ReportDir != "" {
+			filePath := path.Join(TestContext.ReportDir, "image-puller.txt")
+			file, err := os.Create(filePath)
+			if err != nil {
+				By(fmt.Sprintf("Failed to create a file with image-puller data %v: %v\nPrinting to stdout", filePath, err))
+			} else {
+				By(fmt.Sprintf("Dumping a list of prepulled images on each node to file %v", filePath))
+				defer file.Close()
+				if err = file.Chmod(0644); err != nil {
+					Logf("Failed to chmod to 644 of %v: %v", filePath, err)
+				}
+				logFunc = GetLogToFileFunc(file)
+			}
+		} else {
+			By("Dumping a list of prepulled images on each node...")
+		}
+		LogContainersInPodsWithLabels(f.ClientSet, metav1.NamespaceSystem, ImagePullerLabels, "image-puller", logFunc)
 	}
 
-	summaries := make([]TestDataSummary, 0)
 	if TestContext.GatherKubeSystemResourceUsageData != "false" && TestContext.GatherKubeSystemResourceUsageData != "none" && f.gatherer != nil {
 		By("Collecting resource usage data")
-		summary, resourceViolationError := f.gatherer.stopAndSummarize([]int{90, 99, 100}, f.AddonResourceConstraints)
+		summary, resourceViolationError := f.gatherer.StopAndSummarize([]int{90, 99, 100}, f.AddonResourceConstraints)
 		defer ExpectNoError(resourceViolationError)
-		summaries = append(summaries, summary)
+		f.TestSummaries = append(f.TestSummaries, summary)
 	}
 
 	if TestContext.GatherLogsSizes {
 		By("Gathering log sizes data")
 		close(f.logsSizeCloseChannel)
 		f.logsSizeWaitGroup.Wait()
-		summaries = append(summaries, f.logsSizeVerifier.GetSummary())
+		f.TestSummaries = append(f.TestSummaries, f.logsSizeVerifier.GetSummary())
 	}
 
-	if TestContext.GatherMetricsAfterTest {
+	if TestContext.GatherMetricsAfterTest != "false" {
 		By("Gathering metrics")
-		// TODO: enable Scheduler and ControllerManager metrics grabbing when Master's Kubelet will be registered.
-		grabber, err := metrics.NewMetricsGrabber(f.ClientSet, true, false, false, true)
+		// Grab apiserver, scheduler, controller-manager metrics and (optionally) nodes' kubelet metrics.
+		grabMetricsFromKubelets := TestContext.GatherMetricsAfterTest != "master" && !ProviderIs("kubemark")
+		grabber, err := metrics.NewMetricsGrabber(f.ClientSet, f.KubemarkExternalClusterClientSet, grabMetricsFromKubelets, true, true, true, TestContext.IncludeClusterAutoscalerMetrics)
 		if err != nil {
-			Logf("Failed to create MetricsGrabber. Skipping metrics gathering.")
+			Logf("Failed to create MetricsGrabber (skipping metrics gathering): %v", err)
 		} else {
 			received, err := grabber.Grab()
 			if err != nil {
-				Logf("MetricsGrabber failed grab metrics. Skipping metrics gathering.")
-			} else {
-				summaries = append(summaries, (*MetricsForE2E)(&received))
+				Logf("MetricsGrabber failed to grab some of the metrics: %v", err)
 			}
+			(*MetricsForE2E)(&received).computeClusterAutoscalerMetricsDelta(f.clusterAutoscalerMetricsBeforeTest)
+			f.TestSummaries = append(f.TestSummaries, (*MetricsForE2E)(&received))
 		}
 	}
 
-	outputTypes := strings.Split(TestContext.OutputPrintType, ",")
-	for _, printType := range outputTypes {
-		switch printType {
-		case "hr":
-			for i := range summaries {
-				Logf(summaries[i].PrintHumanReadable())
-			}
-		case "json":
-			for i := range summaries {
-				typeName := reflect.TypeOf(summaries[i]).String()
-				Logf("%v JSON\n%v", typeName[strings.LastIndex(typeName, ".")+1:], summaries[i].PrintJSON())
-				Logf("Finished")
-			}
-		default:
-			Logf("Unknown output type: %v. Skipping.", printType)
-		}
+	if TestContext.CloudConfig.KubemarkController != nil {
+		close(f.kubemarkControllerCloseChannel)
 	}
+
+	PrintSummaries(f.TestSummaries, f.BaseName)
 
 	// Check whether all nodes are ready after the test.
 	// This is explicitly done at the very end of the test, to avoid
@@ -348,12 +403,22 @@ func (f *Framework) CreateNamespace(baseName string, labels map[string]string) (
 	if ns != nil {
 		f.namespacesToDelete = append(f.namespacesToDelete, ns)
 	}
+
+	if err == nil && !f.SkipPrivilegedPSPBinding {
+		CreatePrivilegedPSPBinding(f, ns.Name)
+	}
+
 	return ns, err
 }
 
 // WaitForPodTerminated waits for the pod to be terminated with the given reason.
 func (f *Framework) WaitForPodTerminated(podName, reason string) error {
 	return waitForPodTerminatedInNamespace(f.ClientSet, podName, reason, f.Namespace.Name)
+}
+
+// WaitForPodNotFound waits for the pod to be completely terminated (not "Get-able").
+func (f *Framework) WaitForPodNotFound(podName string, timeout time.Duration) error {
+	return waitForPodNotFoundInNamespace(f.ClientSet, podName, f.Namespace.Name, timeout)
 }
 
 // WaitForPodRunning waits for the pod to run in the namespace.
@@ -390,52 +455,6 @@ func (f *Framework) TestContainerOutput(scenarioName string, pod *v1.Pod, contai
 // the specified container log against the given expected output using a regexp matcher.
 func (f *Framework) TestContainerOutputRegexp(scenarioName string, pod *v1.Pod, containerIndex int, expectedOutput []string) {
 	f.testContainerOutputMatcher(scenarioName, pod, containerIndex, expectedOutput, MatchRegexp)
-}
-
-// WaitForAnEndpoint waits for at least one endpoint to become available in the
-// service's corresponding endpoints object.
-func (f *Framework) WaitForAnEndpoint(serviceName string) error {
-	for {
-		// TODO: Endpoints client should take a field selector so we
-		// don't have to list everything.
-		list, err := f.ClientSet.Core().Endpoints(f.Namespace.Name).List(metav1.ListOptions{})
-		if err != nil {
-			return err
-		}
-		rv := list.ResourceVersion
-
-		isOK := func(e *v1.Endpoints) bool {
-			return e.Name == serviceName && len(e.Subsets) > 0 && len(e.Subsets[0].Addresses) > 0
-		}
-		for i := range list.Items {
-			if isOK(&list.Items[i]) {
-				return nil
-			}
-		}
-
-		options := metav1.ListOptions{
-			FieldSelector:   fields.Set{"metadata.name": serviceName}.AsSelector().String(),
-			ResourceVersion: rv,
-		}
-		w, err := f.ClientSet.Core().Endpoints(f.Namespace.Name).Watch(options)
-		if err != nil {
-			return err
-		}
-		defer w.Stop()
-
-		for {
-			val, ok := <-w.ResultChan()
-			if !ok {
-				// reget and re-watch
-				break
-			}
-			if e, ok := val.Object.(*v1.Endpoints); ok {
-				if isOK(e) {
-					return nil
-				}
-			}
-		}
-	}
 }
 
 // Write a file using kubectl exec echo <contents> > <path> via specified container
@@ -511,7 +530,7 @@ func (f *Framework) CreateServiceForSimpleApp(contPort, svcPort int, appName str
 		}
 	}
 	Logf("Creating a service-for-%v for selecting app=%v-pod", appName, appName)
-	service, err := f.ClientSet.Core().Services(f.Namespace.Name).Create(&v1.Service{
+	service, err := f.ClientSet.CoreV1().Services(f.Namespace.Name).Create(&v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "service-for-" + appName,
 			Labels: map[string]string{
@@ -537,7 +556,7 @@ func (f *Framework) CreatePodsPerNodeForSimpleApp(appName string, podSpec func(n
 		// one per node, but no more than maxCount.
 		if i <= maxCount {
 			Logf("%v/%v : Creating container with label app=%v-pod", i, maxCount, appName)
-			_, err := f.ClientSet.Core().Pods(f.Namespace.Name).Create(&v1.Pod{
+			_, err := f.ClientSet.CoreV1().Pods(f.Namespace.Name).Create(&v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   fmt.Sprintf(appName+"-pod-%v", i),
 					Labels: labels,
@@ -650,6 +669,11 @@ func KubeDescribe(text string, body func()) bool {
 	return Describe("[k8s.io] "+text, body)
 }
 
+// Wrapper function for ginkgo It.  Adds "[Conformance]" tag and makes static analysis easier.
+func ConformanceIt(text string, body interface{}, timeout ...float64) bool {
+	return It(text+" [Conformance]", body, timeout...)
+}
+
 // PodStateVerification represents a verification of pod state.
 // Any time you have a set of pods that you want to operate against or query,
 // this struct can be used to declaratively identify those pods.
@@ -723,9 +747,9 @@ func filterLabels(selectors map[string]string, cli clientset.Interface, ns strin
 	if len(selectors) > 0 {
 		selector = labels.SelectorFromSet(labels.Set(selectors))
 		options := metav1.ListOptions{LabelSelector: selector.String()}
-		pl, err = cli.Core().Pods(ns).List(options)
+		pl, err = cli.CoreV1().Pods(ns).List(options)
 	} else {
-		pl, err = cli.Core().Pods(ns).List(metav1.ListOptions{})
+		pl, err = cli.CoreV1().Pods(ns).List(metav1.ListOptions{})
 	}
 	return pl, err
 }
@@ -822,4 +846,16 @@ func (cl *ClusterVerification) ForEach(podFunc func(v1.Pod)) error {
 	}
 
 	return err
+}
+
+// GetLogToFileFunc is a convenience function that returns a function that have the same interface as
+// Logf, but writes to a specified file.
+func GetLogToFileFunc(file *os.File) func(format string, args ...interface{}) {
+	return func(format string, args ...interface{}) {
+		writer := bufio.NewWriter(file)
+		if _, err := fmt.Fprintf(writer, format, args...); err != nil {
+			Logf("Failed to write file %v with test performance data: %v", file.Name(), err)
+		}
+		writer.Flush()
+	}
 }

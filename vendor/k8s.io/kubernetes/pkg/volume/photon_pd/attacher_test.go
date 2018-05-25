@@ -17,10 +17,11 @@ limitations under the License.
 package photon_pd
 
 import (
+	"context"
 	"errors"
 	"testing"
 
-	"k8s.io/kubernetes/pkg/api/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/photon"
 	"k8s.io/kubernetes/pkg/volume"
 	volumetest "k8s.io/kubernetes/pkg/volume/testing"
@@ -78,14 +79,14 @@ func TestAttachDetach(t *testing.T) {
 	nodeName := types.NodeName("instance")
 	readOnly := false
 	spec := createVolSpec(diskName, readOnly)
-	attachError := errors.New("Fake attach error")
 	detachError := errors.New("Fake detach error")
 	diskCheckError := errors.New("Fake DiskIsAttached error")
 	tests := []testcase{
 		// Successful Attach call
 		{
-			name:   "Attach_Positive",
-			attach: attachCall{diskName, nodeName, nil},
+			name:           "Attach_Positive",
+			diskIsAttached: diskIsAttachedCall{diskName, nodeName, false, diskCheckError},
+			attach:         attachCall{diskName, nodeName, nil},
 			test: func(testcase *testcase) (string, error) {
 				attacher := newAttacher(testcase)
 				return attacher.Attach(spec, nodeName)
@@ -93,15 +94,16 @@ func TestAttachDetach(t *testing.T) {
 			expectedDevice: "/dev/disk/by-id/wwn-0x000000000",
 		},
 
-		// Attach call fails
+		// Disk is already attached
 		{
-			name:   "Attach_Negative",
-			attach: attachCall{diskName, nodeName, attachError},
+			name:           "Attach_Positive_AlreadyAttached",
+			diskIsAttached: diskIsAttachedCall{diskName, nodeName, false, diskCheckError},
+			attach:         attachCall{diskName, nodeName, nil},
 			test: func(testcase *testcase) (string, error) {
 				attacher := newAttacher(testcase)
 				return attacher.Attach(spec, nodeName)
 			},
-			expectedError: attachError,
+			expectedDevice: "/dev/disk/by-id/wwn-0x000000000",
 		},
 
 		// Detach succeeds
@@ -232,7 +234,7 @@ type diskIsAttachedCall struct {
 	ret        error
 }
 
-func (testcase *testcase) AttachDisk(diskName string, nodeName types.NodeName) error {
+func (testcase *testcase) AttachDisk(ctx context.Context, diskName string, nodeName types.NodeName) error {
 	expected := &testcase.attach
 
 	if expected.diskName == "" && expected.nodeName == "" {
@@ -257,7 +259,7 @@ func (testcase *testcase) AttachDisk(diskName string, nodeName types.NodeName) e
 	return expected.ret
 }
 
-func (testcase *testcase) DetachDisk(diskName string, nodeName types.NodeName) error {
+func (testcase *testcase) DetachDisk(ctx context.Context, diskName string, nodeName types.NodeName) error {
 	expected := &testcase.detach
 
 	if expected.diskName == "" && expected.nodeName == "" {
@@ -282,7 +284,7 @@ func (testcase *testcase) DetachDisk(diskName string, nodeName types.NodeName) e
 	return expected.ret
 }
 
-func (testcase *testcase) DiskIsAttached(diskName string, nodeName types.NodeName) (bool, error) {
+func (testcase *testcase) DiskIsAttached(ctx context.Context, diskName string, nodeName types.NodeName) (bool, error) {
 	expected := &testcase.diskIsAttached
 
 	if expected.diskName == "" && expected.nodeName == "" {
@@ -307,7 +309,7 @@ func (testcase *testcase) DiskIsAttached(diskName string, nodeName types.NodeNam
 	return expected.isAttached, expected.ret
 }
 
-func (testcase *testcase) DisksAreAttached(diskNames []string, nodeName types.NodeName) (map[string]bool, error) {
+func (testcase *testcase) DisksAreAttached(ctx context.Context, diskNames []string, nodeName types.NodeName) (map[string]bool, error) {
 	return nil, errors.New("Not implemented")
 }
 

@@ -7,10 +7,10 @@ metadata:
 spec:
   containers:
     - name: dns-frontend
-      image: gcr.io/google_containers/example-dns-frontend:v1
+      image: k8s.gcr.io/example-dns-frontend:v1
       command:
         - python
         - client.py
-        - http://dns-backend.development.cluster.local:8000
+        - http://dns-backend.development.svc.cluster.local:8000
       imagePullPolicy: Always
   restartPolicy: Never

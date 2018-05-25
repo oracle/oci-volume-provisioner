@@ -21,26 +21,26 @@ import (
 	"strconv"
 	"time"
 
+	"k8s.io/api/core/v1"
+	storage "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	coreinformers "k8s.io/client-go/informers/core/v1"
+	storageinformers "k8s.io/client-go/informers/storage/v1"
+	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
-	clientv1 "k8s.io/client-go/pkg/api/v1"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/v1"
-	storage "k8s.io/kubernetes/pkg/apis/storage/v1beta1"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
-	coreinformers "k8s.io/kubernetes/pkg/client/informers/informers_generated/externalversions/core/v1"
-	storageinformers "k8s.io/kubernetes/pkg/client/informers/informers_generated/externalversions/storage/v1beta1"
-	corelisters "k8s.io/kubernetes/pkg/client/listers/core/v1"
 	"k8s.io/kubernetes/pkg/cloudprovider"
 	"k8s.io/kubernetes/pkg/controller"
+	"k8s.io/kubernetes/pkg/controller/volume/persistentvolume/metrics"
 	"k8s.io/kubernetes/pkg/util/goroutinemap"
 	vol "k8s.io/kubernetes/pkg/volume"
 
@@ -56,24 +56,25 @@ import (
 type ControllerParameters struct {
 	KubeClient                clientset.Interface
 	SyncPeriod                time.Duration
-	AlphaProvisioner          vol.ProvisionableVolumePlugin
 	VolumePlugins             []vol.VolumePlugin
 	Cloud                     cloudprovider.Interface
 	ClusterName               string
 	VolumeInformer            coreinformers.PersistentVolumeInformer
 	ClaimInformer             coreinformers.PersistentVolumeClaimInformer
 	ClassInformer             storageinformers.StorageClassInformer
+	PodInformer               coreinformers.PodInformer
 	EventRecorder             record.EventRecorder
 	EnableDynamicProvisioning bool
 }
 
 // NewController creates a new PersistentVolume controller
-func NewController(p ControllerParameters) *PersistentVolumeController {
+func NewController(p ControllerParameters) (*PersistentVolumeController, error) {
 	eventRecorder := p.EventRecorder
 	if eventRecorder == nil {
 		broadcaster := record.NewBroadcaster()
-		broadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: v1core.New(p.KubeClient.Core().RESTClient()).Events("")})
-		eventRecorder = broadcaster.NewRecorder(api.Scheme, clientv1.EventSource{Component: "persistentvolume-controller"})
+		broadcaster.StartLogging(glog.Infof)
+		broadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: v1core.New(p.KubeClient.CoreV1().RESTClient()).Events("")})
+		eventRecorder = broadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "persistentvolume-controller"})
 	}
 
 	controller := &PersistentVolumeController{
@@ -87,43 +88,41 @@ func NewController(p ControllerParameters) *PersistentVolumeController {
 		clusterName:                   p.ClusterName,
 		createProvisionedPVRetryCount: createProvisionedPVRetryCount,
 		createProvisionedPVInterval:   createProvisionedPVInterval,
-		alphaProvisioner:              p.AlphaProvisioner,
 		claimQueue:                    workqueue.NewNamed("claims"),
 		volumeQueue:                   workqueue.NewNamed("volumes"),
+		resyncPeriod:                  p.SyncPeriod,
 	}
 
-	controller.volumePluginMgr.InitPlugins(p.VolumePlugins, controller)
-	if controller.alphaProvisioner != nil {
-		if err := controller.alphaProvisioner.Init(controller); err != nil {
-			glog.Errorf("PersistentVolumeController: error initializing alpha provisioner plugin: %v", err)
-		}
+	// Prober is nil because PV is not aware of Flexvolume.
+	if err := controller.volumePluginMgr.InitPlugins(p.VolumePlugins, nil /* prober */, controller); err != nil {
+		return nil, fmt.Errorf("Could not initialize volume plugins for PersistentVolume Controller: %v", err)
 	}
 
-	p.VolumeInformer.Informer().AddEventHandlerWithResyncPeriod(
+	p.VolumeInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc:    func(obj interface{}) { controller.enqueueWork(controller.volumeQueue, obj) },
 			UpdateFunc: func(oldObj, newObj interface{}) { controller.enqueueWork(controller.volumeQueue, newObj) },
 			DeleteFunc: func(obj interface{}) { controller.enqueueWork(controller.volumeQueue, obj) },
 		},
-		p.SyncPeriod,
 	)
 	controller.volumeLister = p.VolumeInformer.Lister()
 	controller.volumeListerSynced = p.VolumeInformer.Informer().HasSynced
 
-	p.ClaimInformer.Informer().AddEventHandlerWithResyncPeriod(
+	p.ClaimInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc:    func(obj interface{}) { controller.enqueueWork(controller.claimQueue, obj) },
 			UpdateFunc: func(oldObj, newObj interface{}) { controller.enqueueWork(controller.claimQueue, newObj) },
 			DeleteFunc: func(obj interface{}) { controller.enqueueWork(controller.claimQueue, obj) },
 		},
-		p.SyncPeriod,
 	)
 	controller.claimLister = p.ClaimInformer.Lister()
 	controller.claimListerSynced = p.ClaimInformer.Informer().HasSynced
 
 	controller.classLister = p.ClassInformer.Lister()
 	controller.classListerSynced = p.ClassInformer.Informer().HasSynced
-	return controller
+	controller.podLister = p.PodInformer.Lister()
+	controller.podListerSynced = p.PodInformer.Informer().HasSynced
+	return controller, nil
 }
 
 // initializeCaches fills all controller caches with initial data from etcd in
@@ -136,16 +135,9 @@ func (ctrl *PersistentVolumeController) initializeCaches(volumeLister corelister
 		return
 	}
 	for _, volume := range volumeList {
-		// Ignore template volumes from kubernetes 1.2
-		deleted := ctrl.upgradeVolumeFrom1_2(volume)
-		if !deleted {
-			clone, err := api.Scheme.DeepCopy(volume)
-			if err != nil {
-				glog.Errorf("error cloning volume %q: %v", volume.Name, err)
-				continue
-			}
-			volumeClone := clone.(*v1.PersistentVolume)
-			ctrl.storeVolumeUpdate(volumeClone)
+		volumeClone := volume.DeepCopy()
+		if _, err = ctrl.storeVolumeUpdate(volumeClone); err != nil {
+			glog.Errorf("error updating volume cache: %v", err)
 		}
 	}
 
@@ -155,13 +147,9 @@ func (ctrl *PersistentVolumeController) initializeCaches(volumeLister corelister
 		return
 	}
 	for _, claim := range claimList {
-		clone, err := api.Scheme.DeepCopy(claim)
-		if err != nil {
-			glog.Errorf("error cloning claim %q: %v", claimToClaimKey(claim), err)
-			continue
+		if _, err = ctrl.storeClaimUpdate(claim.DeepCopy()); err != nil {
+			glog.Errorf("error updating claim cache: %v", err)
 		}
-		claimClone := clone.(*v1.PersistentVolumeClaim)
-		ctrl.storeClaimUpdate(claimClone)
 	}
 	glog.V(4).Infof("controller initialized")
 }
@@ -192,11 +180,6 @@ func (ctrl *PersistentVolumeController) storeClaimUpdate(claim interface{}) (boo
 // updateVolume runs in worker thread and handles "volume added",
 // "volume updated" and "periodic sync" events.
 func (ctrl *PersistentVolumeController) updateVolume(volume *v1.PersistentVolume) {
-	if deleted := ctrl.upgradeVolumeFrom1_2(volume); deleted {
-		// volume deleted
-		return
-	}
-
 	// Store the new volume version in the cache and do not process it if this
 	// is an old version.
 	new, err := ctrl.storeVolumeUpdate(volume)
@@ -264,29 +247,40 @@ func (ctrl *PersistentVolumeController) deleteClaim(claim *v1.PersistentVolumeCl
 	_ = ctrl.claims.Delete(claim)
 	glog.V(4).Infof("claim %q deleted", claimToClaimKey(claim))
 
+	volumeName := claim.Spec.VolumeName
+	if volumeName == "" {
+		glog.V(5).Infof("deleteClaim[%q]: volume not bound", claimToClaimKey(claim))
+		return
+	}
 	// sync the volume when its claim is deleted.  Explicitly sync'ing the
 	// volume here in response to claim deletion prevents the volume from
 	// waiting until the next sync period for its Release.
-	volumeName := claim.Spec.VolumeName
-	glog.V(5).Infof("deleteClaim[%s]: scheduling sync of volume %q", claimToClaimKey(claim), volumeName)
+	glog.V(5).Infof("deleteClaim[%q]: scheduling sync of volume %s", claimToClaimKey(claim), volumeName)
 	ctrl.volumeQueue.Add(volumeName)
 }
 
 // Run starts all of this controller's control loops
 func (ctrl *PersistentVolumeController) Run(stopCh <-chan struct{}) {
-	glog.V(1).Infof("starting PersistentVolumeController")
-	if !cache.WaitForCacheSync(stopCh, ctrl.volumeListerSynced, ctrl.claimListerSynced, ctrl.classListerSynced) {
-		utilruntime.HandleError(fmt.Errorf("timed out waiting for volume caches to sync"))
+	defer utilruntime.HandleCrash()
+	defer ctrl.claimQueue.ShutDown()
+	defer ctrl.volumeQueue.ShutDown()
+
+	glog.Infof("Starting persistent volume controller")
+	defer glog.Infof("Shutting down persistent volume controller")
+
+	if !controller.WaitForCacheSync("persistent volume", stopCh, ctrl.volumeListerSynced, ctrl.claimListerSynced, ctrl.classListerSynced, ctrl.podListerSynced) {
 		return
 	}
+
 	ctrl.initializeCaches(ctrl.volumeLister, ctrl.claimLister)
+
+	go wait.Until(ctrl.resync, ctrl.resyncPeriod, stopCh)
 	go wait.Until(ctrl.volumeWorker, time.Second, stopCh)
 	go wait.Until(ctrl.claimWorker, time.Second, stopCh)
 
-	<-stopCh
+	metrics.Register(ctrl.volumes.store, ctrl.claims)
 
-	ctrl.claimQueue.ShutDown()
-	ctrl.volumeQueue.ShutDown()
+	<-stopCh
 }
 
 // volumeWorker processes items from volumeQueue. It must run only once,
@@ -404,64 +398,44 @@ func (ctrl *PersistentVolumeController) claimWorker() {
 	}
 }
 
-const (
-	// these pair of constants are used by the provisioner in Kubernetes 1.2.
-	pvProvisioningRequiredAnnotationKey    = "volume.experimental.kubernetes.io/provisioning-required"
-	pvProvisioningCompletedAnnotationValue = "volume.experimental.kubernetes.io/provisioning-completed"
-)
+// resync supplements short resync period of shared informers - we don't want
+// all consumers of PV/PVC shared informer to have a short resync period,
+// therefore we do our own.
+func (ctrl *PersistentVolumeController) resync() {
+	glog.V(4).Infof("resyncing PV controller")
 
-// upgradeVolumeFrom1_2 updates PV from Kubernetes 1.2 to 1.3 and newer. In 1.2,
-// we used template PersistentVolume instances for dynamic provisioning. In 1.3
-// and later, these template (and not provisioned) instances must be removed to
-// make the controller to provision a new PV.
-// It returns true if the volume was deleted.
-// TODO: remove this function when upgrade from 1.2 becomes unsupported.
-func (ctrl *PersistentVolumeController) upgradeVolumeFrom1_2(volume *v1.PersistentVolume) bool {
-	annValue, found := volume.Annotations[pvProvisioningRequiredAnnotationKey]
-	if !found {
-		// The volume is not template
-		return false
-	}
-	if annValue == pvProvisioningCompletedAnnotationValue {
-		// The volume is already fully provisioned. The new controller will
-		// ignore this annotation and it will obey its ReclaimPolicy, which is
-		// likely to delete the volume when appropriate claim is deleted.
-		return false
-	}
-	glog.V(2).Infof("deleting unprovisioned template volume %q from Kubernetes 1.2.", volume.Name)
-	err := ctrl.kubeClient.Core().PersistentVolumes().Delete(volume.Name, nil)
+	pvcs, err := ctrl.claimLister.List(labels.NewSelector())
 	if err != nil {
-		glog.Errorf("cannot delete unprovisioned template volume %q: %v", volume.Name, err)
+		glog.Warningf("cannot list claims: %s", err)
+		return
 	}
-	// Remove from local cache
-	err = ctrl.volumes.store.Delete(volume)
-	if err != nil {
-		glog.Errorf("cannot remove volume %q from local cache: %v", volume.Name, err)
+	for _, pvc := range pvcs {
+		ctrl.enqueueWork(ctrl.claimQueue, pvc)
 	}
 
-	return true
+	pvs, err := ctrl.volumeLister.List(labels.NewSelector())
+	if err != nil {
+		glog.Warningf("cannot list persistent volumes: %s", err)
+		return
+	}
+	for _, pv := range pvs {
+		ctrl.enqueueWork(ctrl.volumeQueue, pv)
+	}
 }
 
 // setClaimProvisioner saves
 // claim.Annotations[annStorageProvisioner] = class.Provisioner
 func (ctrl *PersistentVolumeController) setClaimProvisioner(claim *v1.PersistentVolumeClaim, class *storage.StorageClass) (*v1.PersistentVolumeClaim, error) {
-	if val, ok := claim.Annotations[annDynamicallyProvisioned]; ok && val == class.Provisioner {
+	if val, ok := claim.Annotations[annStorageProvisioner]; ok && val == class.Provisioner {
 		// annotation is already set, nothing to do
 		return claim, nil
 	}
 
 	// The volume from method args can be pointing to watcher cache. We must not
 	// modify these, therefore create a copy.
-	clone, err := api.Scheme.DeepCopy(claim)
-	if err != nil {
-		return nil, fmt.Errorf("Error cloning pv: %v", err)
-	}
-	claimClone, ok := clone.(*v1.PersistentVolumeClaim)
-	if !ok {
-		return nil, fmt.Errorf("Unexpected claim cast error : %v", claimClone)
-	}
+	claimClone := claim.DeepCopy()
 	metav1.SetMetaDataAnnotation(&claimClone.ObjectMeta, annStorageProvisioner, class.Provisioner)
-	newClaim, err := ctrl.kubeClient.Core().PersistentVolumeClaims(claim.Namespace).Update(claimClone)
+	newClaim, err := ctrl.kubeClient.CoreV1().PersistentVolumeClaims(claim.Namespace).Update(claimClone)
 	if err != nil {
 		return newClaim, err
 	}

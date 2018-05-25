@@ -19,6 +19,7 @@ package config
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -30,8 +31,8 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/kubernetes/pkg/kubectl/cmd/templates"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
+	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
 	"k8s.io/kubernetes/pkg/printers"
-	"k8s.io/kubernetes/pkg/util/i18n"
 )
 
 // GetContextsOptions contains the assignable options from the args.
@@ -60,7 +61,8 @@ func NewCmdConfigGetContexts(out io.Writer, configAccess clientcmd.ConfigAccess)
 	options := &GetContextsOptions{configAccess: configAccess}
 
 	cmd := &cobra.Command{
-		Use:     "get-contexts [(-o|--output=)name)]",
+		Use: "get-contexts [(-o|--output=)name)]",
+		DisableFlagsInUseLine: true,
 		Short:   i18n.T("Describe one or many contexts"),
 		Long:    getContextsLong,
 		Example: getContextsExample,
@@ -138,6 +140,7 @@ func (o GetContextsOptions) RunGetContexts() error {
 		}
 	}
 
+	sort.Strings(toPrint)
 	for _, name := range toPrint {
 		err = printContext(name, config.Contexts[name], out, o.nameOnly, config.CurrentContext == name)
 		if err != nil {

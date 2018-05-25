@@ -18,26 +18,40 @@ package azure_file
 
 import (
 	"fmt"
+	"strings"
 
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/volume"
 )
 
+const (
+	fileMode        = "file_mode"
+	dirMode         = "dir_mode"
+	gid             = "gid"
+	vers            = "vers"
+	defaultFileMode = "0755"
+	defaultDirMode  = "0755"
+	defaultVers     = "3.0"
+)
+
 // Abstract interface to azure file operations.
 type azureUtil interface {
-	GetAzureCredentials(host volume.VolumeHost, nameSpace, secretName, shareName string) (string, string, error)
+	GetAzureCredentials(host volume.VolumeHost, nameSpace, secretName string) (string, string, error)
+	SetAzureCredentials(host volume.VolumeHost, nameSpace, accountName, accountKey string) (string, error)
 }
 
 type azureSvc struct{}
 
-func (s *azureSvc) GetAzureCredentials(host volume.VolumeHost, nameSpace, secretName, shareName string) (string, string, error) {
+func (s *azureSvc) GetAzureCredentials(host volume.VolumeHost, nameSpace, secretName string) (string, string, error) {
 	var accountKey, accountName string
 	kubeClient := host.GetKubeClient()
 	if kubeClient == nil {
 		return "", "", fmt.Errorf("Cannot get kube client")
 	}
 
-	keys, err := kubeClient.Core().Secrets(nameSpace).Get(secretName, metav1.GetOptions{})
+	keys, err := kubeClient.CoreV1().Secrets(nameSpace).Get(secretName, metav1.GetOptions{})
 	if err != nil {
 		return "", "", fmt.Errorf("Couldn't get secret %v/%v", nameSpace, secretName)
 	}
@@ -53,4 +67,72 @@ func (s *azureSvc) GetAzureCredentials(host volume.VolumeHost, nameSpace, secret
 		return "", "", fmt.Errorf("Invalid %v/%v, couldn't extract azurestorageaccountname or azurestorageaccountkey", nameSpace, secretName)
 	}
 	return accountName, accountKey, nil
+}
+
+func (s *azureSvc) SetAzureCredentials(host volume.VolumeHost, nameSpace, accountName, accountKey string) (string, error) {
+	kubeClient := host.GetKubeClient()
+	if kubeClient == nil {
+		return "", fmt.Errorf("Cannot get kube client")
+	}
+	secretName := "azure-storage-account-" + accountName + "-secret"
+	secret := &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: nameSpace,
+			Name:      secretName,
+		},
+		Data: map[string][]byte{
+			"azurestorageaccountname": []byte(accountName),
+			"azurestorageaccountkey":  []byte(accountKey),
+		},
+		Type: "Opaque",
+	}
+	_, err := kubeClient.CoreV1().Secrets(nameSpace).Create(secret)
+	if errors.IsAlreadyExists(err) {
+		err = nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("Couldn't create secret %v", err)
+	}
+	return secretName, err
+}
+
+// check whether mountOptions contain file_mode, dir_mode, vers, gid, if not, append default mode
+func appendDefaultMountOptions(mountOptions []string, fsGroup *int64) []string {
+	fileModeFlag := false
+	dirModeFlag := false
+	versFlag := false
+	gidFlag := false
+
+	for _, mountOption := range mountOptions {
+		if strings.HasPrefix(mountOption, fileMode) {
+			fileModeFlag = true
+		}
+		if strings.HasPrefix(mountOption, dirMode) {
+			dirModeFlag = true
+		}
+		if strings.HasPrefix(mountOption, vers) {
+			versFlag = true
+		}
+		if strings.HasPrefix(mountOption, gid) {
+			gidFlag = true
+		}
+	}
+
+	allMountOptions := mountOptions
+	if !fileModeFlag {
+		allMountOptions = append(allMountOptions, fmt.Sprintf("%s=%s", fileMode, defaultFileMode))
+	}
+
+	if !dirModeFlag {
+		allMountOptions = append(allMountOptions, fmt.Sprintf("%s=%s", dirMode, defaultDirMode))
+	}
+
+	if !versFlag {
+		allMountOptions = append(allMountOptions, fmt.Sprintf("%s=%s", vers, defaultVers))
+	}
+
+	if !gidFlag && fsGroup != nil {
+		allMountOptions = append(allMountOptions, fmt.Sprintf("%s=%d", gid, *fsGroup))
+	}
+	return allMountOptions
 }

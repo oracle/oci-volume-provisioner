@@ -3,13 +3,13 @@ This folder contains the sources needed to build the gen-swagger-doc container.
 To build the container image, 
 
 ```
-$ sudo docker build -t gcr.io/google_containers/gen-swagger-docs:v1 .
+$ sudo docker build -t k8s.gcr.io/gen-swagger-docs:v1 .
 ```
 
 To generate the html docs,
 
 ```
-$ ./run-gen-swagger-docs.sh <API version> <absolute output path, default to PWD>
+$ ./gen-swagger-docs.sh <API version> <absolute output path, default to PWD>
 ```
 
 The generated definitions.html and operations.html will be stored in output paths.

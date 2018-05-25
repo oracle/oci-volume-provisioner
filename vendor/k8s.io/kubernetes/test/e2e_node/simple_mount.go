@@ -17,9 +17,10 @@ limitations under the License.
 package e2e_node
 
 import (
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/test/e2e/framework"
+	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	. "github.com/onsi/ginkgo"
 )
@@ -42,7 +43,7 @@ var _ = framework.KubeDescribe("SimpleMount", func() {
 				Containers: []v1.Container{
 					{
 						Name:  "simple-mount-container",
-						Image: framework.GetPauseImageNameForHostArch(),
+						Image: imageutils.GetPauseImageNameForHostArch(),
 						VolumeMounts: []v1.VolumeMount{
 							{
 								Name:      "simply-mounted-volume",

@@ -16,7 +16,7 @@
 
 
 MASTER_ADDRESS=${1:-"8.8.8.18"}
-ETCD_SERVERS=${2:-"http://8.8.8.18:2379"}
+ETCD_SERVERS=${2:-"https://8.8.8.18:2379"}
 SERVICE_CLUSTER_IP_RANGE=${3:-"10.10.10.0/24"}
 ADMISSION_CONTROL=${4:-""}
 
@@ -30,6 +30,15 @@ KUBE_LOG_LEVEL="--v=4"
 # --etcd-servers=[]: List of etcd servers to watch (http://ip:port),
 # comma separated. Mutually exclusive with -etcd-config
 KUBE_ETCD_SERVERS="--etcd-servers=${ETCD_SERVERS}"
+
+# --etcd-cafile="": SSL Certificate Authority file used to secure etcd communication.
+KUBE_ETCD_CAFILE="--etcd-cafile=/srv/kubernetes/etcd/ca.pem"
+
+# --etcd-certfile="": SSL certification file used to secure etcd communication.
+KUBE_ETCD_CERTFILE="--etcd-certfile=/srv/kubernetes/etcd/client.pem"
+
+# --etcd-keyfile="": key file used to secure etcd communication.
+KUBE_ETCD_KEYFILE="--etcd-keyfile=/srv/kubernetes/etcd/client-key.pem"
 
 # --insecure-bind-address=127.0.0.1: The IP address on which to serve the --insecure-port.
 KUBE_API_ADDRESS="--insecure-bind-address=0.0.0.0"
@@ -77,6 +86,9 @@ EOF
 KUBE_APISERVER_OPTS="   \${KUBE_LOGTOSTDERR}         \\
                         \${KUBE_LOG_LEVEL}           \\
                         \${KUBE_ETCD_SERVERS}        \\
+                        \${KUBE_ETCD_CAFILE}         \\
+                        \${KUBE_ETCD_CERTFILE}       \\
+                        \${KUBE_ETCD_KEYFILE}        \\
                         \${KUBE_API_ADDRESS}         \\
                         \${KUBE_API_PORT}            \\
                         \${NODE_PORT}                \\

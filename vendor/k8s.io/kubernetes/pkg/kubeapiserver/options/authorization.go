@@ -22,6 +22,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	versionedinformers "k8s.io/client-go/informers"
 	informers "k8s.io/kubernetes/pkg/client/informers/informers_generated/internalversion"
 	"k8s.io/kubernetes/pkg/kubeapiserver/authorizer"
 	authzmodes "k8s.io/kubernetes/pkg/kubeapiserver/authorizer/modes"
@@ -62,11 +63,11 @@ func (s *BuiltInAuthorizationOptions) AddFlags(fs *pflag.FlagSet) {
 
 	fs.DurationVar(&s.WebhookCacheAuthorizedTTL, "authorization-webhook-cache-authorized-ttl",
 		s.WebhookCacheAuthorizedTTL,
-		"The duration to cache 'authorized' responses from the webhook authorizer. Default is 5m.")
+		"The duration to cache 'authorized' responses from the webhook authorizer.")
 
 	fs.DurationVar(&s.WebhookCacheUnauthorizedTTL,
 		"authorization-webhook-cache-unauthorized-ttl", s.WebhookCacheUnauthorizedTTL,
-		"The duration to cache 'unauthorized' responses from the webhook authorizer. Default is 30s.")
+		"The duration to cache 'unauthorized' responses from the webhook authorizer.")
 
 	fs.String("authorization-rbac-super-user", "", ""+
 		"If specified, a username which avoids RBAC authorization checks and role binding "+
@@ -75,18 +76,22 @@ func (s *BuiltInAuthorizationOptions) AddFlags(fs *pflag.FlagSet) {
 
 }
 
-func (s *BuiltInAuthorizationOptions) ToAuthorizationConfig(informerFactory informers.SharedInformerFactory) authorizer.AuthorizationConfig {
+func (s *BuiltInAuthorizationOptions) Modes() []string {
 	modes := []string{}
 	if len(s.Mode) > 0 {
 		modes = strings.Split(s.Mode, ",")
 	}
+	return modes
+}
 
+func (s *BuiltInAuthorizationOptions) ToAuthorizationConfig(informerFactory informers.SharedInformerFactory, versionedInformerFactory versionedinformers.SharedInformerFactory) authorizer.AuthorizationConfig {
 	return authorizer.AuthorizationConfig{
-		AuthorizationModes:          modes,
+		AuthorizationModes:          s.Modes(),
 		PolicyFile:                  s.PolicyFile,
 		WebhookConfigFile:           s.WebhookConfigFile,
 		WebhookCacheAuthorizedTTL:   s.WebhookCacheAuthorizedTTL,
 		WebhookCacheUnauthorizedTTL: s.WebhookCacheUnauthorizedTTL,
 		InformerFactory:             informerFactory,
+		VersionedInformerFactory:    versionedInformerFactory,
 	}
 }

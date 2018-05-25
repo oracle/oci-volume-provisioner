@@ -1,3 +1,5 @@
+// +build linux
+
 /*
 Copyright 2016 The Kubernetes Authors.
 
@@ -20,6 +22,7 @@ package e2e_node
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -31,9 +34,11 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/api/v1"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
+	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
+	clientset "k8s.io/client-go/kubernetes"
+	nodeutil "k8s.io/kubernetes/pkg/api/v1/node"
 	commontest "k8s.io/kubernetes/test/e2e/common"
 	"k8s.io/kubernetes/test/e2e/framework"
 	"k8s.io/kubernetes/test/e2e_node/services"
@@ -54,6 +59,7 @@ var e2es *services.E2EServices
 var runServicesMode = flag.Bool("run-services-mode", false, "If true, only run services (etcd, apiserver) in current process, and not run test.")
 var runKubeletMode = flag.Bool("run-kubelet-mode", false, "If true, only start kubelet, and not run test.")
 var systemValidateMode = flag.Bool("system-validate-mode", false, "If true, only run system validation in current process, and not run test.")
+var systemSpecFile = flag.String("system-spec-file", "", "The name of the system spec file that will be used for node conformance test. If it's unspecified or empty, the default system spec (system.DefaultSysSpec) will be used.")
 
 func init() {
 	framework.RegisterCommonFlags()
@@ -69,6 +75,7 @@ func init() {
 
 func TestMain(m *testing.M) {
 	pflag.Parse()
+	framework.AfterReadingAllFlags(&framework.TestContext)
 	os.Exit(m.Run())
 }
 
@@ -89,6 +96,14 @@ func TestE2eNode(t *testing.T) {
 	}
 	if *systemValidateMode {
 		// If system-validate-mode is specified, only run system validation in current process.
+		spec := &system.DefaultSysSpec
+		if *systemSpecFile != "" {
+			var err error
+			spec, err = loadSystemSpecFromFile(*systemSpecFile)
+			if err != nil {
+				glog.Exitf("Failed to load system spec: %v", err)
+			}
+		}
 		if framework.TestContext.NodeConformance {
 			// Chroot to /rootfs to make system validation can check system
 			// as in the root filesystem.
@@ -98,7 +113,7 @@ func TestE2eNode(t *testing.T) {
 				glog.Exitf("chroot %q failed: %v", rootfs, err)
 			}
 		}
-		if _, err := system.ValidateDefault(framework.TestContext.ContainerRuntime); err != nil {
+		if _, err := system.ValidateSpec(*spec, framework.TestContext.ContainerRuntime); err != nil {
 			glog.Exitf("system validation failed: %v", err)
 		}
 		return
@@ -218,7 +233,7 @@ func waitForNodeReady() {
 		if err != nil {
 			return fmt.Errorf("failed to get node: %v", err)
 		}
-		if !v1.IsNodeReady(node) {
+		if !nodeutil.IsNodeReady(node) {
 			return fmt.Errorf("node is not ready: %+v", node)
 		}
 		return nil
@@ -252,7 +267,7 @@ func updateTestContext() error {
 
 // getNode gets node object from the apiserver.
 func getNode(c *clientset.Clientset) (*v1.Node, error) {
-	nodes, err := c.Nodes().List(metav1.ListOptions{})
+	nodes, err := c.CoreV1().Nodes().List(metav1.ListOptions{})
 	Expect(err).NotTo(HaveOccurred(), "should be able to list nodes.")
 	if nodes == nil {
 		return nil, fmt.Errorf("the node list is nil.")
@@ -275,4 +290,22 @@ func getAPIServerClient() (*clientset.Clientset, error) {
 		return nil, fmt.Errorf("failed to create client: %v", err)
 	}
 	return client, nil
+}
+
+// loadSystemSpecFromFile returns the system spec from the file with the
+// filename.
+func loadSystemSpecFromFile(filename string) (*system.SysSpec, error) {
+	b, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	data, err := utilyaml.ToJSON(b)
+	if err != nil {
+		return nil, err
+	}
+	spec := new(system.SysSpec)
+	if err := json.Unmarshal(data, spec); err != nil {
+		return nil, err
+	}
+	return spec, nil
 }

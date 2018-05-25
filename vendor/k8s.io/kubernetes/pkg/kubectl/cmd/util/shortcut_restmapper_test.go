@@ -17,7 +17,6 @@ limitations under the License.
 package util
 
 import (
-	"strings"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,43 +28,25 @@ func TestReplaceAliases(t *testing.T) {
 	tests := []struct {
 		name     string
 		arg      string
-		expected string
+		expected schema.GroupVersionResource
 		srvRes   []*metav1.APIResourceList
 	}{
 		{
-			name:     "no-replacement",
-			arg:      "service",
-			expected: "service",
-			srvRes:   []*metav1.APIResourceList{},
-		},
-		{
-			name:     "all-replacement",
-			arg:      "all",
-			expected: "pods,replicationcontrollers,services,statefulsets,horizontalpodautoscalers,jobs,deployments,replicasets",
-			srvRes:   []*metav1.APIResourceList{},
-		},
-		{
-			name:     "alias-in-comma-separated-arg",
-			arg:      "all,secrets",
-			expected: "pods,replicationcontrollers,services,statefulsets,horizontalpodautoscalers,jobs,deployments,replicasets,secrets",
-			srvRes:   []*metav1.APIResourceList{},
-		},
-		{
 			name:     "rc-resolves-to-replicationcontrollers",
 			arg:      "rc",
-			expected: "replicationcontrollers",
+			expected: schema.GroupVersionResource{Resource: "replicationcontrollers"},
 			srvRes:   []*metav1.APIResourceList{},
 		},
 		{
 			name:     "storageclasses-no-replacement",
 			arg:      "storageclasses",
-			expected: "storageclasses",
+			expected: schema.GroupVersionResource{Resource: "storageclasses"},
 			srvRes:   []*metav1.APIResourceList{},
 		},
 		{
 			name:     "hpa-priority",
 			arg:      "hpa",
-			expected: "superhorizontalpodautoscalers",
+			expected: schema.GroupVersionResource{Resource: "superhorizontalpodautoscalers", Group: "autoscaling"},
 			srvRes: []*metav1.APIResourceList{
 				{
 					GroupVersion: "autoscaling/v1",
@@ -87,25 +68,73 @@ func TestReplaceAliases(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:     "resource-override",
+			arg:      "dpl",
+			expected: schema.GroupVersionResource{Resource: "deployments", Group: "foo"},
+			srvRes: []*metav1.APIResourceList{
+				{
+					GroupVersion: "foo/v1",
+					APIResources: []metav1.APIResource{
+						{
+							Name:       "deployments",
+							ShortNames: []string{"dpl"},
+						},
+					},
+				},
+				{
+					GroupVersion: "extension/v1beta1",
+					APIResources: []metav1.APIResource{
+						{
+							Name:       "deployments",
+							ShortNames: []string{"deploy"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:     "resource-match-preferred",
+			arg:      "pods",
+			expected: schema.GroupVersionResource{Resource: "pods", Group: ""},
+			srvRes: []*metav1.APIResourceList{
+				{
+					GroupVersion: "v1",
+					APIResources: []metav1.APIResource{{Name: "pods", SingularName: "pod"}},
+				},
+				{
+					GroupVersion: "acme.com/v1",
+					APIResources: []metav1.APIResource{{Name: "poddlers", ShortNames: []string{"pods", "pod"}}},
+				},
+			},
+		},
+		{
+			name:     "resource-match-singular-preferred",
+			arg:      "pod",
+			expected: schema.GroupVersionResource{Resource: "pod", Group: ""},
+			srvRes: []*metav1.APIResourceList{
+				{
+					GroupVersion: "v1",
+					APIResources: []metav1.APIResource{{Name: "pods", SingularName: "pod"}},
+				},
+				{
+					GroupVersion: "acme.com/v1",
+					APIResources: []metav1.APIResource{{Name: "poddlers", ShortNames: []string{"pods", "pod"}}},
+				},
+			},
+		},
 	}
 
 	ds := &fakeDiscoveryClient{}
-	mapper, err := NewShortcutExpander(testapi.Default.RESTMapper(), ds)
-	if err != nil {
-		t.Fatalf("Unable to create shortcut expander, err %s", err.Error())
-	}
+	mapper := NewShortcutExpander(testapi.Default.RESTMapper(), ds)
 
 	for _, test := range tests {
-		resources := []string{}
 		ds.serverResourcesHandler = func() ([]*metav1.APIResourceList, error) {
 			return test.srvRes, nil
 		}
-		for _, arg := range strings.Split(test.arg, ",") {
-			curr, _ := mapper.AliasesForResource(arg)
-			resources = append(resources, curr...)
-		}
-		if strings.Join(resources, ",") != test.expected {
-			t.Errorf("%s: unexpected argument: expected %s, got %s", test.name, test.expected, resources)
+		actual := mapper.expandResourceShortcut(schema.GroupVersionResource{Resource: test.arg})
+		if actual != test.expected {
+			t.Errorf("%s: unexpected argument: expected %s, got %s", test.name, test.expected, actual)
 		}
 	}
 }
@@ -118,10 +147,10 @@ func TestKindFor(t *testing.T) {
 	}{
 		{
 			in:       schema.GroupVersionResource{Group: "storage.k8s.io", Version: "", Resource: "sc"},
-			expected: schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1beta1", Kind: "StorageClass"},
+			expected: schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1", Kind: "StorageClass"},
 			srvRes: []*metav1.APIResourceList{
 				{
-					GroupVersion: "storage.k8s.io/v1beta1",
+					GroupVersion: "storage.k8s.io/v1",
 					APIResources: []metav1.APIResource{
 						{
 							Name:       "storageclasses",
@@ -133,10 +162,10 @@ func TestKindFor(t *testing.T) {
 		},
 		{
 			in:       schema.GroupVersionResource{Group: "", Version: "", Resource: "sc"},
-			expected: schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1beta1", Kind: "StorageClass"},
+			expected: schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1", Kind: "StorageClass"},
 			srvRes: []*metav1.APIResourceList{
 				{
-					GroupVersion: "storage.k8s.io/v1beta1",
+					GroupVersion: "storage.k8s.io/v1",
 					APIResources: []metav1.APIResource{
 						{
 							Name:       "storageclasses",
@@ -149,10 +178,7 @@ func TestKindFor(t *testing.T) {
 	}
 
 	ds := &fakeDiscoveryClient{}
-	mapper, err := NewShortcutExpander(testapi.Default.RESTMapper(), ds)
-	if err != nil {
-		t.Fatalf("Unable to create shortcut expander, err %s", err.Error())
-	}
+	mapper := NewShortcutExpander(testapi.Default.RESTMapper(), ds)
 
 	for i, test := range tests {
 		ds.serverResourcesHandler = func() ([]*metav1.APIResourceList, error) {
