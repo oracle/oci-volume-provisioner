@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/golang/glog"
@@ -53,23 +54,34 @@ func (c *CrossRequestRetryDelay) BeforeSign(r *request.Request) {
 	if delay > 0 {
 		glog.Warningf("Inserting delay before AWS request (%s) to avoid RequestLimitExceeded: %s",
 			describeRequest(r), delay.String())
-		r.Config.SleepDelay(delay)
+
+		if sleepFn := r.Config.SleepDelay; sleepFn != nil {
+			// Support SleepDelay for backwards compatibility
+			sleepFn(delay)
+		} else if err := aws.SleepWithContext(r.Context(), delay); err != nil {
+			r.Error = awserr.New(request.CanceledErrorCode, "request context canceled", err)
+			r.Retryable = aws.Bool(false)
+			return
+		}
 
 		// Avoid clock skew problems
 		r.Time = now
 	}
 }
 
-// Return a user-friendly string describing the request, for use in log messages
-func describeRequest(r *request.Request) string {
-	service := r.ClientInfo.ServiceName
-
+// Return the operation name, for use in log messages and metrics
+func operationName(r *request.Request) string {
 	name := "?"
 	if r.Operation != nil {
 		name = r.Operation.Name
 	}
+	return name
+}
 
-	return service + "::" + name
+// Return a user-friendly string describing the request, for use in log messages
+func describeRequest(r *request.Request) string {
+	service := r.ClientInfo.ServiceName
+	return service + "::" + operationName(r)
 }
 
 // Added to the AfterRetry chain; called after any error
@@ -83,6 +95,7 @@ func (c *CrossRequestRetryDelay) AfterRetry(r *request.Request) {
 	}
 	if awsError.Code() == "RequestLimitExceeded" {
 		c.backoff.ReportError()
+		recordAWSThrottlesMetric(operationName(r))
 		glog.Warningf("Got RequestLimitExceeded error on AWS request (%s)",
 			describeRequest(r))
 	}

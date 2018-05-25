@@ -17,10 +17,10 @@ limitations under the License.
 package framework
 
 import (
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/api/v1"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
+	clientset "k8s.io/client-go/kubernetes"
 	e2eframework "k8s.io/kubernetes/test/e2e/framework"
 	testutils "k8s.io/kubernetes/test/utils"
 
@@ -56,10 +56,6 @@ func (p *IntegrationTestNodePreparer) PrepareNodes() error {
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: p.nodeNamePrefix,
 		},
-		Spec: v1.NodeSpec{
-			// TODO: investigate why this is needed.
-			ExternalID: "foo",
-		},
 		Status: v1.NodeStatus{
 			Capacity: v1.ResourceList{
 				v1.ResourcePods:   *resource.NewQuantity(110, resource.DecimalSI),
@@ -73,7 +69,14 @@ func (p *IntegrationTestNodePreparer) PrepareNodes() error {
 		},
 	}
 	for i := 0; i < numNodes; i++ {
-		if _, err := p.client.Core().Nodes().Create(baseNode); err != nil {
+		var err error
+		for retry := 0; retry < retries; retry++ {
+			_, err = p.client.CoreV1().Nodes().Create(baseNode)
+			if err == nil || !testutils.IsRetryableAPIError(err) {
+				break
+			}
+		}
+		if err != nil {
 			glog.Fatalf("Error creating node: %v", err)
 		}
 	}
@@ -96,7 +99,7 @@ func (p *IntegrationTestNodePreparer) PrepareNodes() error {
 func (p *IntegrationTestNodePreparer) CleanupNodes() error {
 	nodes := e2eframework.GetReadySchedulableNodesOrDie(p.client)
 	for i := range nodes.Items {
-		if err := p.client.Core().Nodes().Delete(nodes.Items[i].Name, &metav1.DeleteOptions{}); err != nil {
+		if err := p.client.CoreV1().Nodes().Delete(nodes.Items[i].Name, &metav1.DeleteOptions{}); err != nil {
 			glog.Errorf("Error while deleting Node: %v", err)
 		}
 	}

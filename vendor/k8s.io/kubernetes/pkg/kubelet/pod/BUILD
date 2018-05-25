@@ -1,7 +1,5 @@
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])
-
 load(
     "@io_bazel_rules_go//go:def.bzl",
     "go_library",
@@ -14,17 +12,20 @@ go_library(
         "mirror_client.go",
         "pod_manager.go",
     ],
-    tags = ["automanaged"],
+    importpath = "k8s.io/kubernetes/pkg/kubelet/pod",
     deps = [
-        "//pkg/api/v1:go_default_library",
-        "//pkg/client/clientset_generated/clientset:go_default_library",
+        "//pkg/kubelet/checkpoint:go_default_library",
+        "//pkg/kubelet/checkpointmanager:go_default_library",
+        "//pkg/kubelet/configmap:go_default_library",
         "//pkg/kubelet/container:go_default_library",
         "//pkg/kubelet/secret:go_default_library",
         "//pkg/kubelet/types:go_default_library",
-        "//vendor:github.com/golang/glog",
-        "//vendor:k8s.io/apimachinery/pkg/api/errors",
-        "//vendor:k8s.io/apimachinery/pkg/apis/meta/v1",
-        "//vendor:k8s.io/apimachinery/pkg/types",
+        "//vendor/github.com/golang/glog:go_default_library",
+        "//vendor/k8s.io/api/core/v1:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/api/errors:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/types:go_default_library",
+        "//vendor/k8s.io/client-go/kubernetes:go_default_library",
     ],
 )
 
@@ -34,16 +35,16 @@ go_test(
         "mirror_client_test.go",
         "pod_manager_test.go",
     ],
-    library = ":go_default_library",
-    tags = ["automanaged"],
+    embed = [":go_default_library"],
     deps = [
-        "//pkg/api/v1:go_default_library",
+        "//pkg/kubelet/configmap:go_default_library",
         "//pkg/kubelet/container:go_default_library",
         "//pkg/kubelet/pod/testing:go_default_library",
         "//pkg/kubelet/secret:go_default_library",
         "//pkg/kubelet/types:go_default_library",
-        "//vendor:k8s.io/apimachinery/pkg/apis/meta/v1",
-        "//vendor:k8s.io/apimachinery/pkg/types",
+        "//vendor/k8s.io/api/core/v1:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/types:go_default_library",
     ],
 )
 

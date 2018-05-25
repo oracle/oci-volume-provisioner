@@ -17,20 +17,24 @@ limitations under the License.
 package config
 
 import (
+	"io/ioutil"
 	"math/rand"
+	"os"
 	"reflect"
 	"sort"
 	"strconv"
 	"testing"
 	"time"
 
+	"k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	clientv1 "k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/v1"
+	"k8s.io/kubernetes/pkg/apis/core"
+	"k8s.io/kubernetes/pkg/kubelet/checkpoint"
+	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/securitycontext"
 )
@@ -86,9 +90,17 @@ func CreatePodUpdate(op kubetypes.PodOperation, source string, pods ...*v1.Pod) 
 	return kubetypes.PodUpdate{Pods: pods, Op: op, Source: source}
 }
 
+func createPodConfigTesterByChannel(mode PodConfigNotificationMode, channelName string) (chan<- interface{}, <-chan kubetypes.PodUpdate, *PodConfig) {
+	eventBroadcaster := record.NewBroadcaster()
+	config := NewPodConfig(mode, eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "kubelet"}))
+	channel := config.Channel(channelName)
+	ch := config.Updates()
+	return channel, ch, config
+}
+
 func createPodConfigTester(mode PodConfigNotificationMode) (chan<- interface{}, <-chan kubetypes.PodUpdate, *PodConfig) {
 	eventBroadcaster := record.NewBroadcaster()
-	config := NewPodConfig(mode, eventBroadcaster.NewRecorder(api.Scheme, clientv1.EventSource{Component: "kubelet"}))
+	config := NewPodConfig(mode, eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "kubelet"}))
 	channel := config.Channel(TestSource)
 	ch := config.Updates()
 	return channel, ch, config
@@ -147,8 +159,10 @@ func TestNewPodAddedInvalidNamespace(t *testing.T) {
 	// see an update
 	podUpdate := CreatePodUpdate(kubetypes.ADD, TestSource, CreateValidPod("foo", ""))
 	channel <- podUpdate
+	expectPodUpdate(t, ch, CreatePodUpdate(kubetypes.ADD, TestSource, CreateValidPod("foo", "")))
+
 	config.Sync()
-	expectPodUpdate(t, ch, CreatePodUpdate(kubetypes.SET, kubetypes.AllSource))
+	expectPodUpdate(t, ch, CreatePodUpdate(kubetypes.SET, kubetypes.AllSource, CreateValidPod("foo", "")))
 }
 
 func TestNewPodAddedDefaultNamespace(t *testing.T) {
@@ -371,16 +385,13 @@ func TestPodUpdateAnnotations(t *testing.T) {
 	pod.Annotations = make(map[string]string, 0)
 	pod.Annotations["kubernetes.io/blah"] = "blah"
 
-	clone, err := api.Scheme.DeepCopy(pod)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
+	clone := pod.DeepCopy()
 
-	podUpdate := CreatePodUpdate(kubetypes.SET, TestSource, CreateValidPod("foo1", "new"), clone.(*v1.Pod), CreateValidPod("foo3", "new"))
+	podUpdate := CreatePodUpdate(kubetypes.SET, TestSource, CreateValidPod("foo1", "new"), clone, CreateValidPod("foo3", "new"))
 	channel <- podUpdate
 	expectPodUpdate(t, ch, CreatePodUpdate(kubetypes.ADD, TestSource, CreateValidPod("foo1", "new"), pod, CreateValidPod("foo3", "new")))
 
-	pod.Annotations["kubenetes.io/blah"] = "superblah"
+	pod.Annotations["kubernetes.io/blah"] = "superblah"
 	podUpdate = CreatePodUpdate(kubetypes.SET, TestSource, CreateValidPod("foo1", "new"), pod, CreateValidPod("foo3", "new"))
 	channel <- podUpdate
 	expectPodUpdate(t, ch, CreatePodUpdate(kubetypes.UPDATE, TestSource, pod))
@@ -403,12 +414,9 @@ func TestPodUpdateLabels(t *testing.T) {
 	pod.Labels = make(map[string]string, 0)
 	pod.Labels["key"] = "value"
 
-	clone, err := api.Scheme.DeepCopy(pod)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
+	clone := pod.DeepCopy()
 
-	podUpdate := CreatePodUpdate(kubetypes.SET, TestSource, clone.(*v1.Pod))
+	podUpdate := CreatePodUpdate(kubetypes.SET, TestSource, clone)
 	channel <- podUpdate
 	expectPodUpdate(t, ch, CreatePodUpdate(kubetypes.ADD, TestSource, pod))
 
@@ -417,4 +425,36 @@ func TestPodUpdateLabels(t *testing.T) {
 	channel <- podUpdate
 	expectPodUpdate(t, ch, CreatePodUpdate(kubetypes.UPDATE, TestSource, pod))
 
+}
+
+func TestPodRestore(t *testing.T) {
+	tmpDir, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(tmpDir)
+
+	pod := CreateValidPod("api-server", "kube-default")
+	pod.Annotations = make(map[string]string, 0)
+	pod.Annotations["kubernetes.io/config.source"] = kubetypes.ApiserverSource
+	pod.Annotations[core.BootstrapCheckpointAnnotationKey] = "true"
+
+	// Create Checkpointer
+	checkpointManager, err := checkpointmanager.NewCheckpointManager(tmpDir)
+	if err != nil {
+		t.Fatalf("failed to initialize checkpoint manager: %v", err)
+	}
+	if err := checkpoint.WritePod(checkpointManager, pod); err != nil {
+		t.Fatalf("Error writing checkpoint for pod: %v", pod.GetName())
+	}
+
+	// Restore checkpoint
+	channel, ch, config := createPodConfigTesterByChannel(PodConfigNotificationIncremental, kubetypes.ApiserverSource)
+	if err := config.Restore(tmpDir, channel); err != nil {
+		t.Fatalf("Restore returned error: %v", err)
+	}
+	expectPodUpdate(t, ch, CreatePodUpdate(kubetypes.RESTORE, kubetypes.ApiserverSource, pod))
+
+	// Verify Restore only happen once
+	if err := config.Restore(tmpDir, channel); err != nil {
+		t.Fatalf("The second restore returned error: %v", err)
+	}
+	expectNoPodUpdate(t, ch)
 }

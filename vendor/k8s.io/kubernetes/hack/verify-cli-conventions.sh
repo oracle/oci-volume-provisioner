@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2016 The Kubernetes Authors.
 #
@@ -30,11 +30,14 @@ make -C "${KUBE_ROOT}" WHAT="${BINS[*]}"
 
 clicheck=$(kube::util::find-binary "clicheck")
 
-if ! output=`$clicheck 2>&1`
+if ! output=$($clicheck 2>&1)
 then
-	echo "FAILURE: CLI is not following one or more required conventions:"
 	echo "$output"
+	echo
+	echo "FAILURE: CLI is not following one or more required conventions."
 	exit 1
 else
+	echo "$output"
+	echo
   echo "SUCCESS: CLI is following all tested conventions."
 fi

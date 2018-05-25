@@ -18,72 +18,60 @@ package remote
 
 import (
 	"fmt"
-	"net"
-	"os"
-	"syscall"
 
 	"github.com/golang/glog"
 	"google.golang.org/grpc"
-
-	runtimeapi "k8s.io/kubernetes/pkg/kubelet/api/v1alpha1/runtime"
+	runtimeapi "k8s.io/kubernetes/pkg/kubelet/apis/cri/runtime/v1alpha2"
 	"k8s.io/kubernetes/pkg/kubelet/dockershim"
-	"k8s.io/kubernetes/pkg/util/interrupt"
+	"k8s.io/kubernetes/pkg/kubelet/util"
 )
 
-const (
-	// defaultEndpoint is the default address of dockershim grpc server socket.
-	defaultAddress = "/var/run/dockershim.sock"
-	// unixProtocol is the network protocol of unix socket.
-	unixProtocol = "unix"
-)
+// maxMsgSize use 8MB as the default message size limit.
+// grpc library default is 4MB
+const maxMsgSize = 1024 * 1024 * 8
 
 // DockerServer is the grpc server of dockershim.
 type DockerServer struct {
-	// addr is the address to serve on.
-	addr string
+	// endpoint is the endpoint to serve on.
+	endpoint string
 	// service is the docker service which implements runtime and image services.
-	service DockerService
+	service dockershim.CRIService
 	// server is the grpc server.
 	server *grpc.Server
 }
 
 // NewDockerServer creates the dockershim grpc server.
-func NewDockerServer(addr string, s dockershim.DockerService) *DockerServer {
+func NewDockerServer(endpoint string, s dockershim.CRIService) *DockerServer {
 	return &DockerServer{
-		addr:    addr,
-		service: NewDockerService(s),
+		endpoint: endpoint,
+		service:  s,
 	}
 }
 
 // Start starts the dockershim grpc server.
 func (s *DockerServer) Start() error {
-	glog.V(2).Infof("Start dockershim grpc server")
-	// Unlink to cleanup the previous socket file.
-	err := syscall.Unlink(s.addr)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to unlink socket file %q: %v", s.addr, err)
+	// Start the internal service.
+	if err := s.service.Start(); err != nil {
+		glog.Errorf("Unable to start docker service")
+		return err
 	}
-	l, err := net.Listen(unixProtocol, s.addr)
+
+	glog.V(2).Infof("Start dockershim grpc server")
+	l, err := util.CreateListener(s.endpoint)
 	if err != nil {
-		return fmt.Errorf("failed to listen on %q: %v", s.addr, err)
+		return fmt.Errorf("failed to listen on %q: %v", s.endpoint, err)
 	}
 	// Create the grpc server and register runtime and image services.
-	s.server = grpc.NewServer()
+	s.server = grpc.NewServer(
+		grpc.MaxRecvMsgSize(maxMsgSize),
+		grpc.MaxSendMsgSize(maxMsgSize),
+	)
 	runtimeapi.RegisterRuntimeServiceServer(s.server, s.service)
 	runtimeapi.RegisterImageServiceServer(s.server, s.service)
 	go func() {
-		// Use interrupt handler to make sure the server to be stopped properly.
-		h := interrupt.New(nil, s.Stop)
-		err := h.Run(func() error { return s.server.Serve(l) })
-		if err != nil {
-			glog.Errorf("Failed to serve connections: %v", err)
+		if err := s.server.Serve(l); err != nil {
+			glog.Fatalf("Failed to serve connections: %v", err)
 		}
 	}()
 	return nil
-}
-
-// Stop stops the dockershim grpc server.
-func (s *DockerServer) Stop() {
-	glog.V(2).Infof("Stop docker server")
-	s.server.Stop()
 }

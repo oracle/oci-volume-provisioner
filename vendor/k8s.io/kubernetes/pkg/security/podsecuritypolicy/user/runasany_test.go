@@ -19,7 +19,7 @@ package user
 import (
 	"testing"
 
-	"k8s.io/kubernetes/pkg/apis/extensions"
+	"k8s.io/kubernetes/pkg/apis/policy"
 )
 
 func TestRunAsAnyOptions(t *testing.T) {
@@ -27,14 +27,14 @@ func TestRunAsAnyOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error initializing NewRunAsAny %v", err)
 	}
-	_, err = NewRunAsAny(&extensions.RunAsUserStrategyOptions{})
+	_, err = NewRunAsAny(&policy.RunAsUserStrategyOptions{})
 	if err != nil {
 		t.Errorf("unexpected error initializing NewRunAsAny %v", err)
 	}
 }
 
 func TestRunAsAnyGenerate(t *testing.T) {
-	s, err := NewRunAsAny(&extensions.RunAsUserStrategyOptions{})
+	s, err := NewRunAsAny(&policy.RunAsUserStrategyOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error initializing NewRunAsAny %v", err)
 	}
@@ -48,11 +48,11 @@ func TestRunAsAnyGenerate(t *testing.T) {
 }
 
 func TestRunAsAnyValidate(t *testing.T) {
-	s, err := NewRunAsAny(&extensions.RunAsUserStrategyOptions{})
+	s, err := NewRunAsAny(&policy.RunAsUserStrategyOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error initializing NewRunAsAny %v", err)
 	}
-	errs := s.Validate(nil, nil)
+	errs := s.Validate(nil, nil, nil, nil, nil)
 	if len(errs) != 0 {
 		t.Errorf("unexpected errors validating with ")
 	}

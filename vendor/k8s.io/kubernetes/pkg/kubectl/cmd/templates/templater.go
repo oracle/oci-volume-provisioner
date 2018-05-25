@@ -23,7 +23,7 @@ import (
 	"text/template"
 	"unicode"
 
-	"k8s.io/kubernetes/pkg/util/term"
+	"k8s.io/kubernetes/pkg/kubectl/util/term"
 
 	"github.com/spf13/cobra"
 	flag "github.com/spf13/pflag"
@@ -145,7 +145,7 @@ func (t *templater) cmdGroupsString(c *cobra.Command) string {
 	for _, cmdGroup := range t.cmdGroups(c, c.Commands()) {
 		cmds := []string{cmdGroup.Message}
 		for _, cmd := range cmdGroup.Commands {
-			if cmd.Runnable() {
+			if cmd.IsAvailableCommand() {
 				cmds = append(cmds, "  "+rpad(cmd.Name(), cmd.NamePadding())+" "+cmd.Short)
 			}
 		}

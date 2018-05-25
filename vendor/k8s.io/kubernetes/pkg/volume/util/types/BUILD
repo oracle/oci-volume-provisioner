@@ -1,7 +1,5 @@
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])
-
 load(
     "@io_bazel_rules_go//go:def.bzl",
     "go_library",
@@ -10,8 +8,8 @@ load(
 go_library(
     name = "go_default_library",
     srcs = ["types.go"],
-    tags = ["automanaged"],
-    deps = ["//vendor:k8s.io/apimachinery/pkg/types"],
+    importpath = "k8s.io/kubernetes/pkg/volume/util/types",
+    deps = ["//vendor/k8s.io/apimachinery/pkg/types:go_default_library"],
 )
 
 filegroup(

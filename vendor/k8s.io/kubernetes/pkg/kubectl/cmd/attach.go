@@ -17,9 +17,11 @@ limitations under the License.
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
@@ -27,19 +29,19 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	restclient "k8s.io/client-go/rest"
-	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/client-go/tools/remotecommand"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	coreclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
-	"k8s.io/kubernetes/pkg/client/unversioned/remotecommand"
 	"k8s.io/kubernetes/pkg/kubectl/cmd/templates"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
-	"k8s.io/kubernetes/pkg/kubectl/resource"
-	remotecommandserver "k8s.io/kubernetes/pkg/kubelet/server/remotecommand"
-	"k8s.io/kubernetes/pkg/util/i18n"
-	"k8s.io/kubernetes/pkg/util/term"
+	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
+	"k8s.io/kubernetes/pkg/kubectl/polymorphichelpers"
+	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
 )
 
 var (
-	attach_example = templates.Examples(`
+	attachExample = templates.Examples(i18n.T(`
 		# Get output from running pod 123456-7890, using the first container by default
 		kubectl attach 123456-7890
 
@@ -52,57 +54,60 @@ var (
 
 		# Get output from the first pod of a ReplicaSet named nginx
 		kubectl attach rs/nginx
-		`)
+		`))
 )
 
-func NewCmdAttach(f cmdutil.Factory, cmdIn io.Reader, cmdOut, cmdErr io.Writer) *cobra.Command {
-	options := &AttachOptions{
+const (
+	defaultPodAttachTimeout = 60 * time.Second
+	defaultPodLogsTimeout   = 20 * time.Second
+)
+
+func NewCmdAttach(f cmdutil.Factory, streams genericclioptions.IOStreams) *cobra.Command {
+	o := &AttachOptions{
 		StreamOptions: StreamOptions{
-			In:  cmdIn,
-			Out: cmdOut,
-			Err: cmdErr,
+			IOStreams: streams,
 		},
 
 		Attach: &DefaultRemoteAttach{},
 	}
 	cmd := &cobra.Command{
-		Use:     "attach (POD | TYPE/NAME) -c CONTAINER",
+		Use: "attach (POD | TYPE/NAME) -c CONTAINER",
+		DisableFlagsInUseLine: true,
 		Short:   i18n.T("Attach to a running container"),
 		Long:    "Attach to a process that is already running inside an existing container.",
-		Example: attach_example,
+		Example: attachExample,
 		Run: func(cmd *cobra.Command, args []string) {
-			cmdutil.CheckErr(options.Complete(f, cmd, args))
-			cmdutil.CheckErr(options.Validate())
-			cmdutil.CheckErr(options.Run())
+			cmdutil.CheckErr(o.Complete(f, cmd, args))
+			cmdutil.CheckErr(o.Validate())
+			cmdutil.CheckErr(o.Run())
 		},
 	}
-	// TODO support UID
-	cmd.Flags().StringVarP(&options.ContainerName, "container", "c", "", "Container name. If omitted, the first container in the pod will be chosen")
-	cmd.Flags().BoolVarP(&options.Stdin, "stdin", "i", false, "Pass stdin to the container")
-	cmd.Flags().BoolVarP(&options.TTY, "tty", "t", false, "Stdin is a TTY")
+	cmdutil.AddPodRunningTimeoutFlag(cmd, defaultPodAttachTimeout)
+	cmd.Flags().StringVarP(&o.ContainerName, "container", "c", o.ContainerName, "Container name. If omitted, the first container in the pod will be chosen")
+	cmd.Flags().BoolVarP(&o.Stdin, "stdin", "i", o.Stdin, "Pass stdin to the container")
+	cmd.Flags().BoolVarP(&o.TTY, "tty", "t", o.TTY, "Stdin is a TTY")
 	return cmd
 }
 
 // RemoteAttach defines the interface accepted by the Attach command - provided for test stubbing
 type RemoteAttach interface {
-	Attach(method string, url *url.URL, config *restclient.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool, terminalSizeQueue term.TerminalSizeQueue) error
+	Attach(method string, url *url.URL, config *restclient.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool, terminalSizeQueue remotecommand.TerminalSizeQueue) error
 }
 
 // DefaultRemoteAttach is the standard implementation of attaching
 type DefaultRemoteAttach struct{}
 
-func (*DefaultRemoteAttach) Attach(method string, url *url.URL, config *restclient.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool, terminalSizeQueue term.TerminalSizeQueue) error {
-	exec, err := remotecommand.NewExecutor(config, method, url)
+func (*DefaultRemoteAttach) Attach(method string, url *url.URL, config *restclient.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool, terminalSizeQueue remotecommand.TerminalSizeQueue) error {
+	exec, err := remotecommand.NewSPDYExecutor(config, method, url)
 	if err != nil {
 		return err
 	}
 	return exec.Stream(remotecommand.StreamOptions{
-		SupportedProtocols: remotecommandserver.SupportedStreamingProtocols,
-		Stdin:              stdin,
-		Stdout:             stdout,
-		Stderr:             stderr,
-		Tty:                tty,
-		TerminalSizeQueue:  terminalSizeQueue,
+		Stdin:             stdin,
+		Stdout:            stdout,
+		Stderr:            stderr,
+		Tty:               tty,
+		TerminalSizeQueue: terminalSizeQueue,
 	})
 }
 
@@ -110,31 +115,38 @@ func (*DefaultRemoteAttach) Attach(method string, url *url.URL, config *restclie
 type AttachOptions struct {
 	StreamOptions
 
-	CommandName string
+	CommandName       string
+	SuggestedCmdUsage string
 
 	Pod *api.Pod
 
-	Attach    RemoteAttach
-	PodClient coreclient.PodsGetter
-	Config    *restclient.Config
+	Attach        RemoteAttach
+	PodClient     coreclient.PodsGetter
+	GetPodTimeout time.Duration
+	Config        *restclient.Config
 }
 
 // Complete verifies command line arguments and loads data from the command environment
 func (p *AttachOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, argsIn []string) error {
 	if len(argsIn) == 0 {
-		return cmdutil.UsageError(cmd, "at least one argument is required for attach")
+		return cmdutil.UsageErrorf(cmd, "at least 1 argument is required for attach")
 	}
 	if len(argsIn) > 2 {
-		return cmdutil.UsageError(cmd, fmt.Sprintf("expected fewer than three arguments: POD or TYPE/NAME or TYPE NAME, saw %d: %s", len(argsIn), argsIn))
+		return cmdutil.UsageErrorf(cmd, "expected POD, TYPE/NAME, or TYPE NAME, (at most 2 arguments) saw %d: %v", len(argsIn), argsIn)
 	}
 
-	namespace, _, err := f.DefaultNamespace()
+	namespace, _, err := f.ToRawKubeConfigLoader().Namespace()
 	if err != nil {
 		return err
 	}
 
-	mapper, typer := f.Object()
-	builder := resource.NewBuilder(mapper, typer, resource.ClientMapperFunc(f.ClientForMapping), f.Decoder(true)).
+	p.GetPodTimeout, err = cmdutil.GetPodRunningTimeoutFlag(cmd)
+	if err != nil {
+		return cmdutil.UsageErrorf(cmd, err.Error())
+	}
+
+	builder := f.NewBuilder().
+		WithScheme(legacyscheme.Scheme).
 		NamespaceParam(namespace).DefaultNamespace()
 
 	switch len(argsIn) {
@@ -149,7 +161,7 @@ func (p *AttachOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, argsIn [
 		return err
 	}
 
-	attachablePod, err := f.AttachablePodForObject(obj)
+	attachablePod, err := polymorphichelpers.AttachablePodForObjectFn(f, obj, p.GetPodTimeout)
 	if err != nil {
 		return err
 	}
@@ -157,7 +169,16 @@ func (p *AttachOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, argsIn [
 	p.PodName = attachablePod.Name
 	p.Namespace = namespace
 
-	config, err := f.ClientConfig()
+	fullCmdName := ""
+	cmdParent := cmd.Parent()
+	if cmdParent != nil {
+		fullCmdName = cmdParent.CommandPath()
+	}
+	if len(fullCmdName) > 0 && cmdutil.IsSiblingCommandExists(cmd, "describe") {
+		p.SuggestedCmdUsage = fmt.Sprintf("Use '%s describe pod/%s -n %s' to see all of the containers in this pod.", fullCmdName, p.PodName, p.Namespace)
+	}
+
+	config, err := f.ToRESTConfig()
 	if err != nil {
 		return err
 	}
@@ -167,6 +188,7 @@ func (p *AttachOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, argsIn [
 	if err != nil {
 		return err
 	}
+
 	p.PodClient = clientset.Core()
 
 	if p.CommandName == "" {
@@ -180,13 +202,13 @@ func (p *AttachOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, argsIn [
 func (p *AttachOptions) Validate() error {
 	allErrs := []error{}
 	if len(p.PodName) == 0 {
-		allErrs = append(allErrs, fmt.Errorf("pod name must be specified"))
+		allErrs = append(allErrs, errors.New("pod name must be specified"))
 	}
-	if p.Out == nil || p.Err == nil {
-		allErrs = append(allErrs, fmt.Errorf("both output and error output must be provided"))
+	if p.Out == nil || p.ErrOut == nil {
+		allErrs = append(allErrs, errors.New("both output and error output must be provided"))
 	}
 	if p.Attach == nil || p.PodClient == nil || p.Config == nil {
-		allErrs = append(allErrs, fmt.Errorf("client, client config, and attach must be provided"))
+		allErrs = append(allErrs, errors.New("client, client config, and attach must be provided"))
 	}
 	return utilerrors.NewAggregate(allErrs)
 }
@@ -215,8 +237,8 @@ func (p *AttachOptions) Run() error {
 	}
 	if p.TTY && !containerToAttach.TTY {
 		p.TTY = false
-		if p.Err != nil {
-			fmt.Fprintf(p.Err, "Unable to use a TTY - container %s did not allocate one\n", containerToAttach.Name)
+		if p.ErrOut != nil {
+			fmt.Fprintf(p.ErrOut, "Unable to use a TTY - container %s did not allocate one\n", containerToAttach.Name)
 		}
 	} else if !p.TTY && containerToAttach.TTY {
 		// the container was launched with a TTY, so we have to force a TTY here, otherwise you'll get
@@ -228,9 +250,9 @@ func (p *AttachOptions) Run() error {
 	t := p.setupTTY()
 
 	// save p.Err so we can print the command prompt message below
-	stderr := p.Err
+	stderr := p.ErrOut
 
-	var sizeQueue term.TerminalSizeQueue
+	var sizeQueue remotecommand.TerminalSizeQueue
 	if t.Raw {
 		if size := t.GetSize(); size != nil {
 			// fake resizing +1 and then back to normal so that attach-detach-reattach will result in the
@@ -245,15 +267,10 @@ func (p *AttachOptions) Run() error {
 
 		// unset p.Err if it was previously set because both stdout and stderr go over p.Out when tty is
 		// true
-		p.Err = nil
+		p.ErrOut = nil
 	}
 
 	fn := func() error {
-
-		if !p.Quiet && stderr != nil {
-			fmt.Fprintln(stderr, "If you don't see a command prompt, try pressing enter.")
-		}
-
 		restClient, err := restclient.RESTClientFor(p.Config)
 		if err != nil {
 			return err
@@ -268,13 +285,16 @@ func (p *AttachOptions) Run() error {
 			Container: containerToAttach.Name,
 			Stdin:     p.Stdin,
 			Stdout:    p.Out != nil,
-			Stderr:    p.Err != nil,
+			Stderr:    p.ErrOut != nil,
 			TTY:       t.Raw,
-		}, api.ParameterCodec)
+		}, legacyscheme.ParameterCodec)
 
-		return p.Attach.Attach("POST", req.URL(), p.Config, p.In, p.Out, p.Err, t.Raw, sizeQueue)
+		return p.Attach.Attach("POST", req.URL(), p.Config, p.In, p.Out, p.ErrOut, t.Raw, sizeQueue)
 	}
 
+	if !p.Quiet && stderr != nil {
+		fmt.Fprintln(stderr, "If you don't see a command prompt, try pressing enter.")
+	}
 	if err := t.Safe(fn); err != nil {
 		return err
 	}
@@ -300,6 +320,11 @@ func (p *AttachOptions) containerToAttachTo(pod *api.Pod) (*api.Container, error
 			}
 		}
 		return nil, fmt.Errorf("container not found (%s)", p.ContainerName)
+	}
+
+	if len(p.SuggestedCmdUsage) > 0 {
+		fmt.Fprintf(p.ErrOut, "Defaulting container name to %s.\n", pod.Spec.Containers[0].Name)
+		fmt.Fprintf(p.ErrOut, "%s\n", p.SuggestedCmdUsage)
 	}
 
 	glog.V(4).Infof("defaulting container name to %s", pod.Spec.Containers[0].Name)

@@ -20,9 +20,11 @@ import (
 	"errors"
 	"testing"
 
+	"k8s.io/api/core/v1"
+	storage "k8s.io/api/storage/v1"
+	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/api/v1"
-	storage "k8s.io/kubernetes/pkg/apis/storage/v1beta1"
+	api "k8s.io/kubernetes/pkg/apis/core"
 )
 
 var class1Parameters = map[string]string{
@@ -31,6 +33,7 @@ var class1Parameters = map[string]string{
 var class2Parameters = map[string]string{
 	"param2": "value2",
 }
+var deleteReclaimPolicy = v1.PersistentVolumeReclaimDelete
 var storageClasses = []*storage.StorageClass{
 	{
 		TypeMeta: metav1.TypeMeta{
@@ -41,8 +44,9 @@ var storageClasses = []*storage.StorageClass{
 			Name: "gold",
 		},
 
-		Provisioner: mockPluginName,
-		Parameters:  class1Parameters,
+		Provisioner:   mockPluginName,
+		Parameters:    class1Parameters,
+		ReclaimPolicy: &deleteReclaimPolicy,
 	},
 	{
 		TypeMeta: metav1.TypeMeta{
@@ -51,8 +55,9 @@ var storageClasses = []*storage.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "silver",
 		},
-		Provisioner: mockPluginName,
-		Parameters:  class2Parameters,
+		Provisioner:   mockPluginName,
+		Parameters:    class2Parameters,
+		ReclaimPolicy: &deleteReclaimPolicy,
 	},
 	{
 		TypeMeta: metav1.TypeMeta{
@@ -61,8 +66,9 @@ var storageClasses = []*storage.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "external",
 		},
-		Provisioner: "vendor.com/my-volume",
-		Parameters:  class1Parameters,
+		Provisioner:   "vendor.com/my-volume",
+		Parameters:    class1Parameters,
+		ReclaimPolicy: &deleteReclaimPolicy,
 	},
 	{
 		TypeMeta: metav1.TypeMeta{
@@ -71,8 +77,21 @@ var storageClasses = []*storage.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "unknown-internal",
 		},
-		Provisioner: "kubernetes.io/unknown",
-		Parameters:  class1Parameters,
+		Provisioner:   "kubernetes.io/unknown",
+		Parameters:    class1Parameters,
+		ReclaimPolicy: &deleteReclaimPolicy,
+	},
+	{
+		TypeMeta: metav1.TypeMeta{
+			Kind: "StorageClass",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "unsupported-mountoptions",
+		},
+		Provisioner:   mockPluginName,
+		Parameters:    class1Parameters,
+		ReclaimPolicy: &deleteReclaimPolicy,
+		MountOptions:  []string{"foo"},
 	},
 }
 
@@ -153,7 +172,7 @@ func TestProvisionSync(t *testing.T) {
 			newClaimArray("claim11-6", "uid11-6", "1Gi", "volume11-6", v1.ClaimBound, &classGold, annBoundByController, annBindCompleted),
 			noevents, noerrors,
 			// No provisioning plugin confingure - makes the test fail when
-			// the controller errorneously tries to provision something
+			// the controller erroneously tries to provision something
 			wrapTestWithProvisionCalls([]provisionCall{provision1Success}, testSyncClaim),
 		},
 		{
@@ -355,38 +374,49 @@ func TestProvisionSync(t *testing.T) {
 			[]string{"Warning ProvisioningFailed"},
 			noerrors, wrapTestWithProvisionCalls([]provisionCall{}, testSyncClaim),
 		},
-	}
-	runSyncTests(t, tests, storageClasses)
-}
-
-func TestAlphaProvisionSync(t *testing.T) {
-	tests := []controllerTest{
 		{
-			// Provision a volume with alpha annotation
-			"14-1 - successful alpha provisioning",
+			// Provision success - first save of a PV to API server fails (API
+			// server has written the object to etcd, but crashed before sending
+			// 200 OK response to the controller). Controller retries and the
+			// second save of the PV returns "AlreadyExists" because the PV
+			// object already is in the API server.
+			//
+			"11-19 - provisioned volume saved but API server crashed",
 			novolumes,
-			newVolumeArray("pvc-uid14-1", "1Gi", "uid14-1", "claim14-1", v1.VolumeBound, v1.PersistentVolumeReclaimDelete, classEmpty, annBoundByController, annDynamicallyProvisioned),
-			newClaimArray("claim14-1", "uid14-1", "1Gi", "", v1.ClaimPending, nil, v1.AlphaStorageClassAnnotation),
-			// Binding will be completed in the next syncClaim
-			newClaimArray("claim14-1", "uid14-1", "1Gi", "", v1.ClaimPending, nil, v1.AlphaStorageClassAnnotation, annStorageProvisioner),
-			noevents, noerrors, wrapTestWithProvisionCalls([]provisionCall{provisionAlphaSuccess}, testSyncClaim),
+			// We don't actually simulate API server saving the object and
+			// crashing afterwards, Create() just returns error without saving
+			// the volume in this test. So the set of expected volumes at the
+			// end of the test is empty.
+			novolumes,
+			newClaimArray("claim11-19", "uid11-19", "1Gi", "", v1.ClaimPending, &classGold),
+			newClaimArray("claim11-19", "uid11-19", "1Gi", "", v1.ClaimPending, &classGold, annStorageProvisioner),
+			noevents,
+			[]reactorError{
+				// Inject errors to simulate crashed API server during
+				// kubeclient.PersistentVolumes.Create()
+				{"create", "persistentvolumes", errors.New("Mock creation error1")},
+				{"create", "persistentvolumes", apierrs.NewAlreadyExists(api.Resource("persistentvolumes"), "")},
+			},
+			wrapTestWithPluginCalls(
+				nil, // recycle calls
+				nil, // delete calls - if Delete was called the test would fail
+				[]provisionCall{provision1Success},
+				testSyncClaim,
+			),
 		},
 		{
-			// Provision success - there is already a volume available, still
-			// we provision a new one when requested.
-			"14-2 - no alpha provisioning when there is a volume available",
-			newVolumeArray("volume14-2", "1Gi", "", "", v1.VolumePending, v1.PersistentVolumeReclaimRetain, classEmpty),
-			[]*v1.PersistentVolume{
-				newVolume("volume14-2", "1Gi", "", "", v1.VolumePending, v1.PersistentVolumeReclaimRetain, classEmpty),
-				newVolume("pvc-uid14-2", "1Gi", "uid14-2", "claim14-2", v1.VolumeBound, v1.PersistentVolumeReclaimDelete, classEmpty, annBoundByController, annDynamicallyProvisioned),
-			},
-			newClaimArray("claim14-2", "uid14-2", "1Gi", "", v1.ClaimPending, nil, v1.AlphaStorageClassAnnotation),
-			// Binding will be completed in the next syncClaim
-			newClaimArray("claim14-2", "uid14-2", "1Gi", "", v1.ClaimPending, nil, v1.AlphaStorageClassAnnotation, annStorageProvisioner),
-			noevents, noerrors, wrapTestWithProvisionCalls([]provisionCall{provisionAlphaSuccess}, testSyncClaim),
+			// No provisioning + warning event with unsupported storageClass.mountOptions
+			"11-20 - unsupported storageClass.mountOptions",
+			novolumes,
+			novolumes,
+			newClaimArray("claim11-20", "uid11-20", "1Gi", "", v1.ClaimPending, &classUnsupportedMountOptions),
+			newClaimArray("claim11-20", "uid11-20", "1Gi", "", v1.ClaimPending, &classUnsupportedMountOptions, annStorageProvisioner),
+			// Expect event to be prefixed with "Mount options" because saving PV will fail anyway
+			[]string{"Warning ProvisioningFailed Mount options"},
+			noerrors, wrapTestWithProvisionCalls([]provisionCall{}, testSyncClaim),
 		},
 	}
-	runSyncTests(t, tests, []*storage.StorageClass{})
+	runSyncTests(t, tests, storageClasses, []*v1.Pod{})
 }
 
 // Test multiple calls to syncClaim/syncVolume and periodic sync of all
@@ -421,7 +451,10 @@ func TestProvisionMultiSync(t *testing.T) {
 
 // When provisioning is disabled, provisioning a claim should instantly return nil
 func TestDisablingDynamicProvisioner(t *testing.T) {
-	ctrl := newTestController(nil, nil, false)
+	ctrl, err := newTestController(nil, nil, false)
+	if err != nil {
+		t.Fatalf("Construct PersistentVolume controller failed: %v", err)
+	}
 	retVal := ctrl.provisionClaim(nil)
 	if retVal != nil {
 		t.Errorf("Expected nil return but got %v", retVal)

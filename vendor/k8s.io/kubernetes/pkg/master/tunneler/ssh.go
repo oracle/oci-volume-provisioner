@@ -17,6 +17,7 @@ limitations under the License.
 package tunneler
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -26,23 +27,23 @@ import (
 	"sync/atomic"
 	"time"
 
+	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/util/clock"
 	"k8s.io/kubernetes/pkg/ssh"
-	"k8s.io/kubernetes/pkg/util"
+	utilfile "k8s.io/kubernetes/pkg/util/file"
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-type InstallSSHKey func(user string, data []byte) error
+type InstallSSHKey func(ctx context.Context, user string, data []byte) error
 
 type AddressFunc func() (addresses []string, err error)
 
 type Tunneler interface {
 	Run(AddressFunc)
 	Stop()
-	Dial(net, addr string) (net.Conn, error)
+	Dial(ctx context.Context, net, addr string) (net.Conn, error)
 	SecondsSinceSync() int64
 	SecondsSinceSSHKeySync() int64
 }
@@ -56,11 +57,16 @@ func TunnelSyncHealthChecker(tunneler Tunneler) func(req *http.Request) error {
 		}
 		lag := tunneler.SecondsSinceSync()
 		if lag > 600 {
-			return fmt.Errorf("Tunnel sync is taking to long: %d", lag)
+			return fmt.Errorf("Tunnel sync is taking too long: %d", lag)
 		}
 		sshKeyLag := tunneler.SecondsSinceSSHKeySync()
-		if sshKeyLag > 600 {
-			return fmt.Errorf("SSHKey sync is taking to long: %d", sshKeyLag)
+		// Since we are syncing ssh-keys every 5 minutes, the allowed
+		// lag since last sync should be more than 2x higher than that
+		// to allow for single failure, which can always happen.
+		// For now set it to 3x, which is 15 minutes.
+		// For more details see: http://pr.k8s.io/59347
+		if sshKeyLag > 900 {
+			return fmt.Errorf("SSHKey sync is taking too long: %d", sshKeyLag)
 		}
 		return nil
 	}
@@ -116,7 +122,7 @@ func (c *SSHTunneler) Run(getAddresses AddressFunc) {
 
 	// public keyfile is written last, so check for that.
 	publicKeyFile := c.SSHKeyfile + ".pub"
-	exists, err := util.FileExists(publicKeyFile)
+	exists, err := utilfile.FileExists(publicKeyFile)
 	if err != nil {
 		glog.Errorf("Error detecting if key exists: %v", err)
 	} else if !exists {
@@ -143,8 +149,8 @@ func (c *SSHTunneler) Stop() {
 	}
 }
 
-func (c *SSHTunneler) Dial(net, addr string) (net.Conn, error) {
-	return c.tunnels.Dial(net, addr)
+func (c *SSHTunneler) Dial(ctx context.Context, net, addr string) (net.Conn, error) {
+	return c.tunnels.Dial(ctx, net, addr)
 }
 
 func (c *SSHTunneler) SecondsSinceSync() int64 {
@@ -175,7 +181,7 @@ func (c *SSHTunneler) installSSHKeySyncLoop(user, publicKeyfile string) {
 			glog.Errorf("Failed to encode public key: %v", err)
 			return
 		}
-		if err := c.InstallSSHKey(user, keyData); err != nil {
+		if err := c.InstallSSHKey(context.TODO(), user, keyData); err != nil {
 			glog.Errorf("Failed to install ssh key: %v", err)
 			return
 		}
@@ -205,7 +211,7 @@ func generateSSHKey(privateKeyfile, publicKeyfile string) error {
 	}
 	// If private keyfile already exists, we must have only made it halfway
 	// through last time, so delete it.
-	exists, err := util.FileExists(privateKeyfile)
+	exists, err := utilfile.FileExists(privateKeyfile)
 	if err != nil {
 		glog.Errorf("Error detecting if private key exists: %v", err)
 	} else if exists {

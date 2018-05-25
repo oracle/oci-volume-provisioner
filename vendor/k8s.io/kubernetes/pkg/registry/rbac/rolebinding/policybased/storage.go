@@ -18,12 +18,17 @@ limitations under the License.
 package policybased
 
 import (
+	"context"
+
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
+	kapihelper "k8s.io/kubernetes/pkg/apis/core/helper"
 	"k8s.io/kubernetes/pkg/apis/rbac"
+	rbacv1helpers "k8s.io/kubernetes/pkg/apis/rbac/v1"
 	rbacregistry "k8s.io/kubernetes/pkg/registry/rbac"
 	rbacregistryvalidation "k8s.io/kubernetes/pkg/registry/rbac/validation"
 )
@@ -42,9 +47,13 @@ func NewStorage(s rest.StandardStorage, authorizer authorizer.Authorizer, ruleRe
 	return &Storage{s, authorizer, ruleResolver}
 }
 
-func (s *Storage) Create(ctx genericapirequest.Context, obj runtime.Object) (runtime.Object, error) {
+func (r *Storage) NamespaceScoped() bool {
+	return true
+}
+
+func (s *Storage) Create(ctx context.Context, obj runtime.Object, createValidation rest.ValidateObjectFunc, includeUninitialized bool) (runtime.Object, error) {
 	if rbacregistry.EscalationAllowed(ctx) {
-		return s.StandardStorage.Create(ctx, obj)
+		return s.StandardStorage.Create(ctx, obj, createValidation, includeUninitialized)
 	}
 
 	// Get the namespace from the context (populated from the URL).
@@ -56,25 +65,30 @@ func (s *Storage) Create(ctx genericapirequest.Context, obj runtime.Object) (run
 
 	roleBinding := obj.(*rbac.RoleBinding)
 	if rbacregistry.BindingAuthorized(ctx, roleBinding.RoleRef, namespace, s.authorizer) {
-		return s.StandardStorage.Create(ctx, obj)
+		return s.StandardStorage.Create(ctx, obj, createValidation, includeUninitialized)
 	}
 
-	rules, err := s.ruleResolver.GetRoleReferenceRules(roleBinding.RoleRef, namespace)
+	v1RoleRef := rbacv1.RoleRef{}
+	err := rbacv1helpers.Convert_rbac_RoleRef_To_v1_RoleRef(&roleBinding.RoleRef, &v1RoleRef, nil)
+	if err != nil {
+		return nil, err
+	}
+	rules, err := s.ruleResolver.GetRoleReferenceRules(v1RoleRef, namespace)
 	if err != nil {
 		return nil, err
 	}
 	if err := rbacregistryvalidation.ConfirmNoEscalation(ctx, s.ruleResolver, rules); err != nil {
 		return nil, errors.NewForbidden(groupResource, roleBinding.Name, err)
 	}
-	return s.StandardStorage.Create(ctx, obj)
+	return s.StandardStorage.Create(ctx, obj, createValidation, includeUninitialized)
 }
 
-func (s *Storage) Update(ctx genericapirequest.Context, name string, obj rest.UpdatedObjectInfo) (runtime.Object, bool, error) {
+func (s *Storage) Update(ctx context.Context, name string, obj rest.UpdatedObjectInfo, createValidation rest.ValidateObjectFunc, updateValidation rest.ValidateObjectUpdateFunc) (runtime.Object, bool, error) {
 	if rbacregistry.EscalationAllowed(ctx) {
-		return s.StandardStorage.Update(ctx, name, obj)
+		return s.StandardStorage.Update(ctx, name, obj, createValidation, updateValidation)
 	}
 
-	nonEscalatingInfo := rest.WrapUpdatedObjectInfo(obj, func(ctx genericapirequest.Context, obj runtime.Object, oldObj runtime.Object) (runtime.Object, error) {
+	nonEscalatingInfo := rest.WrapUpdatedObjectInfo(obj, func(ctx context.Context, obj runtime.Object, oldObj runtime.Object) (runtime.Object, error) {
 		// Get the namespace from the context (populated from the URL).
 		// The namespace in the object can be empty until StandardStorage.Update()->BeforeUpdate() populates it from the context.
 		namespace, ok := genericapirequest.NamespaceFrom(ctx)
@@ -84,13 +98,23 @@ func (s *Storage) Update(ctx genericapirequest.Context, name string, obj rest.Up
 
 		roleBinding := obj.(*rbac.RoleBinding)
 
+		// if we're only mutating fields needed for the GC to eventually delete this obj, return
+		if rbacregistry.IsOnlyMutatingGCFields(obj, oldObj, kapihelper.Semantic) {
+			return obj, nil
+		}
+
 		// if we're explicitly authorized to bind this role, return
 		if rbacregistry.BindingAuthorized(ctx, roleBinding.RoleRef, namespace, s.authorizer) {
 			return obj, nil
 		}
 
 		// Otherwise, see if we already have all the permissions contained in the referenced role
-		rules, err := s.ruleResolver.GetRoleReferenceRules(roleBinding.RoleRef, namespace)
+		v1RoleRef := rbacv1.RoleRef{}
+		err := rbacv1helpers.Convert_rbac_RoleRef_To_v1_RoleRef(&roleBinding.RoleRef, &v1RoleRef, nil)
+		if err != nil {
+			return nil, err
+		}
+		rules, err := s.ruleResolver.GetRoleReferenceRules(v1RoleRef, namespace)
 		if err != nil {
 			return nil, err
 		}
@@ -100,5 +124,5 @@ func (s *Storage) Update(ctx genericapirequest.Context, name string, obj rest.Up
 		return obj, nil
 	})
 
-	return s.StandardStorage.Update(ctx, name, nonEscalatingInfo)
+	return s.StandardStorage.Update(ctx, name, nonEscalatingInfo, createValidation, updateValidation)
 }

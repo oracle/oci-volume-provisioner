@@ -19,72 +19,89 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/api"
+	utilnet "k8s.io/apimachinery/pkg/util/net"
+	restclient "k8s.io/client-go/rest"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/kubectl/cmd/templates"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
-	"k8s.io/kubernetes/pkg/kubectl/resource"
-	"k8s.io/kubernetes/pkg/util/i18n"
+	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
+	"k8s.io/kubernetes/pkg/kubectl/genericclioptions/resource"
+	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
 
-	"github.com/daviddengcn/go-colortext"
+	ct "github.com/daviddengcn/go-colortext"
 	"github.com/spf13/cobra"
 )
 
 var (
-	longDescr = templates.LongDesc(`
+	longDescr = templates.LongDesc(i18n.T(`
   Display addresses of the master and services with label kubernetes.io/cluster-service=true
-  To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.`)
+  To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.`))
 
-	clusterinfo_example = templates.Examples(`
+	clusterinfoExample = templates.Examples(i18n.T(`
 		# Print the address of the master and cluster services
-		kubectl cluster-info`)
+		kubectl cluster-info`))
 )
 
-func NewCmdClusterInfo(f cmdutil.Factory, out io.Writer) *cobra.Command {
+type ClusterInfoOptions struct {
+	genericclioptions.IOStreams
+
+	Namespace string
+
+	Builder *resource.Builder
+	Client  *restclient.Config
+}
+
+func NewCmdClusterInfo(f cmdutil.Factory, ioStreams genericclioptions.IOStreams) *cobra.Command {
+	o := &ClusterInfoOptions{
+		IOStreams: ioStreams,
+	}
+
 	cmd := &cobra.Command{
-		Use: "cluster-info",
-		// clusterinfo is deprecated.
-		Aliases: []string{"clusterinfo"},
+		Use:     "cluster-info",
 		Short:   i18n.T("Display cluster info"),
 		Long:    longDescr,
-		Example: clusterinfo_example,
+		Example: clusterinfoExample,
 		Run: func(cmd *cobra.Command, args []string) {
-			err := RunClusterInfo(f, out, cmd)
-			cmdutil.CheckErr(err)
+			cmdutil.CheckErr(o.Complete(f, cmd))
+			cmdutil.CheckErr(o.Run())
 		},
 	}
-	cmdutil.AddInclude3rdPartyFlags(cmd)
-	cmd.AddCommand(NewCmdClusterInfoDump(f, out))
+	cmd.AddCommand(NewCmdClusterInfoDump(f, ioStreams))
 	return cmd
 }
 
-func RunClusterInfo(f cmdutil.Factory, out io.Writer, cmd *cobra.Command) error {
-	if len(os.Args) > 1 && os.Args[1] == "clusterinfo" {
-		printDeprecationWarning("cluster-info", "clusterinfo")
-	}
-
-	client, err := f.ClientConfig()
+func (o *ClusterInfoOptions) Complete(f cmdutil.Factory, cmd *cobra.Command) error {
+	var err error
+	o.Client, err = f.ToRESTConfig()
 	if err != nil {
 		return err
 	}
-	printService(out, "Kubernetes master", client.Host)
 
-	mapper, typer := f.Object()
 	cmdNamespace := cmdutil.GetFlagString(cmd, "namespace")
 	if cmdNamespace == "" {
 		cmdNamespace = metav1.NamespaceSystem
 	}
+	o.Namespace = cmdNamespace
+
+	o.Builder = f.NewBuilder()
+	return nil
+}
+
+func (o *ClusterInfoOptions) Run() error {
+	printService(o.Out, "Kubernetes master", o.Client.Host)
 
 	// TODO use generalized labels once they are implemented (#341)
-	b := resource.NewBuilder(mapper, typer, resource.ClientMapperFunc(f.ClientForMapping), f.Decoder(true)).
-		NamespaceParam(cmdNamespace).DefaultNamespace().
-		SelectorParam("kubernetes.io/cluster-service=true").
+	b := o.Builder.
+		WithScheme(legacyscheme.Scheme).
+		NamespaceParam(o.Namespace).DefaultNamespace().
+		LabelSelectorParam("kubernetes.io/cluster-service=true").
 		ResourceTypeOrNameArgs(false, []string{"services"}...).
 		Latest()
-	b.Do().Visit(func(r *resource.Info, err error) error {
+	err := b.Do().Visit(func(r *resource.Info, err error) error {
 		if err != nil {
 			return err
 		}
@@ -101,10 +118,25 @@ func RunClusterInfo(f cmdutil.Factory, out io.Writer, cmd *cobra.Command) error 
 					link += "http://" + ip + ":" + strconv.Itoa(int(port.Port)) + " "
 				}
 			} else {
-				if len(client.GroupVersion.Group) == 0 {
-					link = client.Host + "/api/" + client.GroupVersion.Version + "/proxy/namespaces/" + service.ObjectMeta.Namespace + "/services/" + service.ObjectMeta.Name
+				name := service.ObjectMeta.Name
+
+				if len(service.Spec.Ports) > 0 {
+					port := service.Spec.Ports[0]
+
+					// guess if the scheme is https
+					scheme := ""
+					if port.Name == "https" || port.Port == 443 {
+						scheme = "https"
+					}
+
+					// format is <scheme>:<service-name>:<service-port-name>
+					name = utilnet.JoinSchemeNamePort(scheme, service.ObjectMeta.Name, port.Name)
+				}
+
+				if len(o.Client.GroupVersion.Group) == 0 {
+					link = o.Client.Host + "/api/" + o.Client.GroupVersion.Version + "/namespaces/" + service.ObjectMeta.Namespace + "/services/" + name + "/proxy"
 				} else {
-					link = client.Host + "/api/" + client.GroupVersion.Group + "/" + client.GroupVersion.Version + "/proxy/namespaces/" + service.ObjectMeta.Namespace + "/services/" + service.ObjectMeta.Name
+					link = o.Client.Host + "/api/" + o.Client.GroupVersion.Group + "/" + o.Client.GroupVersion.Version + "/namespaces/" + service.ObjectMeta.Namespace + "/services/" + name + "/proxy"
 
 				}
 			}
@@ -112,12 +144,12 @@ func RunClusterInfo(f cmdutil.Factory, out io.Writer, cmd *cobra.Command) error 
 			if len(name) == 0 {
 				name = service.ObjectMeta.Name
 			}
-			printService(out, name, link)
+			printService(o.Out, name, link)
 		}
 		return nil
 	})
-	out.Write([]byte("\nTo further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.\n"))
-	return nil
+	o.Out.Write([]byte("\nTo further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.\n"))
+	return err
 
 	// TODO consider printing more information about cluster
 }
@@ -126,7 +158,7 @@ func printService(out io.Writer, name, link string) {
 	ct.ChangeColor(ct.Green, false, ct.None, false)
 	fmt.Fprint(out, name)
 	ct.ResetColor()
-	fmt.Fprintf(out, " is running at ")
+	fmt.Fprint(out, " is running at ")
 	ct.ChangeColor(ct.Yellow, false, ct.None, false)
 	fmt.Fprint(out, link)
 	ct.ResetColor()

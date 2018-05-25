@@ -21,21 +21,22 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	core "k8s.io/client-go/testing"
-	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/volume"
 	volumetest "k8s.io/kubernetes/pkg/volume/testing"
-	"k8s.io/kubernetes/pkg/volume/util/volumehelper"
+	"k8s.io/kubernetes/pkg/volume/util"
 )
 
 func TestListVolumesForPod(t *testing.T) {
 	testKubelet := newTestKubelet(t, false /* controllerAttachDetachEnabled */)
+	defer testKubelet.Cleanup()
 	kubelet := testKubelet.kubelet
 
-	pod := podWithUidNameNsSpec("12345678", "foo", "test", v1.PodSpec{
+	pod := podWithUIDNameNsSpec("12345678", "foo", "test", v1.PodSpec{
 		Volumes: []v1.Volume{
 			{
 				Name: "vol1",
@@ -57,30 +58,22 @@ func TestListVolumesForPod(t *testing.T) {
 	})
 
 	stopCh := runVolumeManager(kubelet)
-	defer func() {
-		close(stopCh)
-	}()
+	defer close(stopCh)
 
 	kubelet.podManager.SetPods([]*v1.Pod{pod})
 	err := kubelet.volumeManager.WaitForAttachAndMount(pod)
 	assert.NoError(t, err)
 
-	podName := volumehelper.GetUniquePodName(pod)
+	podName := util.GetUniquePodName(pod)
 
 	volumesToReturn, volumeExsit := kubelet.ListVolumesForPod(types.UID(podName))
-	if !volumeExsit {
-		t.Errorf("Expected to find volumes for pod %q, but ListVolumesForPod find no volume", podName)
-	}
+	assert.True(t, volumeExsit, "expected to find volumes for pod %q", podName)
 
 	outerVolumeSpecName1 := "vol1"
-	if volumesToReturn[outerVolumeSpecName1] == nil {
-		t.Errorf("Value of map volumesToReturn is not expected to be nil, which key is : %s", outerVolumeSpecName1)
-	}
+	assert.NotNil(t, volumesToReturn[outerVolumeSpecName1], "key %s", outerVolumeSpecName1)
 
 	outerVolumeSpecName2 := "vol2"
-	if volumesToReturn[outerVolumeSpecName2] == nil {
-		t.Errorf("Value of map volumesToReturn is not expected to be nil, which key is : %s", outerVolumeSpecName2)
-	}
+	assert.NotNil(t, volumesToReturn[outerVolumeSpecName2], "key %s", outerVolumeSpecName2)
 
 }
 
@@ -147,25 +140,17 @@ func TestPodVolumesExist(t *testing.T) {
 	}
 
 	stopCh := runVolumeManager(kubelet)
-	defer func() {
-		close(stopCh)
-	}()
+	defer close(stopCh)
 
 	kubelet.podManager.SetPods(pods)
 	for _, pod := range pods {
 		err := kubelet.volumeManager.WaitForAttachAndMount(pod)
-		if err != nil {
-			t.Errorf("Expected success: %v", err)
-		}
+		assert.NoError(t, err)
 	}
 
 	for _, pod := range pods {
 		podVolumesExist := kubelet.podVolumesExist(pod.UID)
-		if !podVolumesExist {
-			t.Errorf(
-				"Expected to find volumes for pod %q, but podVolumesExist returned false",
-				pod.UID)
-		}
+		assert.True(t, podVolumesExist, "pod %q", pod.UID)
 	}
 }
 
@@ -174,7 +159,7 @@ func TestVolumeAttachAndMountControllerDisabled(t *testing.T) {
 	defer testKubelet.Cleanup()
 	kubelet := testKubelet.kubelet
 
-	pod := podWithUidNameNsSpec("12345678", "foo", "test", v1.PodSpec{
+	pod := podWithUIDNameNsSpec("12345678", "foo", "test", v1.PodSpec{
 		Volumes: []v1.Volume{
 			{
 				Name: "vol1",
@@ -188,16 +173,14 @@ func TestVolumeAttachAndMountControllerDisabled(t *testing.T) {
 	})
 
 	stopCh := runVolumeManager(kubelet)
-	defer func() {
-		close(stopCh)
-	}()
+	defer close(stopCh)
 
 	kubelet.podManager.SetPods([]*v1.Pod{pod})
 	err := kubelet.volumeManager.WaitForAttachAndMount(pod)
 	assert.NoError(t, err)
 
 	podVolumes := kubelet.volumeManager.GetMountedVolumesForPod(
-		volumehelper.GetUniquePodName(pod))
+		util.GetUniquePodName(pod))
 
 	expectedPodVolumes := []string{"vol1"}
 	assert.Len(t, podVolumes, len(expectedPodVolumes), "Volumes for pod %+v", pod)
@@ -220,7 +203,7 @@ func TestVolumeUnmountAndDetachControllerDisabled(t *testing.T) {
 	defer testKubelet.Cleanup()
 	kubelet := testKubelet.kubelet
 
-	pod := podWithUidNameNsSpec("12345678", "foo", "test", v1.PodSpec{
+	pod := podWithUIDNameNsSpec("12345678", "foo", "test", v1.PodSpec{
 		Volumes: []v1.Volume{
 			{
 				Name: "vol1",
@@ -234,9 +217,7 @@ func TestVolumeUnmountAndDetachControllerDisabled(t *testing.T) {
 	})
 
 	stopCh := runVolumeManager(kubelet)
-	defer func() {
-		close(stopCh)
-	}()
+	defer close(stopCh)
 
 	// Add pod
 	kubelet.podManager.SetPods([]*v1.Pod{pod})
@@ -246,7 +227,7 @@ func TestVolumeUnmountAndDetachControllerDisabled(t *testing.T) {
 	assert.NoError(t, err)
 
 	podVolumes := kubelet.volumeManager.GetMountedVolumesForPod(
-		volumehelper.GetUniquePodName(pod))
+		util.GetUniquePodName(pod))
 
 	expectedPodVolumes := []string{"vol1"}
 	assert.Len(t, podVolumes, len(expectedPodVolumes), "Volumes for pod %+v", pod)
@@ -271,7 +252,7 @@ func TestVolumeUnmountAndDetachControllerDisabled(t *testing.T) {
 
 	// Verify volumes unmounted
 	podVolumes = kubelet.volumeManager.GetMountedVolumesForPod(
-		volumehelper.GetUniquePodName(pod))
+		util.GetUniquePodName(pod))
 
 	assert.Len(t, podVolumes, 0,
 		"Expected volumes to be unmounted and detached. But some volumes are still mounted: %#v", podVolumes)
@@ -280,7 +261,7 @@ func TestVolumeUnmountAndDetachControllerDisabled(t *testing.T) {
 		1 /* expectedTearDownCallCount */, testKubelet.volumePlugin))
 
 	// Verify volumes detached and no longer reported as in use
-	assert.NoError(t, waitForVolumeDetach(v1.UniqueVolumeName("fake/vol1"), kubelet.volumeManager))
+	assert.NoError(t, waitForVolumeDetach(v1.UniqueVolumeName("fake/fake-device"), kubelet.volumeManager))
 	assert.True(t, testKubelet.volumePlugin.GetNewAttacherCallCount() >= 1, "Expected plugin NewAttacher to be called at least once")
 	assert.NoError(t, volumetest.VerifyDetachCallCount(
 		1 /* expectedDetachCallCount */, testKubelet.volumePlugin))
@@ -298,18 +279,17 @@ func TestVolumeAttachAndMountControllerEnabled(t *testing.T) {
 				Status: v1.NodeStatus{
 					VolumesAttached: []v1.AttachedVolume{
 						{
-							Name:       "fake/vol1",
+							Name:       "fake/fake-device",
 							DevicePath: "fake/path",
 						},
 					}},
-				Spec: v1.NodeSpec{ExternalID: testKubeletHostname},
 			}, nil
 		})
 	kubeClient.AddReactor("*", "*", func(action core.Action) (bool, runtime.Object, error) {
 		return true, nil, fmt.Errorf("no reaction implemented for %s", action)
 	})
 
-	pod := podWithUidNameNsSpec("12345678", "foo", "test", v1.PodSpec{
+	pod := podWithUIDNameNsSpec("12345678", "foo", "test", v1.PodSpec{
 		Volumes: []v1.Volume{
 			{
 				Name: "vol1",
@@ -323,22 +303,20 @@ func TestVolumeAttachAndMountControllerEnabled(t *testing.T) {
 	})
 
 	stopCh := runVolumeManager(kubelet)
-	defer func() {
-		close(stopCh)
-	}()
+	defer close(stopCh)
 
 	kubelet.podManager.SetPods([]*v1.Pod{pod})
 
 	// Fake node status update
 	go simulateVolumeInUseUpdate(
-		v1.UniqueVolumeName("fake/vol1"),
+		v1.UniqueVolumeName("fake/fake-device"),
 		stopCh,
 		kubelet.volumeManager)
 
 	assert.NoError(t, kubelet.volumeManager.WaitForAttachAndMount(pod))
 
 	podVolumes := kubelet.volumeManager.GetMountedVolumesForPod(
-		volumehelper.GetUniquePodName(pod))
+		util.GetUniquePodName(pod))
 
 	expectedPodVolumes := []string{"vol1"}
 	assert.Len(t, podVolumes, len(expectedPodVolumes), "Volumes for pod %+v", pod)
@@ -367,18 +345,17 @@ func TestVolumeUnmountAndDetachControllerEnabled(t *testing.T) {
 				Status: v1.NodeStatus{
 					VolumesAttached: []v1.AttachedVolume{
 						{
-							Name:       "fake/vol1",
+							Name:       "fake/fake-device",
 							DevicePath: "fake/path",
 						},
 					}},
-				Spec: v1.NodeSpec{ExternalID: testKubeletHostname},
 			}, nil
 		})
 	kubeClient.AddReactor("*", "*", func(action core.Action) (bool, runtime.Object, error) {
 		return true, nil, fmt.Errorf("no reaction implemented for %s", action)
 	})
 
-	pod := podWithUidNameNsSpec("12345678", "foo", "test", v1.PodSpec{
+	pod := podWithUIDNameNsSpec("12345678", "foo", "test", v1.PodSpec{
 		Volumes: []v1.Volume{
 			{
 				Name: "vol1",
@@ -392,16 +369,14 @@ func TestVolumeUnmountAndDetachControllerEnabled(t *testing.T) {
 	})
 
 	stopCh := runVolumeManager(kubelet)
-	defer func() {
-		close(stopCh)
-	}()
+	defer close(stopCh)
 
 	// Add pod
 	kubelet.podManager.SetPods([]*v1.Pod{pod})
 
 	// Fake node status update
 	go simulateVolumeInUseUpdate(
-		v1.UniqueVolumeName("fake/vol1"),
+		v1.UniqueVolumeName("fake/fake-device"),
 		stopCh,
 		kubelet.volumeManager)
 
@@ -409,7 +384,7 @@ func TestVolumeUnmountAndDetachControllerEnabled(t *testing.T) {
 	assert.NoError(t, kubelet.volumeManager.WaitForAttachAndMount(pod))
 
 	podVolumes := kubelet.volumeManager.GetMountedVolumesForPod(
-		volumehelper.GetUniquePodName(pod))
+		util.GetUniquePodName(pod))
 
 	expectedPodVolumes := []string{"vol1"}
 	assert.Len(t, podVolumes, len(expectedPodVolumes), "Volumes for pod %+v", pod)
@@ -433,7 +408,7 @@ func TestVolumeUnmountAndDetachControllerEnabled(t *testing.T) {
 
 	// Verify volumes unmounted
 	podVolumes = kubelet.volumeManager.GetMountedVolumesForPod(
-		volumehelper.GetUniquePodName(pod))
+		util.GetUniquePodName(pod))
 
 	assert.Len(t, podVolumes, 0,
 		"Expected volumes to be unmounted and detached. But some volumes are still mounted: %#v", podVolumes)
@@ -442,7 +417,7 @@ func TestVolumeUnmountAndDetachControllerEnabled(t *testing.T) {
 		1 /* expectedTearDownCallCount */, testKubelet.volumePlugin))
 
 	// Verify volumes detached and no longer reported as in use
-	assert.NoError(t, waitForVolumeDetach(v1.UniqueVolumeName("fake/vol1"), kubelet.volumeManager))
+	assert.NoError(t, waitForVolumeDetach(v1.UniqueVolumeName("fake/fake-device"), kubelet.volumeManager))
 	assert.True(t, testKubelet.volumePlugin.GetNewAttacherCallCount() >= 1, "Expected plugin NewAttacher to be called at least once")
 	assert.NoError(t, volumetest.VerifyZeroDetachCallCount(testKubelet.volumePlugin))
 }
@@ -469,5 +444,30 @@ func (f *stubVolume) SetUp(fsGroup *int64) error {
 }
 
 func (f *stubVolume) SetUpAt(dir string, fsGroup *int64) error {
+	return nil
+}
+
+type stubBlockVolume struct {
+	dirPath string
+	volName string
+}
+
+func (f *stubBlockVolume) GetGlobalMapPath(spec *volume.Spec) (string, error) {
+	return "", nil
+}
+
+func (f *stubBlockVolume) GetPodDeviceMapPath() (string, string) {
+	return f.dirPath, f.volName
+}
+
+func (f *stubBlockVolume) SetUpDevice() (string, error) {
+	return "", nil
+}
+
+func (f stubBlockVolume) MapDevice(devicePath, globalMapPath, volumeMapPath, volumeMapName string, podUID types.UID) error {
+	return nil
+}
+
+func (f *stubBlockVolume) TearDownDevice(mapPath string, devicePath string) error {
 	return nil
 }

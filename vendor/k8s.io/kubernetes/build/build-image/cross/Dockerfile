@@ -15,7 +15,7 @@
 # This file creates a standard build environment for building cross
 # platform go binary for the architecture kubernetes cares about.
 
-FROM golang:1.7.5
+FROM golang:1.10.3
 
 ENV GOARM 7
 ENV KUBE_DYNAMIC_CROSSPLATFORMS \
@@ -37,7 +37,7 @@ RUN for platform in ${KUBE_CROSSPLATFORMS}; do GOOS=${platform%/*} GOARCH=${plat
 
 # Install g++, then download and install protoc for generating protobuf output
 RUN apt-get update \
-  && apt-get install -y g++ rsync apt-utils file patch \
+  && apt-get install -y g++ rsync jq apt-utils file patch \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /usr/local/src/protobuf \
@@ -62,27 +62,17 @@ RUN echo "deb http://archive.ubuntu.com/ubuntu xenial main universe" > /etc/apt/
 
 # work around 64MB tmpfs size in Docker 1.6
 ENV TMPDIR /tmp.k8s
-
-# Get the code coverage tool, goimports, and godep
 RUN mkdir $TMPDIR \
   && chmod a+rwx $TMPDIR \
-  && chmod o+t $TMPDIR \
-  && go get golang.org/x/tools/cmd/cover \
-            golang.org/x/tools/cmd/goimports \
-            github.com/tools/godep
+  && chmod o+t $TMPDIR
+
+# Get the code coverage tool and goimports
+RUN go get golang.org/x/tools/cmd/cover \
+            golang.org/x/tools/cmd/goimports
 
 # Download and symlink etcd. We need this for our integration tests.
-RUN export ETCD_VERSION=v3.0.17; \
+RUN export ETCD_VERSION=v3.2.18; \
   mkdir -p /usr/local/src/etcd \
   && cd /usr/local/src/etcd \
   && curl -fsSL https://github.com/coreos/etcd/releases/download/${ETCD_VERSION}/etcd-${ETCD_VERSION}-linux-amd64.tar.gz | tar -xz \
   && ln -s ../src/etcd/etcd-${ETCD_VERSION}-linux-amd64/etcd /usr/local/bin/
-
-# TODO: Remove the need for two golang versions; when we use go1.8 for all other builds we can remove this
-ENV K8S_GOLANG_EDGE_VERSION=1.8rc2 \
-    K8S_EDGE_GOROOT=/usr/local/go_k8s_edge
-RUN mkdir -p ${K8S_EDGE_GOROOT} \
-  && curl -sSL https://golang.org/dl/go${K8S_GOLANG_EDGE_VERSION}.linux-amd64.tar.gz | tar -xz -C ${K8S_EDGE_GOROOT} --strip-components=1
-
-# Prebuild the standard library for those platforms that need the edge GOROOT
-RUN for platform in linux/arm linux/ppc64le; do GOOS=${platform%/*} GOARCH=${platform##*/} GOROOT=${K8S_EDGE_GOROOT} go install std; done

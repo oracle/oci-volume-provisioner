@@ -24,8 +24,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	core "k8s.io/client-go/testing"
-	"k8s.io/kubernetes/pkg/api"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/fake"
+	"k8s.io/kubernetes/pkg/master/reconcilers"
 )
 
 func TestReconcileEndpoints(t *testing.T) {
@@ -377,7 +378,7 @@ func TestReconcileEndpoints(t *testing.T) {
 		if test.endpoints != nil {
 			fakeClient = fake.NewSimpleClientset(test.endpoints)
 		}
-		reconciler := NewMasterCountEndpointReconciler(test.additionalMasters+1, fakeClient.Core())
+		reconciler := reconcilers.NewMasterCountEndpointReconciler(test.additionalMasters+1, fakeClient.Core())
 		err := reconciler.ReconcileEndpoints(test.serviceName, net.ParseIP(test.ip), test.endpointPorts, true)
 		if err != nil {
 			t.Errorf("case %q: unexpected error: %v", test.testName, err)
@@ -495,7 +496,7 @@ func TestReconcileEndpoints(t *testing.T) {
 		if test.endpoints != nil {
 			fakeClient = fake.NewSimpleClientset(test.endpoints)
 		}
-		reconciler := NewMasterCountEndpointReconciler(test.additionalMasters+1, fakeClient.Core())
+		reconciler := reconcilers.NewMasterCountEndpointReconciler(test.additionalMasters+1, fakeClient.Core())
 		err := reconciler.ReconcileEndpoints(test.serviceName, net.ParseIP(test.ip), test.endpointPorts, false)
 		if err != nil {
 			t.Errorf("case %q: unexpected error: %v", test.testName, err)
@@ -569,7 +570,7 @@ func TestCreateOrUpdateMasterService(t *testing.T) {
 					},
 					Selector:        nil,
 					ClusterIP:       "1.2.3.4",
-					SessionAffinity: api.ServiceAffinityClientIP,
+					SessionAffinity: api.ServiceAffinityNone,
 					Type:            api.ServiceTypeClusterIP,
 				},
 			},
@@ -624,7 +625,7 @@ func TestCreateOrUpdateMasterService(t *testing.T) {
 					},
 					Selector:        nil,
 					ClusterIP:       "1.2.3.4",
-					SessionAffinity: api.ServiceAffinityClientIP,
+					SessionAffinity: api.ServiceAffinityNone,
 					Type:            api.ServiceTypeClusterIP,
 				},
 			},
@@ -636,7 +637,7 @@ func TestCreateOrUpdateMasterService(t *testing.T) {
 					},
 					Selector:        nil,
 					ClusterIP:       "1.2.3.4",
-					SessionAffinity: api.ServiceAffinityClientIP,
+					SessionAffinity: api.ServiceAffinityNone,
 					Type:            api.ServiceTypeClusterIP,
 				},
 			},
@@ -657,7 +658,7 @@ func TestCreateOrUpdateMasterService(t *testing.T) {
 					},
 					Selector:        nil,
 					ClusterIP:       "1.2.3.4",
-					SessionAffinity: api.ServiceAffinityClientIP,
+					SessionAffinity: api.ServiceAffinityNone,
 					Type:            api.ServiceTypeClusterIP,
 				},
 			},
@@ -670,7 +671,7 @@ func TestCreateOrUpdateMasterService(t *testing.T) {
 					},
 					Selector:        nil,
 					ClusterIP:       "1.2.3.4",
-					SessionAffinity: api.ServiceAffinityClientIP,
+					SessionAffinity: api.ServiceAffinityNone,
 					Type:            api.ServiceTypeClusterIP,
 				},
 			},
@@ -690,7 +691,7 @@ func TestCreateOrUpdateMasterService(t *testing.T) {
 					},
 					Selector:        nil,
 					ClusterIP:       "1.2.3.4",
-					SessionAffinity: api.ServiceAffinityClientIP,
+					SessionAffinity: api.ServiceAffinityNone,
 					Type:            api.ServiceTypeClusterIP,
 				},
 			},
@@ -702,7 +703,7 @@ func TestCreateOrUpdateMasterService(t *testing.T) {
 					},
 					Selector:        nil,
 					ClusterIP:       "1.2.3.4",
-					SessionAffinity: api.ServiceAffinityClientIP,
+					SessionAffinity: api.ServiceAffinityNone,
 					Type:            api.ServiceTypeClusterIP,
 				},
 			},
@@ -722,7 +723,7 @@ func TestCreateOrUpdateMasterService(t *testing.T) {
 					},
 					Selector:        nil,
 					ClusterIP:       "1.2.3.4",
-					SessionAffinity: api.ServiceAffinityClientIP,
+					SessionAffinity: api.ServiceAffinityNone,
 					Type:            api.ServiceTypeClusterIP,
 				},
 			},
@@ -734,7 +735,7 @@ func TestCreateOrUpdateMasterService(t *testing.T) {
 					},
 					Selector:        nil,
 					ClusterIP:       "1.2.3.4",
-					SessionAffinity: api.ServiceAffinityClientIP,
+					SessionAffinity: api.ServiceAffinityNone,
 					Type:            api.ServiceTypeClusterIP,
 				},
 			},
@@ -754,7 +755,7 @@ func TestCreateOrUpdateMasterService(t *testing.T) {
 					},
 					Selector:        nil,
 					ClusterIP:       "1.2.3.4",
-					SessionAffinity: api.ServiceAffinityClientIP,
+					SessionAffinity: api.ServiceAffinityNone,
 					Type:            api.ServiceTypeClusterIP,
 				},
 			},
@@ -766,7 +767,7 @@ func TestCreateOrUpdateMasterService(t *testing.T) {
 					},
 					Selector:        nil,
 					ClusterIP:       "1.2.3.4",
-					SessionAffinity: api.ServiceAffinityClientIP,
+					SessionAffinity: api.ServiceAffinityNone,
 					Type:            api.ServiceTypeClusterIP,
 				},
 			},
@@ -786,7 +787,7 @@ func TestCreateOrUpdateMasterService(t *testing.T) {
 					},
 					Selector:        nil,
 					ClusterIP:       "1.2.3.4",
-					SessionAffinity: api.ServiceAffinityClientIP,
+					SessionAffinity: api.ServiceAffinityNone,
 					Type:            api.ServiceTypeClusterIP,
 				},
 			},
@@ -798,7 +799,7 @@ func TestCreateOrUpdateMasterService(t *testing.T) {
 					},
 					Selector:        nil,
 					ClusterIP:       "1.2.3.4",
-					SessionAffinity: api.ServiceAffinityClientIP,
+					SessionAffinity: api.ServiceAffinityNone,
 					Type:            api.ServiceTypeClusterIP,
 				},
 			},
@@ -818,7 +819,7 @@ func TestCreateOrUpdateMasterService(t *testing.T) {
 					},
 					Selector:        nil,
 					ClusterIP:       "1.2.3.4",
-					SessionAffinity: api.ServiceAffinityClientIP,
+					SessionAffinity: api.ServiceAffinityNone,
 					Type:            api.ServiceTypeNodePort,
 				},
 			},
@@ -830,7 +831,7 @@ func TestCreateOrUpdateMasterService(t *testing.T) {
 					},
 					Selector:        nil,
 					ClusterIP:       "1.2.3.4",
-					SessionAffinity: api.ServiceAffinityClientIP,
+					SessionAffinity: api.ServiceAffinityNone,
 					Type:            api.ServiceTypeClusterIP,
 				},
 			},
@@ -850,7 +851,7 @@ func TestCreateOrUpdateMasterService(t *testing.T) {
 					},
 					Selector:        nil,
 					ClusterIP:       "1.2.3.4",
-					SessionAffinity: api.ServiceAffinityClientIP,
+					SessionAffinity: api.ServiceAffinityNone,
 					Type:            api.ServiceTypeClusterIP,
 				},
 			},
@@ -909,7 +910,7 @@ func TestCreateOrUpdateMasterService(t *testing.T) {
 					},
 					Selector:        nil,
 					ClusterIP:       "1.2.3.4",
-					SessionAffinity: api.ServiceAffinityClientIP,
+					SessionAffinity: api.ServiceAffinityNone,
 					Type:            api.ServiceTypeClusterIP,
 				},
 			},

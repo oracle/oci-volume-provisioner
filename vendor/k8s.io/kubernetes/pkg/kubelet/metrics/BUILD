@@ -1,7 +1,5 @@
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])
-
 load(
     "@io_bazel_rules_go//go:def.bzl",
     "go_library",
@@ -10,11 +8,14 @@ load(
 go_library(
     name = "go_default_library",
     srcs = ["metrics.go"],
-    tags = ["automanaged"],
+    importpath = "k8s.io/kubernetes/pkg/kubelet/metrics",
     deps = [
+        "//pkg/features:go_default_library",
         "//pkg/kubelet/container:go_default_library",
-        "//vendor:github.com/golang/glog",
-        "//vendor:github.com/prometheus/client_golang/prometheus",
+        "//vendor/github.com/golang/glog:go_default_library",
+        "//vendor/github.com/prometheus/client_golang/prometheus:go_default_library",
+        "//vendor/k8s.io/api/core/v1:go_default_library",
+        "//vendor/k8s.io/apiserver/pkg/util/feature:go_default_library",
     ],
 )
 
@@ -27,6 +28,9 @@ filegroup(
 
 filegroup(
     name = "all-srcs",
-    srcs = [":package-srcs"],
+    srcs = [
+        ":package-srcs",
+        "//pkg/kubelet/metrics/collectors:all-srcs",
+    ],
     tags = ["automanaged"],
 )

@@ -1,5 +1,3 @@
-// +build integration,!no-etcd
-
 /*
 Copyright 2014 The Kubernetes Authors.
 
@@ -27,8 +25,8 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -37,20 +35,19 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
+	clientset "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/v1"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	"k8s.io/kubernetes/pkg/version"
-	e2e "k8s.io/kubernetes/test/e2e/framework"
 	"k8s.io/kubernetes/test/integration/framework"
+	imageutils "k8s.io/kubernetes/test/utils/image"
 )
 
 func TestClient(t *testing.T) {
-	_, s := framework.RunAMaster(nil)
-	defer s.Close()
+	_, s, closeFn := framework.RunAMaster(nil)
+	defer closeFn()
 
-	client := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &api.Registry.GroupOrDie(v1.GroupName).GroupVersion}})
+	client := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &schema.GroupVersion{Group: "", Version: "v1"}}})
 
 	ns := framework.CreateTestingNamespace("client", s, t)
 	defer framework.DeleteTestingNamespace(ns, s, t)
@@ -119,10 +116,10 @@ func TestClient(t *testing.T) {
 }
 
 func TestAtomicPut(t *testing.T) {
-	_, s := framework.RunAMaster(nil)
-	defer s.Close()
+	_, s, closeFn := framework.RunAMaster(nil)
+	defer closeFn()
 
-	c := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &api.Registry.GroupOrDie(v1.GroupName).GroupVersion}})
+	c := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &schema.GroupVersion{Group: "", Version: "v1"}}})
 
 	ns := framework.CreateTestingNamespace("atomic-put", s, t)
 	defer framework.DeleteTestingNamespace(ns, s, t)
@@ -211,10 +208,10 @@ func TestAtomicPut(t *testing.T) {
 }
 
 func TestPatch(t *testing.T) {
-	_, s := framework.RunAMaster(nil)
-	defer s.Close()
+	_, s, closeFn := framework.RunAMaster(nil)
+	defer closeFn()
 
-	c := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &api.Registry.GroupOrDie(v1.GroupName).GroupVersion}})
+	c := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &schema.GroupVersion{Group: "", Version: "v1"}}})
 
 	ns := framework.CreateTestingNamespace("patch", s, t)
 	defer framework.DeleteTestingNamespace(ns, s, t)
@@ -287,23 +284,6 @@ func TestPatch(t *testing.T) {
 			t.Logf("%v", string(jsonObj))
 		}
 
-		obj, err := result.Get()
-		if err != nil {
-			t.Fatal(err)
-		}
-		metadata, err := meta.Accessor(obj)
-		if err != nil {
-			t.Fatal(err)
-		}
-		// this call waits for the resourceVersion to be reached in the cache before returning.  We need to do this because
-		// the patch gets its initial object from the storage, and the cache serves that.  If it is out of date,
-		// then our initial patch is applied to an old resource version, which conflicts and then the updated object shows
-		// a conflicting diff, which permanently fails the patch.  This gives expected stability in the patch without
-		// retrying on an known number of conflicts below in the test.
-		if _, err := c.Core().Pods(ns.Name).Get(name, metav1.GetOptions{ResourceVersion: metadata.GetResourceVersion()}); err != nil {
-			t.Fatal(err)
-		}
-
 		return nil
 	}
 
@@ -350,10 +330,10 @@ func TestPatch(t *testing.T) {
 }
 
 func TestPatchWithCreateOnUpdate(t *testing.T) {
-	_, s := framework.RunAMaster(nil)
-	defer s.Close()
+	_, s, closeFn := framework.RunAMaster(nil)
+	defer closeFn()
 
-	c := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &api.Registry.GroupOrDie(v1.GroupName).GroupVersion}})
+	c := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &schema.GroupVersion{Group: "", Version: "v1"}}})
 
 	ns := framework.CreateTestingNamespace("patch-with-create", s, t)
 	defer framework.DeleteTestingNamespace(ns, s, t)
@@ -377,7 +357,7 @@ func TestPatchWithCreateOnUpdate(t *testing.T) {
 
 	// Make sure patch doesn't get to CreateOnUpdate
 	{
-		endpointJSON, err := runtime.Encode(api.Codecs.LegacyCodec(v1.SchemeGroupVersion), endpointTemplate)
+		endpointJSON, err := runtime.Encode(legacyscheme.Codecs.LegacyCodec(v1.SchemeGroupVersion), endpointTemplate)
 		if err != nil {
 			t.Fatalf("Failed creating endpoint JSON: %v", err)
 		}
@@ -394,7 +374,7 @@ func TestPatchWithCreateOnUpdate(t *testing.T) {
 
 	// Make sure identity patch is accepted
 	{
-		endpointJSON, err := runtime.Encode(api.Codecs.LegacyCodec(v1.SchemeGroupVersion), createdEndpoint)
+		endpointJSON, err := runtime.Encode(legacyscheme.Codecs.LegacyCodec(v1.SchemeGroupVersion), createdEndpoint)
 		if err != nil {
 			t.Fatalf("Failed creating endpoint JSON: %v", err)
 		}
@@ -408,7 +388,7 @@ func TestPatchWithCreateOnUpdate(t *testing.T) {
 		endpointTemplate.Name = ""
 		endpointTemplate.UID = ""
 		endpointTemplate.ResourceVersion = "1"
-		endpointJSON, err := runtime.Encode(api.Codecs.LegacyCodec(v1.SchemeGroupVersion), endpointTemplate)
+		endpointJSON, err := runtime.Encode(legacyscheme.Codecs.LegacyCodec(v1.SchemeGroupVersion), endpointTemplate)
 		if err != nil {
 			t.Fatalf("Failed creating endpoint JSON: %v", err)
 		}
@@ -422,7 +402,7 @@ func TestPatchWithCreateOnUpdate(t *testing.T) {
 		endpointTemplate.Name = ""
 		endpointTemplate.UID = "abc"
 		endpointTemplate.ResourceVersion = ""
-		endpointJSON, err := runtime.Encode(api.Codecs.LegacyCodec(v1.SchemeGroupVersion), endpointTemplate)
+		endpointJSON, err := runtime.Encode(legacyscheme.Codecs.LegacyCodec(v1.SchemeGroupVersion), endpointTemplate)
 		if err != nil {
 			t.Fatalf("Failed creating endpoint JSON: %v", err)
 		}
@@ -436,7 +416,7 @@ func TestPatchWithCreateOnUpdate(t *testing.T) {
 		endpointTemplate.Name = "changedname"
 		endpointTemplate.UID = ""
 		endpointTemplate.ResourceVersion = ""
-		endpointJSON, err := runtime.Encode(api.Codecs.LegacyCodec(v1.SchemeGroupVersion), endpointTemplate)
+		endpointJSON, err := runtime.Encode(legacyscheme.Codecs.LegacyCodec(v1.SchemeGroupVersion), endpointTemplate)
 		if err != nil {
 			t.Fatalf("Failed creating endpoint JSON: %v", err)
 		}
@@ -450,7 +430,7 @@ func TestPatchWithCreateOnUpdate(t *testing.T) {
 		endpointTemplate.Name = ""
 		endpointTemplate.UID = ""
 		endpointTemplate.ResourceVersion = ""
-		endpointJSON, err := runtime.Encode(api.Codecs.LegacyCodec(v1.SchemeGroupVersion), endpointTemplate)
+		endpointJSON, err := runtime.Encode(legacyscheme.Codecs.LegacyCodec(v1.SchemeGroupVersion), endpointTemplate)
 		if err != nil {
 			t.Fatalf("Failed creating endpoint JSON: %v", err)
 		}
@@ -461,10 +441,10 @@ func TestPatchWithCreateOnUpdate(t *testing.T) {
 }
 
 func TestAPIVersions(t *testing.T) {
-	_, s := framework.RunAMaster(nil)
-	defer s.Close()
+	_, s, closeFn := framework.RunAMaster(nil)
+	defer closeFn()
 
-	c := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &api.Registry.GroupOrDie(v1.GroupName).GroupVersion}})
+	c := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &schema.GroupVersion{Group: "", Version: "v1"}}})
 
 	clientVersion := c.Core().RESTClient().APIVersion().String()
 	g, err := c.Discovery().ServerGroups()
@@ -483,13 +463,13 @@ func TestAPIVersions(t *testing.T) {
 }
 
 func TestSingleWatch(t *testing.T) {
-	_, s := framework.RunAMaster(nil)
-	defer s.Close()
+	_, s, closeFn := framework.RunAMaster(nil)
+	defer closeFn()
 
 	ns := framework.CreateTestingNamespace("single-watch", s, t)
 	defer framework.DeleteTestingNamespace(ns, s, t)
 
-	client := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &api.Registry.GroupOrDie(v1.GroupName).GroupVersion}})
+	client := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &schema.GroupVersion{Group: "", Version: "v1"}}})
 
 	mkEvent := func(i int) *v1.Event {
 		name := fmt.Sprintf("event-%v", i)
@@ -525,9 +505,11 @@ func TestSingleWatch(t *testing.T) {
 	w, err := client.Core().RESTClient().Get().
 		Namespace(ns.Name).
 		Resource("events").
-		Param("resourceVersion", rv1).
-		Param("watch", "true").
-		FieldsSelectorParam(fields.OneTermEqualSelector("metadata.name", "event-9")).
+		VersionedParams(&metav1.ListOptions{
+			ResourceVersion: rv1,
+			Watch:           true,
+			FieldSelector:   fields.OneTermEqualSelector("metadata.name", "event-9").String(),
+		}, metav1.ParameterCodec).
 		Watch()
 
 	if err != nil {
@@ -562,19 +544,19 @@ func TestSingleWatch(t *testing.T) {
 
 func TestMultiWatch(t *testing.T) {
 	// Disable this test as long as it demonstrates a problem.
-	// TODO: Reenable this test when we get #6059 resolved.
-	return
+	// TODO: Re-enable this test when we get #6059 resolved.
+	t.Skip()
 
 	const watcherCount = 50
 	rt.GOMAXPROCS(watcherCount)
 
-	_, s := framework.RunAMaster(nil)
-	defer s.Close()
+	_, s, closeFn := framework.RunAMaster(nil)
+	defer closeFn()
 
 	ns := framework.CreateTestingNamespace("multi-watch", s, t)
 	defer framework.DeleteTestingNamespace(ns, s, t)
 
-	client := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &api.Registry.GroupOrDie(v1.GroupName).GroupVersion}})
+	client := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &schema.GroupVersion{Group: "", Version: "v1"}}})
 
 	dummyEvent := func(i int) *v1.Event {
 		name := fmt.Sprintf("unrelated-%v", i)
@@ -611,7 +593,7 @@ func TestMultiWatch(t *testing.T) {
 			Spec: v1.PodSpec{
 				Containers: []v1.Container{{
 					Name:  "pause",
-					Image: e2e.GetPauseImageName(client),
+					Image: imageutils.GetPauseImageName(),
 				}},
 			},
 		})
@@ -717,7 +699,7 @@ func TestMultiWatch(t *testing.T) {
 						Spec: v1.PodSpec{
 							Containers: []v1.Container{{
 								Name:  "nothing",
-								Image: e2e.GetPauseImageName(client),
+								Image: imageutils.GetPauseImageName(),
 							}},
 						},
 					})
@@ -748,7 +730,7 @@ func TestMultiWatch(t *testing.T) {
 			if err != nil {
 				panic(fmt.Sprintf("Couldn't get %v: %v", name, err))
 			}
-			pod.Spec.Containers[0].Image = e2e.GetPauseImageName(client)
+			pod.Spec.Containers[0].Image = imageutils.GetPauseImageName()
 			sentTimes <- timePair{time.Now(), name}
 			if _, err := client.Core().Pods(ns.Name).Update(pod); err != nil {
 				panic(fmt.Sprintf("Couldn't make %v: %v", name, err))
@@ -788,20 +770,20 @@ func runSelfLinkTestOnNamespace(t *testing.T, c clientset.Interface, namespace s
 			},
 		},
 	}
-	pod, err := c.Core().Pods(namespace).Create(&podBody)
+	pod, err := c.CoreV1().Pods(namespace).Create(&podBody)
 	if err != nil {
 		t.Fatalf("Failed creating selflinktest pod: %v", err)
 	}
-	if err = c.Core().RESTClient().Get().RequestURI(pod.SelfLink).Do().Into(pod); err != nil {
+	if err = c.CoreV1().RESTClient().Get().RequestURI(pod.SelfLink).Do().Into(pod); err != nil {
 		t.Errorf("Failed listing pod with supplied self link '%v': %v", pod.SelfLink, err)
 	}
 
-	podList, err := c.Core().Pods(namespace).List(metav1.ListOptions{})
+	podList, err := c.CoreV1().Pods(namespace).List(metav1.ListOptions{})
 	if err != nil {
 		t.Errorf("Failed listing pods: %v", err)
 	}
 
-	if err = c.Core().RESTClient().Get().RequestURI(podList.SelfLink).Do().Into(podList); err != nil {
+	if err = c.CoreV1().RESTClient().Get().RequestURI(podList.SelfLink).Do().Into(podList); err != nil {
 		t.Errorf("Failed listing pods with supplied self link '%v': %v", podList.SelfLink, err)
 	}
 
@@ -812,7 +794,7 @@ func runSelfLinkTestOnNamespace(t *testing.T, c clientset.Interface, namespace s
 			continue
 		}
 		found = true
-		err = c.Core().RESTClient().Get().RequestURI(item.SelfLink).Do().Into(pod)
+		err = c.CoreV1().RESTClient().Get().RequestURI(item.SelfLink).Do().Into(pod)
 		if err != nil {
 			t.Errorf("Failed listing pod with supplied self link '%v': %v", item.SelfLink, err)
 		}
@@ -824,13 +806,13 @@ func runSelfLinkTestOnNamespace(t *testing.T, c clientset.Interface, namespace s
 }
 
 func TestSelfLinkOnNamespace(t *testing.T) {
-	_, s := framework.RunAMaster(nil)
-	defer s.Close()
+	_, s, closeFn := framework.RunAMaster(nil)
+	defer closeFn()
 
 	ns := framework.CreateTestingNamespace("selflink", s, t)
 	defer framework.DeleteTestingNamespace(ns, s, t)
 
-	c := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &api.Registry.GroupOrDie(v1.GroupName).GroupVersion}})
+	c := clientset.NewForConfigOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: &schema.GroupVersion{Group: "", Version: "v1"}}})
 
 	runSelfLinkTestOnNamespace(t, c, ns.Name)
 }

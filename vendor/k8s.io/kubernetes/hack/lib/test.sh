@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2015 The Kubernetes Authors.
 #
@@ -76,7 +76,7 @@ kube::test::object_assert() {
   local args=${5:-}
 
   for j in $(seq 1 ${tries}); do
-    res=$(eval kubectl get -a "${kube_flags[@]}" ${args} $object -o go-template=\"$request\")
+    res=$(eval kubectl get "${kube_flags[@]}" ${args} $object -o go-template=\"$request\")
     if [[ "$res" =~ ^$expected$ ]]; then
         echo -n ${green}
         echo "$(kube::test::get_caller 3): Successful get $object $request: $res"
@@ -103,7 +103,7 @@ kube::test::get_object_jsonpath_assert() {
   local request=$2
   local expected=$3
 
-  res=$(eval kubectl get -a "${kube_flags[@]}" $object -o jsonpath=\"$request\")
+  res=$(eval kubectl get "${kube_flags[@]}" $object -o jsonpath=\"$request\")
 
   if [[ "$res" =~ ^$expected$ ]]; then
       echo -n ${green}
@@ -250,11 +250,22 @@ kube::test::describe_resource_events_assert() {
     fi
 }
 
+# Compare sort-by resource name output with expected order specify in the last parameter
+kube::test::if_sort_by_has_correct_order() {
+  local array=($(echo "$1" |awk '{if(NR!=1) print $1}'))
+  local var
+  for i in "${array[@]}"; do
+    var+="$i:"
+  done
+
+  kube::test::if_has_string "$var" "${@:$#}"
+}
+
 kube::test::if_has_string() {
   local message=$1
   local match=$2
 
-  if echo "$message" | grep -q "$match"; then
+  if grep -q "${match}" <<< "${message}"; then
     echo "Successful"
     echo "message:$message"
     echo "has:$match"
@@ -272,7 +283,7 @@ kube::test::if_has_not_string() {
   local message=$1
   local match=$2
 
-  if echo "$message" | grep -q "$match"; then
+  if grep -q "${match}" <<< "${message}"; then
     echo "FAIL!"
     echo "message:$message"
     echo "has:$match"
@@ -282,6 +293,18 @@ kube::test::if_has_not_string() {
     echo "Successful"
     echo "message:$message"
     echo "has not:$match"
+    return 0
+  fi
+}
+
+kube::test::if_empty_string() {
+  local match=$1
+  if [ -n "$match" ]; then
+    echo "$match is not empty"
+    caller
+    return 1
+  else
+    echo "Successful"
     return 0
   fi
 }
@@ -303,3 +326,100 @@ kube::test::if_supports_resource() {
   done
   return 1
 }
+
+
+kube::test::version::object_to_file() {
+  name=$1
+  flags=${2:-""}
+  file=$3
+  kubectl version $flags | grep "$name Version:" | sed -e s/"$name Version: version.Info{"/'/' -e s/'}'/'/' -e s/', '/','/g -e s/':'/'=/g' -e s/'"'/""/g | tr , '\n' > "${file}"
+}
+
+kube::test::version::json_object_to_file() {
+  flags=$1
+  file=$2
+  kubectl version $flags --output json | sed -e s/' '/''/g -e s/'\"'/''/g -e s/'}'/''/g -e s/'{'/''/g -e s/'clientVersion:'/'clientVersion:,'/ -e s/'serverVersion:'/'serverVersion:,'/ | tr , '\n' > "${file}"
+}
+
+kube::test::version::json_client_server_object_to_file() {
+  flags=$1
+  name=$2
+  file=$3
+  kubectl version $flags --output json | jq -r ".${name}" | sed -e s/'\"'/''/g -e s/'}'/''/g -e s/'{'/''/g -e /^$/d -e s/','/''/g  -e s/':'/'='/g > "${file}"
+}
+
+kube::test::version::yaml_object_to_file() {
+  flags=$1
+  file=$2
+  kubectl version $flags --output yaml | sed -e s/' '/''/g -e s/'\"'/''/g -e /^$/d > "${file}"
+}
+
+kube::test::version::diff_assert() {
+  local original=$1
+  local comparator=${2:-"eq"}
+  local latest=$3
+  local diff_msg=${4:-""}
+  local res=""
+
+  if [ ! -f $original ]; then
+        echo ${bold}${red}
+        echo "FAIL! ${diff_msg}"
+        echo "the file '${original}' does not exit"
+        echo ${reset}${red}
+        caller
+        echo ${reset}
+        return 1
+  fi
+
+  if [ ! -f $latest ]; then
+        echo ${bold}${red}
+        echo "FAIL! ${diff_msg}"
+        echo "the file '${latest}' does not exit"
+        echo ${reset}${red}
+        caller
+        echo ${reset}
+        return 1
+  fi
+
+  sort ${original} > "${original}.sorted"
+  sort ${latest} > "${latest}.sorted"
+
+  if [ "$comparator" == "eq" ]; then
+    if [ "$(diff -iwB ${original}.sorted ${latest}.sorted)" == "" ] ; then
+        echo -n ${green}
+        echo "Successful: ${diff_msg}"
+        echo -n ${reset}
+        return 0
+    else
+        echo ${bold}${red}
+        echo "FAIL! ${diff_msg}"
+        echo "  Expected: "
+        echo "$(cat ${original})"
+        echo "  Got: "
+        echo "$(cat ${latest})"
+        echo ${reset}${red}
+        caller
+        echo ${reset}
+        return 1
+    fi
+  else
+    if [ ! -z "$(diff -iwB ${original}.sorted ${latest}.sorted)" ] ; then
+        echo -n ${green}
+        echo "Successful: ${diff_msg}"
+        echo -n ${reset}
+        return 0
+    else
+        echo ${bold}${red}
+        echo "FAIL! ${diff_msg}"
+        echo "  Expected: "
+        echo "$(cat ${original})"
+        echo "  Got: "
+        echo "$(cat ${latest})"
+        echo ${reset}${red}
+        caller
+        echo ${reset}
+        return 1
+      fi
+  fi
+}
+

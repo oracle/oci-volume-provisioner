@@ -18,8 +18,8 @@ package selinux
 
 import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/apis/extensions"
+	api "k8s.io/kubernetes/pkg/apis/core"
+	"k8s.io/kubernetes/pkg/apis/policy"
 )
 
 // runAsAny implements the SELinuxStrategy interface.
@@ -28,7 +28,7 @@ type runAsAny struct{}
 var _ SELinuxStrategy = &runAsAny{}
 
 // NewRunAsAny provides a strategy that will return the configured se linux context or nil.
-func NewRunAsAny(options *extensions.SELinuxStrategyOptions) (SELinuxStrategy, error) {
+func NewRunAsAny(options *policy.SELinuxStrategyOptions) (SELinuxStrategy, error) {
 	return &runAsAny{}, nil
 }
 
@@ -38,6 +38,6 @@ func (s *runAsAny) Generate(pod *api.Pod, container *api.Container) (*api.SELinu
 }
 
 // Validate ensures that the specified values fall within the range of the strategy.
-func (s *runAsAny) Validate(pod *api.Pod, container *api.Container) field.ErrorList {
+func (s *runAsAny) Validate(fldPath *field.Path, _ *api.Pod, _ *api.Container, options *api.SELinuxOptions) field.ErrorList {
 	return field.ErrorList{}
 }

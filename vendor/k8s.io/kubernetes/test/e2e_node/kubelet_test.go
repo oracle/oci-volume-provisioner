@@ -19,11 +19,12 @@ package e2e_node
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"time"
 
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
-	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/test/e2e/framework"
 
 	. "github.com/onsi/ginkgo"
@@ -38,7 +39,7 @@ var _ = framework.KubeDescribe("Kubelet", func() {
 	})
 	Context("when scheduling a busybox command in a pod", func() {
 		podName := "busybox-scheduling-" + string(uuid.NewUUID())
-		It("it should print the output to logs [Conformance]", func() {
+		framework.ConformanceIt("it should print the output to logs [NodeConformance]", func() {
 			podClient.CreateSync(&v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: podName,
@@ -48,7 +49,7 @@ var _ = framework.KubeDescribe("Kubelet", func() {
 					RestartPolicy: v1.RestartPolicyNever,
 					Containers: []v1.Container{
 						{
-							Image:   "gcr.io/google_containers/busybox:1.24",
+							Image:   busyboxImage,
 							Name:    podName,
 							Command: []string{"sh", "-c", "echo 'Hello World' ; sleep 240"},
 						},
@@ -82,7 +83,7 @@ var _ = framework.KubeDescribe("Kubelet", func() {
 					RestartPolicy: v1.RestartPolicyNever,
 					Containers: []v1.Container{
 						{
-							Image:   "gcr.io/google_containers/busybox:1.24",
+							Image:   busyboxImage,
 							Name:    podName,
 							Command: []string{"/bin/false"},
 						},
@@ -91,7 +92,7 @@ var _ = framework.KubeDescribe("Kubelet", func() {
 			})
 		})
 
-		It("should have an error terminated reason", func() {
+		It("should have an error terminated reason [NodeConformance]", func() {
 			Eventually(func() error {
 				podData, err := podClient.Get(podName, metav1.GetOptions{})
 				if err != nil {
@@ -111,14 +112,59 @@ var _ = framework.KubeDescribe("Kubelet", func() {
 			}, time.Minute, time.Second*4).Should(BeNil())
 		})
 
-		It("should be possible to delete", func() {
+		It("should be possible to delete [NodeConformance]", func() {
 			err := podClient.Delete(podName, &metav1.DeleteOptions{})
 			Expect(err).To(BeNil(), fmt.Sprintf("Error deleting Pod %v", err))
 		})
 	})
+	Context("when scheduling a busybox Pod with hostAliases", func() {
+		podName := "busybox-host-aliases" + string(uuid.NewUUID())
+
+		It("it should write entries to /etc/hosts [NodeConformance]", func() {
+			podClient.CreateSync(&v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: podName,
+				},
+				Spec: v1.PodSpec{
+					// Don't restart the Pod since it is expected to exit
+					RestartPolicy: v1.RestartPolicyNever,
+					Containers: []v1.Container{
+						{
+							Image:   busyboxImage,
+							Name:    podName,
+							Command: []string{"/bin/sh", "-c", "cat /etc/hosts; sleep 6000"},
+						},
+					},
+					HostAliases: []v1.HostAlias{
+						{
+							IP:        "123.45.67.89",
+							Hostnames: []string{"foo", "bar"},
+						},
+					},
+				},
+			})
+
+			Eventually(func() error {
+				rc, err := podClient.GetLogs(podName, &v1.PodLogOptions{}).Stream()
+				defer rc.Close()
+				if err != nil {
+					return err
+				}
+				buf := new(bytes.Buffer)
+				buf.ReadFrom(rc)
+				hostsFileContent := buf.String()
+
+				if !strings.Contains(hostsFileContent, "123.45.67.89\tfoo") || !strings.Contains(hostsFileContent, "123.45.67.89\tbar") {
+					return fmt.Errorf("expected hosts file to contain entries from HostAliases. Got:\n%+v", hostsFileContent)
+				}
+
+				return nil
+			}, time.Minute, time.Second*4).Should(BeNil())
+		})
+	})
 	Context("when scheduling a read only busybox container", func() {
 		podName := "busybox-readonly-fs" + string(uuid.NewUUID())
-		It("it should not write to root filesystem [Conformance]", func() {
+		framework.ConformanceIt("it should not write to root filesystem [NodeConformance]", func() {
 			isReadOnly := true
 			podClient.CreateSync(&v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -129,7 +175,7 @@ var _ = framework.KubeDescribe("Kubelet", func() {
 					RestartPolicy: v1.RestartPolicyNever,
 					Containers: []v1.Container{
 						{
-							Image:   "gcr.io/google_containers/busybox:1.24",
+							Image:   busyboxImage,
 							Name:    podName,
 							Command: []string{"/bin/sh", "-c", "echo test > /file; sleep 240"},
 							SecurityContext: &v1.SecurityContext{

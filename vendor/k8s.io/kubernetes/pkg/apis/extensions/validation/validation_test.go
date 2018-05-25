@@ -21,14 +21,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/davecgh/go-spew/spew"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/kubernetes/pkg/api"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/apis/extensions"
-	"k8s.io/kubernetes/pkg/security/apparmor"
-	"k8s.io/kubernetes/pkg/security/podsecuritypolicy/seccomp"
-	psputil "k8s.io/kubernetes/pkg/security/podsecuritypolicy/util"
 )
 
 func TestValidateDaemonSetStatusUpdate(t *testing.T) {
@@ -444,6 +443,15 @@ func TestValidateDaemonSetUpdate(t *testing.T) {
 			Spec: validPodSpecAbc,
 		},
 	}
+	validPodTemplateAbcSemanticallyEqual := api.PodTemplate{
+		Template: api.PodTemplateSpec{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: validSelector,
+			},
+			Spec: validPodSpecAbc,
+		},
+	}
+	validPodTemplateAbcSemanticallyEqual.Template.Spec.ImagePullSecrets = []api.LocalObjectReference{}
 	validPodTemplateNodeSelector := api.PodTemplate{
 		Template: api.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
@@ -609,6 +617,33 @@ func TestValidateDaemonSetUpdate(t *testing.T) {
 					Selector:           &metav1.LabelSelector{MatchLabels: validSelector},
 					TemplateGeneration: 4,
 					Template:           validPodTemplateAbc.Template,
+					UpdateStrategy: extensions.DaemonSetUpdateStrategy{
+						Type: extensions.RollingUpdateDaemonSetStrategyType,
+						RollingUpdate: &extensions.RollingUpdateDaemonSet{
+							MaxUnavailable: intstr.FromInt(1),
+						},
+					},
+				},
+			},
+		},
+		"unchanged templateGeneration upon semantically equal template update": {
+			old: extensions.DaemonSet{
+				ObjectMeta: metav1.ObjectMeta{Name: "abc", Namespace: metav1.NamespaceDefault},
+				Spec: extensions.DaemonSetSpec{
+					Selector:           &metav1.LabelSelector{MatchLabels: validSelector},
+					TemplateGeneration: 4,
+					Template:           validPodTemplateAbc.Template,
+					UpdateStrategy: extensions.DaemonSetUpdateStrategy{
+						Type: extensions.OnDeleteDaemonSetStrategyType,
+					},
+				},
+			},
+			update: extensions.DaemonSet{
+				ObjectMeta: metav1.ObjectMeta{Name: "abc", Namespace: metav1.NamespaceDefault},
+				Spec: extensions.DaemonSetSpec{
+					Selector:           &metav1.LabelSelector{MatchLabels: validSelector},
+					TemplateGeneration: 4,
+					Template:           validPodTemplateAbcSemanticallyEqual.Template,
 					UpdateStrategy: extensions.DaemonSetUpdateStrategy{
 						Type: extensions.RollingUpdateDaemonSetStrategyType,
 						RollingUpdate: &extensions.RollingUpdateDaemonSet{
@@ -1131,7 +1166,7 @@ func TestValidateDeployment(t *testing.T) {
 	// must have valid strategy type
 	invalidStrategyDeployment := validDeployment()
 	invalidStrategyDeployment.Spec.Strategy.Type = extensions.DeploymentStrategyType("randomType")
-	errorCases["supported values: Recreate, RollingUpdate"] = invalidStrategyDeployment
+	errorCases[`supported values: "Recreate", "RollingUpdate"`] = invalidStrategyDeployment
 
 	// rollingUpdate should be nil for recreate.
 	invalidRecreateDeployment := validDeployment()
@@ -1195,6 +1230,7 @@ func TestValidateDeployment(t *testing.T) {
 }
 
 func TestValidateDeploymentStatus(t *testing.T) {
+	collisionCount := int32(-3)
 	tests := []struct {
 		name string
 
@@ -1203,6 +1239,7 @@ func TestValidateDeploymentStatus(t *testing.T) {
 		readyReplicas      int32
 		availableReplicas  int32
 		observedGeneration int64
+		collisionCount     *int32
 
 		expectedErr bool
 	}{
@@ -1290,14 +1327,12 @@ func TestValidateDeploymentStatus(t *testing.T) {
 			observedGeneration: 1,
 			expectedErr:        true,
 		},
-		// TODO: Remove the following test case once we stop supporting upgrades from 1.5.
 		{
-			name:               "don't validate readyReplicas when it's zero",
+			name:               "invalid collisionCount",
 			replicas:           3,
-			readyReplicas:      0,
-			availableReplicas:  3,
 			observedGeneration: 1,
-			expectedErr:        false,
+			collisionCount:     &collisionCount,
+			expectedErr:        true,
 		},
 	}
 
@@ -1308,10 +1343,84 @@ func TestValidateDeploymentStatus(t *testing.T) {
 			ReadyReplicas:      test.readyReplicas,
 			AvailableReplicas:  test.availableReplicas,
 			ObservedGeneration: test.observedGeneration,
+			CollisionCount:     test.collisionCount,
 		}
 
-		if hasErr := len(ValidateDeploymentStatus(&status, field.NewPath("status"))) > 0; hasErr != test.expectedErr {
-			t.Errorf("%s: expected error: %t, got error: %t", test.name, test.expectedErr, hasErr)
+		errs := ValidateDeploymentStatus(&status, field.NewPath("status"))
+		if hasErr := len(errs) > 0; hasErr != test.expectedErr {
+			errString := spew.Sprintf("%#v", errs)
+			t.Errorf("%s: expected error: %t, got error: %t\nerrors: %s", test.name, test.expectedErr, hasErr, errString)
+		}
+	}
+}
+
+func TestValidateDeploymentStatusUpdate(t *testing.T) {
+	collisionCount := int32(1)
+	otherCollisionCount := int32(2)
+	tests := []struct {
+		name string
+
+		from, to extensions.DeploymentStatus
+
+		expectedErr bool
+	}{
+		{
+			name: "increase: valid update",
+			from: extensions.DeploymentStatus{
+				CollisionCount: nil,
+			},
+			to: extensions.DeploymentStatus{
+				CollisionCount: &collisionCount,
+			},
+			expectedErr: false,
+		},
+		{
+			name: "stable: valid update",
+			from: extensions.DeploymentStatus{
+				CollisionCount: &collisionCount,
+			},
+			to: extensions.DeploymentStatus{
+				CollisionCount: &collisionCount,
+			},
+			expectedErr: false,
+		},
+		{
+			name: "unset: invalid update",
+			from: extensions.DeploymentStatus{
+				CollisionCount: &collisionCount,
+			},
+			to: extensions.DeploymentStatus{
+				CollisionCount: nil,
+			},
+			expectedErr: true,
+		},
+		{
+			name: "decrease: invalid update",
+			from: extensions.DeploymentStatus{
+				CollisionCount: &otherCollisionCount,
+			},
+			to: extensions.DeploymentStatus{
+				CollisionCount: &collisionCount,
+			},
+			expectedErr: true,
+		},
+	}
+
+	for _, test := range tests {
+		meta := metav1.ObjectMeta{Name: "foo", Namespace: metav1.NamespaceDefault, ResourceVersion: "1"}
+		from := &extensions.Deployment{
+			ObjectMeta: meta,
+			Status:     test.from,
+		}
+		to := &extensions.Deployment{
+			ObjectMeta: meta,
+			Status:     test.to,
+		}
+
+		errs := ValidateDeploymentStatusUpdate(to, from)
+		if hasErr := len(errs) > 0; hasErr != test.expectedErr {
+			errString := spew.Sprintf("%#v", errs)
+			t.Errorf("%s: expected error: %t, got error: %t\nerrors: %s", test.name, test.expectedErr, hasErr, errString)
 		}
 	}
 }
@@ -1355,8 +1464,6 @@ func TestValidateDeploymentRollback(t *testing.T) {
 		}
 	}
 }
-
-type ingressRules map[string]string
 
 func TestValidateIngress(t *testing.T) {
 	defaultBackend := extensions.IngressBackend{
@@ -1620,70 +1727,6 @@ func TestValidateIngressStatusUpdate(t *testing.T) {
 			if err.Field != s[0] || !strings.Contains(err.Error(), s[1]) {
 				t.Errorf("unexpected error: %q, expected: %q", err, k)
 			}
-		}
-	}
-}
-
-func TestValidateScale(t *testing.T) {
-	successCases := []extensions.Scale{
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "frontend",
-				Namespace: metav1.NamespaceDefault,
-			},
-			Spec: extensions.ScaleSpec{
-				Replicas: 1,
-			},
-		},
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "frontend",
-				Namespace: metav1.NamespaceDefault,
-			},
-			Spec: extensions.ScaleSpec{
-				Replicas: 10,
-			},
-		},
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "frontend",
-				Namespace: metav1.NamespaceDefault,
-			},
-			Spec: extensions.ScaleSpec{
-				Replicas: 0,
-			},
-		},
-	}
-
-	for _, successCase := range successCases {
-		if errs := ValidateScale(&successCase); len(errs) != 0 {
-			t.Errorf("expected success: %v", errs)
-		}
-	}
-
-	errorCases := []struct {
-		scale extensions.Scale
-		msg   string
-	}{
-		{
-			scale: extensions.Scale{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "frontend",
-					Namespace: metav1.NamespaceDefault,
-				},
-				Spec: extensions.ScaleSpec{
-					Replicas: -1,
-				},
-			},
-			msg: "must be greater than or equal to 0",
-		},
-	}
-
-	for _, c := range errorCases {
-		if errs := ValidateScale(&c.scale); len(errs) == 0 {
-			t.Errorf("expected failure for %s", c.msg)
-		} else if !strings.Contains(errs[0].Error(), c.msg) {
-			t.Errorf("unexpected error: %v, expected: %s", errs[0], c.msg)
 		}
 	}
 }
@@ -2268,736 +2311,6 @@ func TestValidateReplicaSet(t *testing.T) {
 				field != "status.replicas" {
 				t.Errorf("%s: missing prefix for: %v", k, errs[i])
 			}
-		}
-	}
-}
-
-func TestValidatePodSecurityPolicy(t *testing.T) {
-	validPSP := func() *extensions.PodSecurityPolicy {
-		return &extensions.PodSecurityPolicy{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:        "foo",
-				Annotations: map[string]string{},
-			},
-			Spec: extensions.PodSecurityPolicySpec{
-				SELinux: extensions.SELinuxStrategyOptions{
-					Rule: extensions.SELinuxStrategyRunAsAny,
-				},
-				RunAsUser: extensions.RunAsUserStrategyOptions{
-					Rule: extensions.RunAsUserStrategyRunAsAny,
-				},
-				FSGroup: extensions.FSGroupStrategyOptions{
-					Rule: extensions.FSGroupStrategyRunAsAny,
-				},
-				SupplementalGroups: extensions.SupplementalGroupsStrategyOptions{
-					Rule: extensions.SupplementalGroupsStrategyRunAsAny,
-				},
-			},
-		}
-	}
-
-	noUserOptions := validPSP()
-	noUserOptions.Spec.RunAsUser.Rule = ""
-
-	noSELinuxOptions := validPSP()
-	noSELinuxOptions.Spec.SELinux.Rule = ""
-
-	invalidUserStratType := validPSP()
-	invalidUserStratType.Spec.RunAsUser.Rule = "invalid"
-
-	invalidSELinuxStratType := validPSP()
-	invalidSELinuxStratType.Spec.SELinux.Rule = "invalid"
-
-	invalidUIDPSP := validPSP()
-	invalidUIDPSP.Spec.RunAsUser.Rule = extensions.RunAsUserStrategyMustRunAs
-	invalidUIDPSP.Spec.RunAsUser.Ranges = []extensions.IDRange{
-		{Min: -1, Max: 1},
-	}
-
-	missingObjectMetaName := validPSP()
-	missingObjectMetaName.ObjectMeta.Name = ""
-
-	noFSGroupOptions := validPSP()
-	noFSGroupOptions.Spec.FSGroup.Rule = ""
-
-	invalidFSGroupStratType := validPSP()
-	invalidFSGroupStratType.Spec.FSGroup.Rule = "invalid"
-
-	noSupplementalGroupsOptions := validPSP()
-	noSupplementalGroupsOptions.Spec.SupplementalGroups.Rule = ""
-
-	invalidSupGroupStratType := validPSP()
-	invalidSupGroupStratType.Spec.SupplementalGroups.Rule = "invalid"
-
-	invalidRangeMinGreaterThanMax := validPSP()
-	invalidRangeMinGreaterThanMax.Spec.FSGroup.Ranges = []extensions.IDRange{
-		{Min: 2, Max: 1},
-	}
-
-	invalidRangeNegativeMin := validPSP()
-	invalidRangeNegativeMin.Spec.FSGroup.Ranges = []extensions.IDRange{
-		{Min: -1, Max: 10},
-	}
-
-	invalidRangeNegativeMax := validPSP()
-	invalidRangeNegativeMax.Spec.FSGroup.Ranges = []extensions.IDRange{
-		{Min: 1, Max: -10},
-	}
-
-	requiredCapAddAndDrop := validPSP()
-	requiredCapAddAndDrop.Spec.DefaultAddCapabilities = []api.Capability{"foo"}
-	requiredCapAddAndDrop.Spec.RequiredDropCapabilities = []api.Capability{"foo"}
-
-	allowedCapListedInRequiredDrop := validPSP()
-	allowedCapListedInRequiredDrop.Spec.RequiredDropCapabilities = []api.Capability{"foo"}
-	allowedCapListedInRequiredDrop.Spec.AllowedCapabilities = []api.Capability{"foo"}
-
-	invalidAppArmorDefault := validPSP()
-	invalidAppArmorDefault.Annotations = map[string]string{
-		apparmor.DefaultProfileAnnotationKey: "not-good",
-	}
-	invalidAppArmorAllowed := validPSP()
-	invalidAppArmorAllowed.Annotations = map[string]string{
-		apparmor.AllowedProfilesAnnotationKey: apparmor.ProfileRuntimeDefault + ",not-good",
-	}
-
-	invalidSysctlPattern := validPSP()
-	invalidSysctlPattern.Annotations[extensions.SysctlsPodSecurityPolicyAnnotationKey] = "a.*.b"
-
-	invalidSeccompDefault := validPSP()
-	invalidSeccompDefault.Annotations = map[string]string{
-		seccomp.DefaultProfileAnnotationKey: "not-good",
-	}
-	invalidSeccompAllowed := validPSP()
-	invalidSeccompAllowed.Annotations = map[string]string{
-		seccomp.AllowedProfilesAnnotationKey: "docker/default,not-good",
-	}
-
-	type testCase struct {
-		psp         *extensions.PodSecurityPolicy
-		errorType   field.ErrorType
-		errorDetail string
-	}
-	errorCases := map[string]testCase{
-		"no user options": {
-			psp:         noUserOptions,
-			errorType:   field.ErrorTypeNotSupported,
-			errorDetail: "supported values: MustRunAs, MustRunAsNonRoot, RunAsAny",
-		},
-		"no selinux options": {
-			psp:         noSELinuxOptions,
-			errorType:   field.ErrorTypeNotSupported,
-			errorDetail: "supported values: MustRunAs, RunAsAny",
-		},
-		"no fsgroup options": {
-			psp:         noFSGroupOptions,
-			errorType:   field.ErrorTypeNotSupported,
-			errorDetail: "supported values: MustRunAs, RunAsAny",
-		},
-		"no sup group options": {
-			psp:         noSupplementalGroupsOptions,
-			errorType:   field.ErrorTypeNotSupported,
-			errorDetail: "supported values: MustRunAs, RunAsAny",
-		},
-		"invalid user strategy type": {
-			psp:         invalidUserStratType,
-			errorType:   field.ErrorTypeNotSupported,
-			errorDetail: "supported values: MustRunAs, MustRunAsNonRoot, RunAsAny",
-		},
-		"invalid selinux strategy type": {
-			psp:         invalidSELinuxStratType,
-			errorType:   field.ErrorTypeNotSupported,
-			errorDetail: "supported values: MustRunAs, RunAsAny",
-		},
-		"invalid sup group strategy type": {
-			psp:         invalidSupGroupStratType,
-			errorType:   field.ErrorTypeNotSupported,
-			errorDetail: "supported values: MustRunAs, RunAsAny",
-		},
-		"invalid fs group strategy type": {
-			psp:         invalidFSGroupStratType,
-			errorType:   field.ErrorTypeNotSupported,
-			errorDetail: "supported values: MustRunAs, RunAsAny",
-		},
-		"invalid uid": {
-			psp:         invalidUIDPSP,
-			errorType:   field.ErrorTypeInvalid,
-			errorDetail: "min cannot be negative",
-		},
-		"missing object meta name": {
-			psp:         missingObjectMetaName,
-			errorType:   field.ErrorTypeRequired,
-			errorDetail: "name or generateName is required",
-		},
-		"invalid range min greater than max": {
-			psp:         invalidRangeMinGreaterThanMax,
-			errorType:   field.ErrorTypeInvalid,
-			errorDetail: "min cannot be greater than max",
-		},
-		"invalid range negative min": {
-			psp:         invalidRangeNegativeMin,
-			errorType:   field.ErrorTypeInvalid,
-			errorDetail: "min cannot be negative",
-		},
-		"invalid range negative max": {
-			psp:         invalidRangeNegativeMax,
-			errorType:   field.ErrorTypeInvalid,
-			errorDetail: "max cannot be negative",
-		},
-		"invalid required caps": {
-			psp:         requiredCapAddAndDrop,
-			errorType:   field.ErrorTypeInvalid,
-			errorDetail: "capability is listed in defaultAddCapabilities and requiredDropCapabilities",
-		},
-		"allowed cap listed in required drops": {
-			psp:         allowedCapListedInRequiredDrop,
-			errorType:   field.ErrorTypeInvalid,
-			errorDetail: "capability is listed in allowedCapabilities and requiredDropCapabilities",
-		},
-		"invalid AppArmor default profile": {
-			psp:         invalidAppArmorDefault,
-			errorType:   field.ErrorTypeInvalid,
-			errorDetail: "invalid AppArmor profile name: \"not-good\"",
-		},
-		"invalid AppArmor allowed profile": {
-			psp:         invalidAppArmorAllowed,
-			errorType:   field.ErrorTypeInvalid,
-			errorDetail: "invalid AppArmor profile name: \"not-good\"",
-		},
-		"invalid sysctl pattern": {
-			psp:         invalidSysctlPattern,
-			errorType:   field.ErrorTypeInvalid,
-			errorDetail: fmt.Sprintf("must have at most 253 characters and match regex %s", SysctlPatternFmt),
-		},
-		"invalid seccomp default profile": {
-			psp:         invalidSeccompDefault,
-			errorType:   field.ErrorTypeInvalid,
-			errorDetail: "must be a valid seccomp profile",
-		},
-		"invalid seccomp allowed profile": {
-			psp:         invalidSeccompAllowed,
-			errorType:   field.ErrorTypeInvalid,
-			errorDetail: "must be a valid seccomp profile",
-		},
-	}
-
-	for k, v := range errorCases {
-		errs := ValidatePodSecurityPolicy(v.psp)
-		if len(errs) == 0 {
-			t.Errorf("%s expected errors but got none", k)
-			continue
-		}
-		if errs[0].Type != v.errorType {
-			t.Errorf("[%s] received an unexpected error type.  Expected: '%s' got: '%s'", k, v.errorType, errs[0].Type)
-		}
-		if errs[0].Detail != v.errorDetail {
-			t.Errorf("[%s] received an unexpected error detail.  Expected '%s' got: '%s'", k, v.errorDetail, errs[0].Detail)
-		}
-	}
-
-	// Update error is different for 'missing object meta name'.
-	errorCases["missing object meta name"] = testCase{
-		psp:         errorCases["missing object meta name"].psp,
-		errorType:   field.ErrorTypeInvalid,
-		errorDetail: "field is immutable",
-	}
-
-	// Should not be able to update to an invalid policy.
-	for k, v := range errorCases {
-		v.psp.ResourceVersion = "444" // Required for updates.
-		errs := ValidatePodSecurityPolicyUpdate(validPSP(), v.psp)
-		if len(errs) == 0 {
-			t.Errorf("[%s] expected update errors but got none", k)
-			continue
-		}
-		if errs[0].Type != v.errorType {
-			t.Errorf("[%s] received an unexpected error type.  Expected: '%s' got: '%s'", k, v.errorType, errs[0].Type)
-		}
-		if errs[0].Detail != v.errorDetail {
-			t.Errorf("[%s] received an unexpected error detail.  Expected '%s' got: '%s'", k, v.errorDetail, errs[0].Detail)
-		}
-	}
-
-	mustRunAs := validPSP()
-	mustRunAs.Spec.FSGroup.Rule = extensions.FSGroupStrategyMustRunAs
-	mustRunAs.Spec.SupplementalGroups.Rule = extensions.SupplementalGroupsStrategyMustRunAs
-	mustRunAs.Spec.RunAsUser.Rule = extensions.RunAsUserStrategyMustRunAs
-	mustRunAs.Spec.RunAsUser.Ranges = []extensions.IDRange{
-		{Min: 1, Max: 1},
-	}
-	mustRunAs.Spec.SELinux.Rule = extensions.SELinuxStrategyMustRunAs
-
-	runAsNonRoot := validPSP()
-	runAsNonRoot.Spec.RunAsUser.Rule = extensions.RunAsUserStrategyMustRunAsNonRoot
-
-	caseInsensitiveAddDrop := validPSP()
-	caseInsensitiveAddDrop.Spec.DefaultAddCapabilities = []api.Capability{"foo"}
-	caseInsensitiveAddDrop.Spec.RequiredDropCapabilities = []api.Capability{"FOO"}
-
-	caseInsensitiveAllowedDrop := validPSP()
-	caseInsensitiveAllowedDrop.Spec.RequiredDropCapabilities = []api.Capability{"FOO"}
-	caseInsensitiveAllowedDrop.Spec.AllowedCapabilities = []api.Capability{"foo"}
-
-	validAppArmor := validPSP()
-	validAppArmor.Annotations = map[string]string{
-		apparmor.DefaultProfileAnnotationKey:  apparmor.ProfileRuntimeDefault,
-		apparmor.AllowedProfilesAnnotationKey: apparmor.ProfileRuntimeDefault + "," + apparmor.ProfileNamePrefix + "foo",
-	}
-
-	withSysctl := validPSP()
-	withSysctl.Annotations[extensions.SysctlsPodSecurityPolicyAnnotationKey] = "net.*"
-
-	validSeccomp := validPSP()
-	validSeccomp.Annotations = map[string]string{
-		seccomp.DefaultProfileAnnotationKey:  "docker/default",
-		seccomp.AllowedProfilesAnnotationKey: "docker/default,unconfined,localhost/foo",
-	}
-
-	successCases := map[string]struct {
-		psp *extensions.PodSecurityPolicy
-	}{
-		"must run as": {
-			psp: mustRunAs,
-		},
-		"run as any": {
-			psp: validPSP(),
-		},
-		"run as non-root (user only)": {
-			psp: runAsNonRoot,
-		},
-		"comparison for add -> drop is case sensitive": {
-			psp: caseInsensitiveAddDrop,
-		},
-		"comparison for allowed -> drop is case sensitive": {
-			psp: caseInsensitiveAllowedDrop,
-		},
-		"valid AppArmor annotations": {
-			psp: validAppArmor,
-		},
-		"with network sysctls": {
-			psp: withSysctl,
-		},
-		"valid seccomp annotations": {
-			psp: validSeccomp,
-		},
-	}
-
-	for k, v := range successCases {
-		if errs := ValidatePodSecurityPolicy(v.psp); len(errs) != 0 {
-			t.Errorf("Expected success for %s, got %v", k, errs)
-		}
-
-		// Should be able to update to a valid PSP.
-		v.psp.ResourceVersion = "444" // Required for updates.
-		if errs := ValidatePodSecurityPolicyUpdate(validPSP(), v.psp); len(errs) != 0 {
-			t.Errorf("Expected success for %s update, got %v", k, errs)
-		}
-	}
-}
-
-func TestValidatePSPVolumes(t *testing.T) {
-	validPSP := func() *extensions.PodSecurityPolicy {
-		return &extensions.PodSecurityPolicy{
-			ObjectMeta: metav1.ObjectMeta{Name: "foo"},
-			Spec: extensions.PodSecurityPolicySpec{
-				SELinux: extensions.SELinuxStrategyOptions{
-					Rule: extensions.SELinuxStrategyRunAsAny,
-				},
-				RunAsUser: extensions.RunAsUserStrategyOptions{
-					Rule: extensions.RunAsUserStrategyRunAsAny,
-				},
-				FSGroup: extensions.FSGroupStrategyOptions{
-					Rule: extensions.FSGroupStrategyRunAsAny,
-				},
-				SupplementalGroups: extensions.SupplementalGroupsStrategyOptions{
-					Rule: extensions.SupplementalGroupsStrategyRunAsAny,
-				},
-			},
-		}
-	}
-
-	volumes := psputil.GetAllFSTypesAsSet()
-	// add in the * value since that is a pseudo type that is not included by default
-	volumes.Insert(string(extensions.All))
-
-	for _, strVolume := range volumes.List() {
-		psp := validPSP()
-		psp.Spec.Volumes = []extensions.FSType{extensions.FSType(strVolume)}
-		errs := ValidatePodSecurityPolicy(psp)
-		if len(errs) != 0 {
-			t.Errorf("%s validation expected no errors but received %v", strVolume, errs)
-		}
-	}
-}
-
-func TestValidateNetworkPolicy(t *testing.T) {
-	protocolTCP := api.ProtocolTCP
-	protocolUDP := api.ProtocolUDP
-	protocolICMP := api.Protocol("ICMP")
-
-	successCases := []extensions.NetworkPolicy{
-		{
-			ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"},
-			Spec: extensions.NetworkPolicySpec{
-				PodSelector: metav1.LabelSelector{
-					MatchLabels: map[string]string{"a": "b"},
-				},
-				Ingress: []extensions.NetworkPolicyIngressRule{},
-			},
-		},
-		{
-			ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"},
-			Spec: extensions.NetworkPolicySpec{
-				PodSelector: metav1.LabelSelector{
-					MatchLabels: map[string]string{"a": "b"},
-				},
-				Ingress: []extensions.NetworkPolicyIngressRule{
-					{
-						From:  []extensions.NetworkPolicyPeer{},
-						Ports: []extensions.NetworkPolicyPort{},
-					},
-				},
-			},
-		},
-		{
-			ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"},
-			Spec: extensions.NetworkPolicySpec{
-				PodSelector: metav1.LabelSelector{
-					MatchLabels: map[string]string{"a": "b"},
-				},
-				Ingress: []extensions.NetworkPolicyIngressRule{
-					{
-						Ports: []extensions.NetworkPolicyPort{
-							{
-								Protocol: nil,
-								Port:     &intstr.IntOrString{Type: intstr.Int, IntVal: 80},
-							},
-							{
-								Protocol: &protocolTCP,
-								Port:     nil,
-							},
-							{
-								Protocol: &protocolTCP,
-								Port:     &intstr.IntOrString{Type: intstr.Int, IntVal: 443},
-							},
-							{
-								Protocol: &protocolUDP,
-								Port:     &intstr.IntOrString{Type: intstr.String, StrVal: "dns"},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"},
-			Spec: extensions.NetworkPolicySpec{
-				PodSelector: metav1.LabelSelector{
-					MatchLabels: map[string]string{"a": "b"},
-				},
-				Ingress: []extensions.NetworkPolicyIngressRule{
-					{
-						From: []extensions.NetworkPolicyPeer{
-							{
-								PodSelector: &metav1.LabelSelector{
-									MatchLabels: map[string]string{"c": "d"},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"},
-			Spec: extensions.NetworkPolicySpec{
-				PodSelector: metav1.LabelSelector{
-					MatchLabels: map[string]string{"a": "b"},
-				},
-				Ingress: []extensions.NetworkPolicyIngressRule{
-					{
-						From: []extensions.NetworkPolicyPeer{
-							{
-								NamespaceSelector: &metav1.LabelSelector{
-									MatchLabels: map[string]string{"c": "d"},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	// Success cases are expected to pass validation.
-	for k, v := range successCases {
-		if errs := ValidateNetworkPolicy(&v); len(errs) != 0 {
-			t.Errorf("Expected success for %d, got %v", k, errs)
-		}
-	}
-
-	invalidSelector := map[string]string{"NoUppercaseOrSpecialCharsLike=Equals": "b"}
-	errorCases := map[string]extensions.NetworkPolicy{
-		"namespaceSelector and podSelector": {
-			ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"},
-			Spec: extensions.NetworkPolicySpec{
-				PodSelector: metav1.LabelSelector{
-					MatchLabels: map[string]string{"a": "b"},
-				},
-				Ingress: []extensions.NetworkPolicyIngressRule{
-					{
-						From: []extensions.NetworkPolicyPeer{
-							{
-								PodSelector: &metav1.LabelSelector{
-									MatchLabels: map[string]string{"c": "d"},
-								},
-								NamespaceSelector: &metav1.LabelSelector{
-									MatchLabels: map[string]string{"c": "d"},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		"invalid spec.podSelector": {
-			ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"},
-			Spec: extensions.NetworkPolicySpec{
-				PodSelector: metav1.LabelSelector{
-					MatchLabels: invalidSelector,
-				},
-				Ingress: []extensions.NetworkPolicyIngressRule{
-					{
-						From: []extensions.NetworkPolicyPeer{
-							{
-								NamespaceSelector: &metav1.LabelSelector{
-									MatchLabels: map[string]string{"c": "d"},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		"invalid ingress.ports.protocol": {
-			ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"},
-			Spec: extensions.NetworkPolicySpec{
-				PodSelector: metav1.LabelSelector{},
-				Ingress: []extensions.NetworkPolicyIngressRule{
-					{
-						Ports: []extensions.NetworkPolicyPort{
-							{
-								Protocol: &protocolICMP,
-								Port:     &intstr.IntOrString{Type: intstr.Int, IntVal: 80},
-							},
-						},
-					},
-				},
-			},
-		},
-		"invalid ingress.ports.port (int)": {
-			ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"},
-			Spec: extensions.NetworkPolicySpec{
-				PodSelector: metav1.LabelSelector{},
-				Ingress: []extensions.NetworkPolicyIngressRule{
-					{
-						Ports: []extensions.NetworkPolicyPort{
-							{
-								Protocol: &protocolTCP,
-								Port:     &intstr.IntOrString{Type: intstr.Int, IntVal: 123456789},
-							},
-						},
-					},
-				},
-			},
-		},
-		"invalid ingress.ports.port (str)": {
-			ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"},
-			Spec: extensions.NetworkPolicySpec{
-				PodSelector: metav1.LabelSelector{},
-				Ingress: []extensions.NetworkPolicyIngressRule{
-					{
-						Ports: []extensions.NetworkPolicyPort{
-							{
-								Protocol: &protocolTCP,
-								Port:     &intstr.IntOrString{Type: intstr.String, StrVal: "!@#$"},
-							},
-						},
-					},
-				},
-			},
-		},
-		"invalid ingress.from.podSelector": {
-			ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"},
-			Spec: extensions.NetworkPolicySpec{
-				PodSelector: metav1.LabelSelector{},
-				Ingress: []extensions.NetworkPolicyIngressRule{
-					{
-						From: []extensions.NetworkPolicyPeer{
-							{
-								PodSelector: &metav1.LabelSelector{
-									MatchLabels: invalidSelector,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		"invalid ingress.from.namespaceSelector": {
-			ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"},
-			Spec: extensions.NetworkPolicySpec{
-				PodSelector: metav1.LabelSelector{},
-				Ingress: []extensions.NetworkPolicyIngressRule{
-					{
-						From: []extensions.NetworkPolicyPeer{
-							{
-								NamespaceSelector: &metav1.LabelSelector{
-									MatchLabels: invalidSelector,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	// Error cases are not expected to pass validation.
-	for testName, networkPolicy := range errorCases {
-		if errs := ValidateNetworkPolicy(&networkPolicy); len(errs) == 0 {
-			t.Errorf("Expected failure for test: %s", testName)
-		}
-	}
-}
-
-func TestValidateNetworkPolicyUpdate(t *testing.T) {
-	type npUpdateTest struct {
-		old    extensions.NetworkPolicy
-		update extensions.NetworkPolicy
-	}
-	successCases := []npUpdateTest{
-		{
-			old: extensions.NetworkPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"},
-				Spec: extensions.NetworkPolicySpec{
-					PodSelector: metav1.LabelSelector{
-						MatchLabels: map[string]string{"a": "b"},
-					},
-					Ingress: []extensions.NetworkPolicyIngressRule{},
-				},
-			},
-			update: extensions.NetworkPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"},
-				Spec: extensions.NetworkPolicySpec{
-					PodSelector: metav1.LabelSelector{
-						MatchLabels: map[string]string{"a": "b"},
-					},
-					Ingress: []extensions.NetworkPolicyIngressRule{},
-				},
-			},
-		},
-	}
-
-	for _, successCase := range successCases {
-		successCase.old.ObjectMeta.ResourceVersion = "1"
-		successCase.update.ObjectMeta.ResourceVersion = "1"
-		if errs := ValidateNetworkPolicyUpdate(&successCase.update, &successCase.old); len(errs) != 0 {
-			t.Errorf("expected success: %v", errs)
-		}
-	}
-	errorCases := map[string]npUpdateTest{
-		"change name": {
-			old: extensions.NetworkPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"},
-				Spec: extensions.NetworkPolicySpec{
-					PodSelector: metav1.LabelSelector{},
-					Ingress:     []extensions.NetworkPolicyIngressRule{},
-				},
-			},
-			update: extensions.NetworkPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "baz", Namespace: "bar"},
-				Spec: extensions.NetworkPolicySpec{
-					PodSelector: metav1.LabelSelector{},
-					Ingress:     []extensions.NetworkPolicyIngressRule{},
-				},
-			},
-		},
-		"change spec": {
-			old: extensions.NetworkPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"},
-				Spec: extensions.NetworkPolicySpec{
-					PodSelector: metav1.LabelSelector{},
-					Ingress:     []extensions.NetworkPolicyIngressRule{},
-				},
-			},
-			update: extensions.NetworkPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"},
-				Spec: extensions.NetworkPolicySpec{
-					PodSelector: metav1.LabelSelector{
-						MatchLabels: map[string]string{"a": "b"},
-					},
-					Ingress: []extensions.NetworkPolicyIngressRule{},
-				},
-			},
-		},
-	}
-
-	for testName, errorCase := range errorCases {
-		if errs := ValidateNetworkPolicyUpdate(&errorCase.update, &errorCase.old); len(errs) == 0 {
-			t.Errorf("expected failure: %s", testName)
-		}
-	}
-}
-
-func TestIsValidSysctlPattern(t *testing.T) {
-	valid := []string{
-		"a.b.c.d",
-		"a",
-		"a_b",
-		"a-b",
-		"abc",
-		"abc.def",
-		"*",
-		"a.*",
-		"*",
-		"abc*",
-		"a.abc*",
-		"a.b.*",
-	}
-	invalid := []string{
-		"",
-		"ä",
-		"a_",
-		"_",
-		"_a",
-		"_a._b",
-		"__",
-		"-",
-		".",
-		"a.",
-		".a",
-		"a.b.",
-		"a*.b",
-		"a*b",
-		"*a",
-		"Abc",
-		func(n int) string {
-			x := make([]byte, n)
-			for i := range x {
-				x[i] = byte('a')
-			}
-			return string(x)
-		}(256),
-	}
-	for _, s := range valid {
-		if !IsValidSysctlPattern(s) {
-			t.Errorf("%q expected to be a valid sysctl pattern", s)
-		}
-	}
-	for _, s := range invalid {
-		if IsValidSysctlPattern(s) {
-			t.Errorf("%q expected to be an invalid sysctl pattern", s)
 		}
 	}
 }

@@ -21,24 +21,33 @@ import (
 	"math"
 	"time"
 
+	autoscaling "k8s.io/api/autoscaling/v2beta1"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/kubernetes/pkg/api/v1"
-	autoscaling "k8s.io/kubernetes/pkg/apis/autoscaling/v2alpha1"
-	v1coreclient "k8s.io/kubernetes/pkg/client/clientset_generated/clientset/typed/core/v1"
+	v1coreclient "k8s.io/client-go/kubernetes/typed/core/v1"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	metricsclient "k8s.io/kubernetes/pkg/controller/podautoscaler/metrics"
+)
+
+const (
+	// defaultTestingTolerance is default value for calculating when to
+	// scale up/scale down.
+	defaultTestingTolerance = 0.1
 )
 
 type ReplicaCalculator struct {
 	metricsClient metricsclient.MetricsClient
 	podsGetter    v1coreclient.PodsGetter
+	tolerance     float64
 }
 
-func NewReplicaCalculator(metricsClient metricsclient.MetricsClient, podsGetter v1coreclient.PodsGetter) *ReplicaCalculator {
+func NewReplicaCalculator(metricsClient metricsclient.MetricsClient, podsGetter v1coreclient.PodsGetter, tolerance float64) *ReplicaCalculator {
 	return &ReplicaCalculator{
 		metricsClient: metricsClient,
 		podsGetter:    podsGetter,
+		tolerance:     tolerance,
 	}
 }
 
@@ -55,11 +64,12 @@ func (c *ReplicaCalculator) GetResourceReplicas(currentReplicas int32, targetUti
 		return 0, 0, 0, time.Time{}, fmt.Errorf("unable to get pods while calculating replica count: %v", err)
 	}
 
-	if len(podList.Items) == 0 {
+	itemsLen := len(podList.Items)
+	if itemsLen == 0 {
 		return 0, 0, 0, time.Time{}, fmt.Errorf("no pods returned by selector while calculating replica count")
 	}
 
-	requests := make(map[string]int64, len(podList.Items))
+	requests := make(map[string]int64, itemsLen)
 	readyPodCount := 0
 	unreadyPods := sets.NewString()
 	missingPods := sets.NewString()
@@ -76,9 +86,13 @@ func (c *ReplicaCalculator) GetResourceReplicas(currentReplicas int32, targetUti
 
 		requests[pod.Name] = podSum
 
-		if pod.Status.Phase != v1.PodRunning || !v1.IsPodReady(&pod) {
+		if pod.Status.Phase != v1.PodRunning || !podutil.IsPodReady(&pod) {
 			// save this pod name for later, but pretend it doesn't exist for now
-			unreadyPods.Insert(pod.Name)
+			if pod.Status.Phase != v1.PodFailed {
+				// Failed pods should not be counted as unready pods as they will
+				// not become running anymore.
+				unreadyPods.Insert(pod.Name)
+			}
 			delete(metrics, pod.Name)
 			continue
 		}
@@ -103,7 +117,7 @@ func (c *ReplicaCalculator) GetResourceReplicas(currentReplicas int32, targetUti
 
 	rebalanceUnready := len(unreadyPods) > 0 && usageRatio > 1.0
 	if !rebalanceUnready && len(missingPods) == 0 {
-		if math.Abs(1.0-usageRatio) <= tolerance {
+		if math.Abs(1.0-usageRatio) <= c.tolerance {
 			// return the current replicas if the change would be too small
 			return currentReplicas, utilization, rawUtilization, timestamp, nil
 		}
@@ -139,7 +153,7 @@ func (c *ReplicaCalculator) GetResourceReplicas(currentReplicas int32, targetUti
 		return 0, utilization, rawUtilization, time.Time{}, err
 	}
 
-	if math.Abs(1.0-newUsageRatio) <= tolerance || (usageRatio < 1.0 && newUsageRatio > 1.0) || (usageRatio > 1.0 && newUsageRatio < 1.0) {
+	if math.Abs(1.0-newUsageRatio) <= c.tolerance || (usageRatio < 1.0 && newUsageRatio > 1.0) || (usageRatio > 1.0 && newUsageRatio < 1.0) {
 		// return the current replicas if the change would be too small,
 		// or if the new usage ratio would cause a change in scale direction
 		return currentReplicas, utilization, rawUtilization, timestamp, nil
@@ -191,7 +205,7 @@ func (c *ReplicaCalculator) calcPlainMetricReplicas(metrics metricsclient.PodMet
 	missingPods := sets.NewString()
 
 	for _, pod := range podList.Items {
-		if pod.Status.Phase != v1.PodRunning || !v1.IsPodReady(&pod) {
+		if pod.Status.Phase != v1.PodRunning || !podutil.IsPodReady(&pod) {
 			// save this pod name for later, but pretend it doesn't exist for now
 			unreadyPods.Insert(pod.Name)
 			delete(metrics, pod.Name)
@@ -208,7 +222,7 @@ func (c *ReplicaCalculator) calcPlainMetricReplicas(metrics metricsclient.PodMet
 	}
 
 	if len(metrics) == 0 {
-		return 0, 0, fmt.Errorf("did not recieve metrics for any ready pods")
+		return 0, 0, fmt.Errorf("did not receive metrics for any ready pods")
 	}
 
 	usageRatio, utilization := metricsclient.GetMetricUtilizationRatio(metrics, targetUtilization)
@@ -216,7 +230,7 @@ func (c *ReplicaCalculator) calcPlainMetricReplicas(metrics metricsclient.PodMet
 	rebalanceUnready := len(unreadyPods) > 0 && usageRatio > 1.0
 
 	if !rebalanceUnready && len(missingPods) == 0 {
-		if math.Abs(1.0-usageRatio) <= tolerance {
+		if math.Abs(1.0-usageRatio) <= c.tolerance {
 			// return the current replicas if the change would be too small
 			return currentReplicas, utilization, nil
 		}
@@ -248,11 +262,8 @@ func (c *ReplicaCalculator) calcPlainMetricReplicas(metrics metricsclient.PodMet
 
 	// re-run the utilization calculation with our new numbers
 	newUsageRatio, _ := metricsclient.GetMetricUtilizationRatio(metrics, targetUtilization)
-	if err != nil {
-		return 0, utilization, err
-	}
 
-	if math.Abs(1.0-newUsageRatio) <= tolerance || (usageRatio < 1.0 && newUsageRatio > 1.0) || (usageRatio > 1.0 && newUsageRatio < 1.0) {
+	if math.Abs(1.0-newUsageRatio) <= c.tolerance || (usageRatio < 1.0 && newUsageRatio > 1.0) || (usageRatio > 1.0 && newUsageRatio < 1.0) {
 		// return the current replicas if the change would be too small,
 		// or if the new usage ratio would cause a change in scale direction
 		return currentReplicas, utilization, nil
@@ -265,17 +276,108 @@ func (c *ReplicaCalculator) calcPlainMetricReplicas(metrics metricsclient.PodMet
 
 // GetObjectMetricReplicas calculates the desired replica count based on a target metric utilization (as a milli-value)
 // for the given object in the given namespace, and the current replica count.
-func (c *ReplicaCalculator) GetObjectMetricReplicas(currentReplicas int32, targetUtilization int64, metricName string, namespace string, objectRef *autoscaling.CrossVersionObjectReference) (replicaCount int32, utilization int64, timestamp time.Time, err error) {
+func (c *ReplicaCalculator) GetObjectMetricReplicas(currentReplicas int32, targetUtilization int64, metricName string, namespace string, objectRef *autoscaling.CrossVersionObjectReference, selector labels.Selector) (replicaCount int32, utilization int64, timestamp time.Time, err error) {
 	utilization, timestamp, err = c.metricsClient.GetObjectMetric(metricName, namespace, objectRef)
 	if err != nil {
 		return 0, 0, time.Time{}, fmt.Errorf("unable to get metric %s: %v on %s %s/%s", metricName, objectRef.Kind, namespace, objectRef.Name, err)
 	}
 
 	usageRatio := float64(utilization) / float64(targetUtilization)
-	if math.Abs(1.0-usageRatio) <= tolerance {
+	if math.Abs(1.0-usageRatio) <= c.tolerance {
 		// return the current replicas if the change would be too small
 		return currentReplicas, utilization, timestamp, nil
 	}
 
-	return int32(math.Ceil(usageRatio * float64(currentReplicas))), utilization, timestamp, nil
+	readyPodCount, err := c.getReadyPodsCount(namespace, selector)
+
+	if err != nil {
+		return 0, 0, time.Time{}, fmt.Errorf("unable to calculate ready pods: %s", err)
+	}
+
+	replicaCount = int32(math.Ceil(usageRatio * float64(readyPodCount)))
+
+	return replicaCount, utilization, timestamp, nil
+}
+
+// @TODO(mattjmcnaughton) Many different functions in this module use variations
+// of this function. Make this function generic, so we don't repeat the same
+// logic in multiple places.
+func (c *ReplicaCalculator) getReadyPodsCount(namespace string, selector labels.Selector) (int64, error) {
+	podList, err := c.podsGetter.Pods(namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	if err != nil {
+		return 0, fmt.Errorf("unable to get pods while calculating replica count: %v", err)
+	}
+
+	if len(podList.Items) == 0 {
+		return 0, fmt.Errorf("no pods returned by selector while calculating replica count")
+	}
+
+	readyPodCount := 0
+
+	for _, pod := range podList.Items {
+		if pod.Status.Phase == v1.PodRunning && podutil.IsPodReady(&pod) {
+			readyPodCount++
+		}
+	}
+
+	return int64(readyPodCount), nil
+}
+
+// GetExternalMetricReplicas calculates the desired replica count based on a
+// target metric value (as a milli-value) for the external metric in the given
+// namespace, and the current replica count.
+func (c *ReplicaCalculator) GetExternalMetricReplicas(currentReplicas int32, targetUtilization int64, metricName, namespace string, metricSelector *metav1.LabelSelector, podSelector labels.Selector) (replicaCount int32, utilization int64, timestamp time.Time, err error) {
+	metricLabelSelector, err := metav1.LabelSelectorAsSelector(metricSelector)
+	if err != nil {
+		return 0, 0, time.Time{}, err
+	}
+	metrics, timestamp, err := c.metricsClient.GetExternalMetric(metricName, namespace, metricLabelSelector)
+	if err != nil {
+		return 0, 0, time.Time{}, fmt.Errorf("unable to get external metric %s/%s/%+v: %s", namespace, metricName, metricSelector, err)
+	}
+	utilization = 0
+	for _, val := range metrics {
+		utilization = utilization + val
+	}
+
+	readyPodCount, err := c.getReadyPodsCount(namespace, podSelector)
+
+	if err != nil {
+		return 0, 0, time.Time{}, fmt.Errorf("unable to calculate ready pods: %s", err)
+	}
+
+	usageRatio := float64(utilization) / float64(targetUtilization)
+	if math.Abs(1.0-usageRatio) <= c.tolerance {
+		// return the current replicas if the change would be too small
+		return currentReplicas, utilization, timestamp, nil
+	}
+
+	return int32(math.Ceil(usageRatio * float64(readyPodCount))), utilization, timestamp, nil
+}
+
+// GetExternalPerPodMetricReplicas calculates the desired replica count based on a
+// target metric value per pod (as a milli-value) for the external metric in the
+// given namespace, and the current replica count.
+func (c *ReplicaCalculator) GetExternalPerPodMetricReplicas(currentReplicas int32, targetUtilizationPerPod int64, metricName, namespace string, metricSelector *metav1.LabelSelector) (replicaCount int32, utilization int64, timestamp time.Time, err error) {
+	metricLabelSelector, err := metav1.LabelSelectorAsSelector(metricSelector)
+	if err != nil {
+		return 0, 0, time.Time{}, err
+	}
+	metrics, timestamp, err := c.metricsClient.GetExternalMetric(metricName, namespace, metricLabelSelector)
+	if err != nil {
+		return 0, 0, time.Time{}, fmt.Errorf("unable to get external metric %s/%s/%+v: %s", namespace, metricName, metricSelector, err)
+	}
+	utilization = 0
+	for _, val := range metrics {
+		utilization = utilization + val
+	}
+
+	replicaCount = currentReplicas
+	usageRatio := float64(utilization) / (float64(targetUtilizationPerPod) * float64(replicaCount))
+	if math.Abs(1.0-usageRatio) > c.tolerance {
+		// update number of replicas if the change is large enough
+		replicaCount = int32(math.Ceil(float64(utilization) / float64(targetUtilizationPerPod)))
+	}
+	utilization = int64(math.Ceil(float64(utilization) / float64(currentReplicas)))
+	return replicaCount, utilization, timestamp, nil
 }

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2015 The Kubernetes Authors.
 #
@@ -36,7 +36,7 @@ trap "rm -rf ${TMP_ROOT}" EXIT SIGINT
 
 echo "diffing ${API_REFERENCE_DOCS_ROOT} against freshly generated docs"
 ret=0
-diff -NauprB -I 'Last update' --exclude=*.md "${API_REFERENCE_DOCS_ROOT}" "${OUTPUT_DIR}" || ret=$?
+diff -NauprB -I 'Last update' --exclude=*.md --exclude=OWNERS "${API_REFERENCE_DOCS_ROOT}" "${OUTPUT_DIR}" || ret=$?
 if [[ $ret -eq 0 ]]
 then
   echo "${API_REFERENCE_DOCS_ROOT} up to date."

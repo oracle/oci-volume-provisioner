@@ -1,6 +1,6 @@
 package(default_visibility = ["//visibility:public"])
 
-load("@bazel_tools//tools/build_defs/pkg:pkg.bzl", "pkg_tar")
+load("@io_kubernetes_build//defs:pkg.bzl", "pkg_tar")
 
 filegroup(
     name = "addon-srcs",
@@ -16,10 +16,10 @@ filegroup(
 
 pkg_tar(
     name = "addons",
-    extension = "tar.gz",
-    files = [
+    srcs = [
         ":addon-srcs",
     ],
+    extension = "tar.gz",
     mode = "0644",
     strip_prefix = ".",
 )
@@ -33,6 +33,9 @@ filegroup(
 
 filegroup(
     name = "all-srcs",
-    srcs = [":package-srcs"],
+    srcs = [
+        ":package-srcs",
+        "//cluster/addons/fluentd-elasticsearch/es-image:all-srcs",
+    ],
     tags = ["automanaged"],
 )

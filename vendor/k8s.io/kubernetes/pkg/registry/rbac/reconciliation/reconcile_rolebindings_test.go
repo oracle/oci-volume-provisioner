@@ -19,24 +19,24 @@ package reconciliation
 import (
 	"testing"
 
-	api "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/apis/rbac"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/kubernetes/pkg/apis/core/helper"
 )
 
-func binding(roleRef rbac.RoleRef, subjects []rbac.Subject) *rbac.ClusterRoleBinding {
-	return &rbac.ClusterRoleBinding{RoleRef: roleRef, Subjects: subjects}
+func binding(roleRef rbacv1.RoleRef, subjects []rbacv1.Subject) *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{RoleRef: roleRef, Subjects: subjects}
 }
 
-func ref(name string) rbac.RoleRef {
-	return rbac.RoleRef{Name: name}
+func ref(name string) rbacv1.RoleRef {
+	return rbacv1.RoleRef{Name: name}
 }
 
-func subject(name string) rbac.Subject {
-	return rbac.Subject{Name: name}
+func subject(name string) rbacv1.Subject {
+	return rbacv1.Subject{Name: name}
 }
 
-func subjects(names ...string) []rbac.Subject {
-	r := []rbac.Subject{}
+func subjects(names ...string) []rbacv1.Subject {
+	r := []rbacv1.Subject{}
 	for _, name := range names {
 		r = append(r, subject(name))
 	}
@@ -45,10 +45,10 @@ func subjects(names ...string) []rbac.Subject {
 
 func TestDiffObjectReferenceLists(t *testing.T) {
 	tests := map[string]struct {
-		A             []rbac.Subject
-		B             []rbac.Subject
-		ExpectedOnlyA []rbac.Subject
-		ExpectedOnlyB []rbac.Subject
+		A             []rbacv1.Subject
+		B             []rbacv1.Subject
+		ExpectedOnlyA []rbacv1.Subject
+		ExpectedOnlyB []rbacv1.Subject
 	}{
 		"empty": {},
 
@@ -81,10 +81,10 @@ func TestDiffObjectReferenceLists(t *testing.T) {
 
 	for k, tc := range tests {
 		onlyA, onlyB := diffSubjectLists(tc.A, tc.B)
-		if !api.Semantic.DeepEqual(onlyA, tc.ExpectedOnlyA) {
+		if !helper.Semantic.DeepEqual(onlyA, tc.ExpectedOnlyA) {
 			t.Errorf("%s: Expected %#v, got %#v", k, tc.ExpectedOnlyA, onlyA)
 		}
-		if !api.Semantic.DeepEqual(onlyB, tc.ExpectedOnlyB) {
+		if !helper.Semantic.DeepEqual(onlyB, tc.ExpectedOnlyB) {
 			t.Errorf("%s: Expected %#v, got %#v", k, tc.ExpectedOnlyB, onlyB)
 		}
 	}
@@ -92,11 +92,11 @@ func TestDiffObjectReferenceLists(t *testing.T) {
 
 func TestComputeUpdate(t *testing.T) {
 	tests := map[string]struct {
-		ExpectedBinding     *rbac.ClusterRoleBinding
-		ActualBinding       *rbac.ClusterRoleBinding
+		ExpectedBinding     *rbacv1.ClusterRoleBinding
+		ActualBinding       *rbacv1.ClusterRoleBinding
 		RemoveExtraSubjects bool
 
-		ExpectedUpdatedBinding *rbac.ClusterRoleBinding
+		ExpectedUpdatedBinding *rbacv1.ClusterRoleBinding
 		ExpectedUpdateNeeded   bool
 	}{
 		"match without union": {
@@ -174,7 +174,7 @@ func TestComputeUpdate(t *testing.T) {
 			t.Errorf("%s: Expected\n\t%v\ngot\n\t%v (%v)", k, tc.ExpectedUpdateNeeded, updateNeeded, result.Operation)
 			continue
 		}
-		if updateNeeded && !api.Semantic.DeepEqual(updatedBinding, tc.ExpectedUpdatedBinding) {
+		if updateNeeded && !helper.Semantic.DeepEqual(updatedBinding, tc.ExpectedUpdatedBinding) {
 			t.Errorf("%s: Expected\n\t%v %v\ngot\n\t%v %v", k, tc.ExpectedUpdatedBinding.RoleRef, tc.ExpectedUpdatedBinding.Subjects, updatedBinding.RoleRef, updatedBinding.Subjects)
 		}
 	}

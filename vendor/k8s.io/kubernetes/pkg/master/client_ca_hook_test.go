@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/diff"
 	clienttesting "k8s.io/client-go/testing"
-	"k8s.io/kubernetes/pkg/api"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/fake"
 )
 
@@ -189,18 +189,18 @@ func TestWriteClientCAs(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		client := fake.NewSimpleClientset(test.preexistingObjs...)
-		test.hook.writeClientCAs(client.Core())
+		t.Run(test.name, func(t *testing.T) {
+			client := fake.NewSimpleClientset(test.preexistingObjs...)
+			test.hook.tryToWriteClientCAs(client.Core())
 
-		actualConfigMaps, updated := getFinalConfiMaps(client)
-		if !reflect.DeepEqual(test.expectedConfigMaps, actualConfigMaps) {
-			t.Errorf("%s: %v", test.name, diff.ObjectReflectDiff(test.expectedConfigMaps, actualConfigMaps))
-			continue
-		}
-		if test.expectUpdate != updated {
-			t.Errorf("%s: expected %v, got %v", test.name, test.expectUpdate, updated)
-			continue
-		}
+			actualConfigMaps, updated := getFinalConfiMaps(client)
+			if !reflect.DeepEqual(test.expectedConfigMaps, actualConfigMaps) {
+				t.Fatalf("%s: %v", test.name, diff.ObjectReflectDiff(test.expectedConfigMaps, actualConfigMaps))
+			}
+			if test.expectUpdate != updated {
+				t.Fatalf("%s: expected %v, got %v", test.name, test.expectUpdate, updated)
+			}
+		})
 	}
 }
 

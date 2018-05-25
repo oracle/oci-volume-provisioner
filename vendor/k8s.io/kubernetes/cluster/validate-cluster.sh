@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2014 The Kubernetes Authors.
 #
@@ -30,7 +30,7 @@ if [ -f "${KUBE_ROOT}/cluster/env.sh" ]; then
   source "${KUBE_ROOT}/cluster/env.sh"
 fi
 
-source "${KUBE_ROOT}/cluster/lib/util.sh"
+source "${KUBE_ROOT}/hack/lib/util.sh"
 source "${KUBE_ROOT}/cluster/kube-util.sh"
 
 # Run kubectl and retry upon failure.
@@ -56,8 +56,8 @@ if [[ "${KUBERNETES_PROVIDER:-}" == "gce" ]]; then
   echo "Validating gce cluster, MULTIZONE=${MULTIZONE:-}"
   # In multizone mode we need to add instances for all nodes in the region.
   if [[ "${MULTIZONE:-}" == "true" ]]; then
-    EXPECTED_NUM_NODES=$(gcloud -q compute instances list --project="${PROJECT}" --format=[no-heading] --regexp="${NODE_INSTANCE_PREFIX}.*" \
-      --zones=$(gcloud -q compute zones list --project="${PROJECT}" --filter=region=${REGION} --format=[no-heading]\(name\) | tr "\n" "," | sed  "s/,$//") | wc -l)
+    EXPECTED_NUM_NODES=$(gcloud -q compute instances list --project="${PROJECT}" --format=[no-heading] \
+      --filter="name ~ '${NODE_INSTANCE_PREFIX}.*' AND zone:($(gcloud -q compute zones list --project="${PROJECT}" --filter=region=${REGION} --format=csv[no-heading]\(name\) | tr "\n" "," | sed  "s/,$//"))" | wc -l)
     echo "Computing number of nodes, NODE_INSTANCE_PREFIX=${NODE_INSTANCE_PREFIX}, REGION=${REGION}, EXPECTED_NUM_NODES=${EXPECTED_NUM_NODES}"
   fi
 fi
@@ -97,7 +97,7 @@ while true; do
   # available and then get restarted as the kubelet configures the docker bridge.
   #
   # We are assigning the result of kubectl_retry get nodes operation to the res
-  # varaible in that way, to prevent stopping the whole script on an error.
+  # variable in that way, to prevent stopping the whole script on an error.
   node=$(kubectl_retry get nodes) && res="$?" || res="$?"
   if [ "${res}" -ne "0" ]; then
     if [[ "${attempt}" -gt "${last_run:-$MAX_ATTEMPTS}" ]]; then
@@ -153,7 +153,7 @@ while true; do
   componentstatuses=$(echo "${cs_status}" | grep -c 'Healthy:') || true
   healthy=$(echo "${cs_status}" | grep -c 'Healthy:True') || true
 
-  if ((componentstatuses > healthy)); then
+  if ((componentstatuses > healthy)) || ((componentstatuses == 0)); then
     if ((attempt < 5)); then
       echo -e "${color_yellow}Cluster not working yet.${color_norm}"
       attempt=$((attempt+1))
@@ -170,7 +170,7 @@ while true; do
 done
 
 echo "Validate output:"
-kubectl_retry get cs
+kubectl_retry get cs || true
 if [ "${return_value}" == "0" ]; then
   echo -e "${color_green}Cluster validation succeeded${color_norm}"
 else

@@ -25,13 +25,14 @@ import (
 	"strings"
 	"testing"
 
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/kubernetes/pkg/api/v1"
-	"k8s.io/kubernetes/pkg/util/exec"
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/volume/empty_dir"
 	volumetest "k8s.io/kubernetes/pkg/volume/testing"
+	"k8s.io/utils/exec"
+	fakeexec "k8s.io/utils/exec/testing"
 )
 
 func newTestHost(t *testing.T) (string, volume.VolumeHost) {
@@ -46,7 +47,7 @@ func TestCanSupport(t *testing.T) {
 	plugMgr := volume.VolumePluginMgr{}
 	tempDir, host := newTestHost(t)
 	defer os.RemoveAll(tempDir)
-	plugMgr.InitPlugins(ProbeVolumePlugins(), host)
+	plugMgr.InitPlugins(ProbeVolumePlugins(), nil /* prober */, host)
 
 	plug, err := plugMgr.FindPluginByName("kubernetes.io/git-repo")
 	if err != nil {
@@ -92,7 +93,7 @@ func TestPlugin(t *testing.T) {
 			},
 			expecteds: []expectedCommand{
 				{
-					cmd: []string{"git", "clone", gitUrl, "target_dir"},
+					cmd: []string{"git", "clone", "--", gitUrl, "target_dir"},
 					dir: "",
 				},
 				{
@@ -119,7 +120,7 @@ func TestPlugin(t *testing.T) {
 			},
 			expecteds: []expectedCommand{
 				{
-					cmd: []string{"git", "clone", gitUrl, "target_dir"},
+					cmd: []string{"git", "clone", "--", gitUrl, "target_dir"},
 					dir: "",
 				},
 			},
@@ -137,7 +138,7 @@ func TestPlugin(t *testing.T) {
 			},
 			expecteds: []expectedCommand{
 				{
-					cmd: []string{"git", "clone", gitUrl},
+					cmd: []string{"git", "clone", "--", gitUrl},
 					dir: "",
 				},
 			},
@@ -157,7 +158,7 @@ func TestPlugin(t *testing.T) {
 			},
 			expecteds: []expectedCommand{
 				{
-					cmd: []string{"git", "clone", gitUrl},
+					cmd: []string{"git", "clone", "--", gitUrl},
 					dir: "",
 				},
 				{
@@ -185,7 +186,7 @@ func TestPlugin(t *testing.T) {
 			},
 			expecteds: []expectedCommand{
 				{
-					cmd: []string{"git", "clone", gitUrl, "."},
+					cmd: []string{"git", "clone", "--", gitUrl, "."},
 					dir: "",
 				},
 				{
@@ -198,6 +199,72 @@ func TestPlugin(t *testing.T) {
 				},
 			},
 			isExpectedFailure: false,
+		},
+		{
+			name: "current-dir-mess",
+			vol: &v1.Volume{
+				Name: "vol1",
+				VolumeSource: v1.VolumeSource{
+					GitRepo: &v1.GitRepoVolumeSource{
+						Repository: gitUrl,
+						Revision:   revision,
+						Directory:  "./.",
+					},
+				},
+			},
+			expecteds: []expectedCommand{
+				{
+					cmd: []string{"git", "clone", "--", gitUrl, "./."},
+					dir: "",
+				},
+				{
+					cmd: []string{"git", "checkout", revision},
+					dir: "",
+				},
+				{
+					cmd: []string{"git", "reset", "--hard"},
+					dir: "",
+				},
+			},
+			isExpectedFailure: false,
+		},
+		{
+			name: "invalid-repository",
+			vol: &v1.Volume{
+				Name: "vol1",
+				VolumeSource: v1.VolumeSource{
+					GitRepo: &v1.GitRepoVolumeSource{
+						Repository: "--foo",
+					},
+				},
+			},
+			isExpectedFailure: true,
+		},
+		{
+			name: "invalid-revision",
+			vol: &v1.Volume{
+				Name: "vol1",
+				VolumeSource: v1.VolumeSource{
+					GitRepo: &v1.GitRepoVolumeSource{
+						Repository: gitUrl,
+						Revision:   "--bar",
+					},
+				},
+			},
+			isExpectedFailure: true,
+		},
+		{
+			name: "invalid-directory",
+			vol: &v1.Volume{
+				Name: "vol1",
+				VolumeSource: v1.VolumeSource{
+					GitRepo: &v1.GitRepoVolumeSource{
+						Repository: gitUrl,
+						Directory:  "-b",
+					},
+				},
+			},
+			isExpectedFailure: true,
 		},
 	}
 
@@ -224,7 +291,7 @@ func doTestPlugin(scenario struct {
 	plugMgr := volume.VolumePluginMgr{}
 	rootDir, host := newTestHost(t)
 	defer os.RemoveAll(rootDir)
-	plugMgr.InitPlugins(ProbeVolumePlugins(), host)
+	plugMgr.InitPlugins(ProbeVolumePlugins(), nil /* prober */, host)
 
 	plug, err := plugMgr.FindPluginByName("kubernetes.io/git-repo")
 	if err != nil {
@@ -305,7 +372,7 @@ func doTestPlugin(scenario struct {
 			fmt.Errorf("TearDown() failed, volume path still exists: %s", path))
 	} else if !os.IsNotExist(err) {
 		allErrs = append(allErrs,
-			fmt.Errorf("SetUp() failed: %v", err))
+			fmt.Errorf("TearDown() failed: %v", err))
 	}
 	return allErrs
 }
@@ -320,8 +387,8 @@ func doTestSetUp(scenario struct {
 	allErrs := []error{}
 
 	// Construct combined outputs from expected commands
-	var fakeOutputs []exec.FakeCombinedOutputAction
-	var fcmd exec.FakeCmd
+	var fakeOutputs []fakeexec.FakeCombinedOutputAction
+	var fcmd fakeexec.FakeCmd
 	for _, expected := range expecteds {
 		if expected.cmd[1] == "clone" {
 			fakeOutputs = append(fakeOutputs, func() ([]byte, error) {
@@ -336,19 +403,19 @@ func doTestSetUp(scenario struct {
 			})
 		}
 	}
-	fcmd = exec.FakeCmd{
+	fcmd = fakeexec.FakeCmd{
 		CombinedOutputScript: fakeOutputs,
 	}
 
 	// Construct fake exec outputs from fcmd
-	var fakeAction []exec.FakeCommandAction
+	var fakeAction []fakeexec.FakeCommandAction
 	for i := 0; i < len(expecteds); i++ {
 		fakeAction = append(fakeAction, func(cmd string, args ...string) exec.Cmd {
-			return exec.InitFakeCmd(&fcmd, cmd, args...)
+			return fakeexec.InitFakeCmd(&fcmd, cmd, args...)
 		})
 
 	}
-	fake := exec.FakeExec{
+	fake := fakeexec.FakeExec{
 		CommandScript: fakeAction,
 	}
 

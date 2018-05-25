@@ -17,20 +17,24 @@ limitations under the License.
 package storage
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
 
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/generic"
 	genericregistry "k8s.io/apiserver/pkg/registry/generic/registry"
 	"k8s.io/apiserver/pkg/registry/rest"
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/v1"
+	api "k8s.io/kubernetes/pkg/apis/core"
+	k8s_api_v1 "k8s.io/kubernetes/pkg/apis/core/v1"
 	"k8s.io/kubernetes/pkg/kubelet/client"
-	"k8s.io/kubernetes/pkg/registry/cachesize"
+	"k8s.io/kubernetes/pkg/printers"
+	printersinternal "k8s.io/kubernetes/pkg/printers/internalversion"
+	printerstorage "k8s.io/kubernetes/pkg/printers/storage"
 	"k8s.io/kubernetes/pkg/registry/core/node"
 	noderest "k8s.io/kubernetes/pkg/registry/core/node/rest"
 )
@@ -50,7 +54,7 @@ type REST struct {
 	proxyTransport http.RoundTripper
 }
 
-// StatusREST implements the REST endpoint for changing the status of a pod.
+// StatusREST implements the REST endpoint for changing the status of a node.
 type StatusREST struct {
 	store *genericregistry.Store
 }
@@ -60,32 +64,29 @@ func (r *StatusREST) New() runtime.Object {
 }
 
 // Get retrieves the object from the storage. It is required to support Patch.
-func (r *StatusREST) Get(ctx genericapirequest.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
+func (r *StatusREST) Get(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
 	return r.store.Get(ctx, name, options)
 }
 
 // Update alters the status subset of an object.
-func (r *StatusREST) Update(ctx genericapirequest.Context, name string, objInfo rest.UpdatedObjectInfo) (runtime.Object, bool, error) {
-	return r.store.Update(ctx, name, objInfo)
+func (r *StatusREST) Update(ctx context.Context, name string, objInfo rest.UpdatedObjectInfo, createValidation rest.ValidateObjectFunc, updateValidation rest.ValidateObjectUpdateFunc) (runtime.Object, bool, error) {
+	return r.store.Update(ctx, name, objInfo, createValidation, updateValidation)
 }
 
 // NewStorage returns a NodeStorage object that will work against nodes.
 func NewStorage(optsGetter generic.RESTOptionsGetter, kubeletClientConfig client.KubeletClientConfig, proxyTransport http.RoundTripper) (*NodeStorage, error) {
 	store := &genericregistry.Store{
-		Copier:      api.Scheme,
-		NewFunc:     func() runtime.Object { return &api.Node{} },
-		NewListFunc: func() runtime.Object { return &api.NodeList{} },
-		ObjectNameFunc: func(obj runtime.Object) (string, error) {
-			return obj.(*api.Node).Name, nil
-		},
-		PredicateFunc:     node.MatchNode,
-		QualifiedResource: api.Resource("nodes"),
-		WatchCacheSize:    cachesize.GetWatchCacheSizeByResource("nodes"),
+		NewFunc:                  func() runtime.Object { return &api.Node{} },
+		NewListFunc:              func() runtime.Object { return &api.NodeList{} },
+		PredicateFunc:            node.MatchNode,
+		DefaultQualifiedResource: api.Resource("nodes"),
 
 		CreateStrategy: node.Strategy,
 		UpdateStrategy: node.Strategy,
 		DeleteStrategy: node.Strategy,
 		ExportStrategy: node.Strategy,
+
+		TableConvertor: printerstorage.TableConvertor{TablePrinter: printers.NewTablePrinter().With(printersinternal.AddHandlers)},
 	}
 	options := &generic.StoreOptions{RESTOptions: optsGetter, AttrFunc: node.GetAttrs, TriggerFunc: node.NodeNameTriggerFunc}
 	if err := store.CompleteWithOptions(options); err != nil {
@@ -112,7 +113,7 @@ func NewStorage(optsGetter generic.RESTOptionsGetter, kubeletClientConfig client
 		}
 		// TODO: Remove the conversion. Consider only return the NodeAddresses
 		externalNode := &v1.Node{}
-		err = v1.Convert_api_Node_To_v1_Node(node, externalNode, nil)
+		err = k8s_api_v1.Convert_core_Node_To_v1_Node(node, externalNode, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert to v1.Node: %v", err)
 		}
@@ -137,7 +138,7 @@ func NewStorage(optsGetter generic.RESTOptionsGetter, kubeletClientConfig client
 var _ = rest.Redirector(&REST{})
 
 // ResourceLocation returns a URL to which one can send traffic for the specified node.
-func (r *REST) ResourceLocation(ctx genericapirequest.Context, id string) (*url.URL, http.RoundTripper, error) {
+func (r *REST) ResourceLocation(ctx context.Context, id string) (*url.URL, http.RoundTripper, error) {
 	return node.ResourceLocation(r, r.connection, r.proxyTransport, ctx, id)
 }
 

@@ -18,11 +18,12 @@ package quobyte
 
 import (
 	"net"
-	"path"
+	"os"
+	"path/filepath"
 	"strings"
 
-	"k8s.io/kubernetes/pkg/api/v1"
-	"k8s.io/kubernetes/pkg/volume"
+	"k8s.io/api/core/v1"
+	"k8s.io/kubernetes/pkg/volume/util"
 
 	"github.com/golang/glog"
 	quobyteapi "github.com/quobyte/api"
@@ -32,11 +33,11 @@ type quobyteVolumeManager struct {
 	config *quobyteAPIConfig
 }
 
-func (manager *quobyteVolumeManager) createVolume(provisioner *quobyteVolumeProvisioner) (quobyte *v1.QuobyteVolumeSource, size int, err error) {
+func (manager *quobyteVolumeManager) createVolume(provisioner *quobyteVolumeProvisioner, createQuota bool) (quobyte *v1.QuobyteVolumeSource, size int, err error) {
 	capacity := provisioner.options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
-	volumeSize := int(volume.RoundUpSize(capacity.Value(), 1024*1024*1024))
+	volumeSize := int(util.RoundUpSize(capacity.Value(), 1024*1024*1024))
 	// Quobyte has the concept of Volumes which doen't have a specific size (they can grow unlimited)
-	// to simulate a size constraint we could set here a Quota
+	// to simulate a size constraint we set here a Quota for logical space
 	volumeRequest := &quobyteapi.CreateVolumeRequest{
 		Name:              provisioner.volume,
 		RootUserID:        provisioner.user,
@@ -45,8 +46,18 @@ func (manager *quobyteVolumeManager) createVolume(provisioner *quobyteVolumeProv
 		ConfigurationName: provisioner.config,
 	}
 
-	if _, err := manager.createQuobyteClient().CreateVolume(volumeRequest); err != nil {
+	quobyteClient := manager.createQuobyteClient()
+	volumeUUID, err := quobyteClient.CreateVolume(volumeRequest)
+	if err != nil {
 		return &v1.QuobyteVolumeSource{}, volumeSize, err
+	}
+
+	// Set Quota for Volume with specified byte size
+	if createQuota {
+		err = quobyteClient.SetVolumeQuota(volumeUUID, uint64(capacity.Value()))
+		if err != nil {
+			return &v1.QuobyteVolumeSource{}, volumeSize, err
+		}
 	}
 
 	glog.V(4).Infof("Created Quobyte volume %s", provisioner.volume)
@@ -91,7 +102,7 @@ func (mounter *quobyteMounter) pluginDirIsMounted(pluginDir string) (bool, error
 }
 
 func (mounter *quobyteMounter) correctTraillingSlash(regStr string) string {
-	return path.Clean(regStr) + "/"
+	return filepath.Clean(regStr) + string(os.PathSeparator)
 }
 
 func validateRegistry(registry string) bool {

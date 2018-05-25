@@ -23,6 +23,9 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"syscall"
+
+	"github.com/golang/glog"
 )
 
 var defaultGaneshaConfigContents = []byte(`
@@ -69,12 +72,13 @@ NFSV4
 }
 `)
 
-// Start starts the NFS server. If an error is encountered at any point it returns it instantly
-func Start(ganeshaConfig string, gracePeriod uint) error {
+// Setup sets up various prerequisites and settings for the server. If an error
+// is encountered at any point it returns it instantly
+func Setup(ganeshaConfig string, gracePeriod uint) error {
 	// Start rpcbind if it is not started yet
 	cmd := exec.Command("/usr/sbin/rpcinfo", "127.0.0.1")
 	if err := cmd.Run(); err != nil {
-		cmd := exec.Command("/usr/sbin/rpcbind", "-w")
+		cmd = exec.Command("/usr/sbin/rpcbind", "-w")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("Starting rpcbind failed with error: %v, output: %s", err, out)
 		}
@@ -91,14 +95,19 @@ func Start(ganeshaConfig string, gracePeriod uint) error {
 		return fmt.Errorf("dbus-daemon failed with error: %v, output: %s", err, out)
 	}
 
+	err := setRlimitNOFILE()
+	if err != nil {
+		glog.Warningf("Error setting RLIMIT_NOFILE, there may be 'Too many open files' errors later: %v", err)
+	}
+
 	// Use defaultGaneshaConfigContents if the ganeshaConfig doesn't exist yet
-	if _, err := os.Stat(ganeshaConfig); os.IsNotExist(err) {
+	if _, err = os.Stat(ganeshaConfig); os.IsNotExist(err) {
 		err = ioutil.WriteFile(ganeshaConfig, defaultGaneshaConfigContents, 0600)
 		if err != nil {
 			return fmt.Errorf("error writing ganesha config %s: %v", ganeshaConfig, err)
 		}
 	}
-	err := setGracePeriod(ganeshaConfig, gracePeriod)
+	err = setGracePeriod(ganeshaConfig, gracePeriod)
 	if err != nil {
 		return fmt.Errorf("error setting grace period to ganesha config: %v", err)
 	}
@@ -106,12 +115,44 @@ func Start(ganeshaConfig string, gracePeriod uint) error {
 	if err != nil {
 		return fmt.Errorf("error setting fsid device to ganesha config: %v", err)
 	}
+
+	return nil
+}
+
+// Run : run the NFS server in the foreground until it exits
+// Ideally, it should never exit when run in foreground mode
+// We force foreground to allow the provisioner process to restart
+// the server if it crashes - daemonization prevents us from using Wait()
+// for this purpose
+func Run(ganeshaLog, ganeshaPid, ganeshaConfig string) error {
 	// Start ganesha.nfsd
-	cmd = exec.Command("ganesha.nfsd", "-L", "/var/log/ganesha.log", "-f", ganeshaConfig)
+	glog.Infof("Running NFS server!")
+	cmd := exec.Command("ganesha.nfsd", "-F", "-L", ganeshaLog, "-p", ganeshaPid, "-f", ganeshaConfig)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ganesha.nfsd failed with error: %v, output: %s", err, out)
 	}
 
+	return nil
+}
+
+func setRlimitNOFILE() error {
+	var rlimit syscall.Rlimit
+	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rlimit)
+	if err != nil {
+		return fmt.Errorf("error getting RLIMIT_NOFILE: %v", err)
+	}
+	glog.Infof("starting RLIMIT_NOFILE rlimit.Cur %d, rlimit.Max %d", rlimit.Cur, rlimit.Max)
+	rlimit.Max = 1024 * 1024
+	rlimit.Cur = 1024 * 1024
+	err = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rlimit)
+	if err != nil {
+		return err
+	}
+	err = syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rlimit)
+	if err != nil {
+		return fmt.Errorf("error getting RLIMIT_NOFILE: %v", err)
+	}
+	glog.Infof("ending RLIMIT_NOFILE rlimit.Cur %d, rlimit.Max %d", rlimit.Cur, rlimit.Max)
 	return nil
 }
 
@@ -169,9 +210,10 @@ func setGracePeriod(ganeshaConfig string, gracePeriod uint) error {
 
 	oldLine := re.Find(read)
 
+	var file *os.File
 	if oldLine == nil {
 		// Grace_Period line not there, append the whole NFSV4 block.
-		file, err := os.OpenFile(ganeshaConfig, os.O_APPEND|os.O_WRONLY, 0600)
+		file, err = os.OpenFile(ganeshaConfig, os.O_APPEND|os.O_WRONLY, 0600)
 		if err != nil {
 			return err
 		}

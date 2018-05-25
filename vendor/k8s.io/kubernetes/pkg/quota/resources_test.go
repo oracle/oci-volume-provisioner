@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/kubernetes/pkg/api"
+	api "k8s.io/kubernetes/pkg/apis/core"
 )
 
 func TestEquals(t *testing.T) {
@@ -101,6 +101,11 @@ func TestMax(t *testing.T) {
 			a:        api.ResourceList{api.ResourceCPU: resource.MustParse("150m")},
 			b:        api.ResourceList{api.ResourceCPU: resource.MustParse("100m")},
 			expected: api.ResourceList{api.ResourceCPU: resource.MustParse("150m")},
+		},
+		"matching-equal": {
+			a:        api.ResourceList{api.ResourceCPU: resource.MustParse("100m")},
+			b:        api.ResourceList{api.ResourceCPU: resource.MustParse("100m")},
+			expected: api.ResourceList{api.ResourceCPU: resource.MustParse("100m")},
 		},
 	}
 	for testName, testCase := range testCases {
@@ -221,6 +226,30 @@ func TestContains(t *testing.T) {
 	}
 	for testName, testCase := range testCases {
 		if actual := Contains(testCase.a, testCase.b); actual != testCase.expected {
+			t.Errorf("%s expected: %v, actual: %v", testName, testCase.expected, actual)
+		}
+	}
+}
+
+func TestContainsPrefix(t *testing.T) {
+	testCases := map[string]struct {
+		a        []string
+		b        api.ResourceName
+		expected bool
+	}{
+		"does-not-contain": {
+			a:        []string{api.ResourceHugePagesPrefix},
+			b:        api.ResourceCPU,
+			expected: false,
+		},
+		"does-contain": {
+			a:        []string{api.ResourceHugePagesPrefix},
+			b:        api.ResourceName(api.ResourceHugePagesPrefix + "2Mi"),
+			expected: true,
+		},
+	}
+	for testName, testCase := range testCases {
+		if actual := ContainsPrefix(testCase.a, testCase.b); actual != testCase.expected {
 			t.Errorf("%s expected: %v, actual: %v", testName, testCase.expected, actual)
 		}
 	}

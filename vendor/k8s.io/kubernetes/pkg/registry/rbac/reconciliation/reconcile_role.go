@@ -20,9 +20,11 @@ import (
 	"fmt"
 	"reflect"
 
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/apis/rbac"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/kubernetes/pkg/registry/rbac/validation"
 )
 
@@ -42,14 +44,18 @@ type RuleOwnerModifier interface {
 }
 
 type RuleOwner interface {
+	GetObject() runtime.Object
 	GetNamespace() string
 	GetName() string
 	GetLabels() map[string]string
 	SetLabels(map[string]string)
 	GetAnnotations() map[string]string
 	SetAnnotations(map[string]string)
-	GetRules() []rbac.PolicyRule
-	SetRules([]rbac.PolicyRule)
+	GetRules() []rbacv1.PolicyRule
+	SetRules([]rbacv1.PolicyRule)
+	GetAggregationRule() *rbacv1.AggregationRule
+	SetAggregationRule(*rbacv1.AggregationRule)
+	DeepCopyRuleOwner() RuleOwner
 }
 
 type ReconcileRoleOptions struct {
@@ -69,9 +75,14 @@ type ReconcileClusterRoleResult struct {
 	Role RuleOwner
 
 	// MissingRules contains expected rules that were missing from the currently persisted role
-	MissingRules []rbac.PolicyRule
+	MissingRules []rbacv1.PolicyRule
 	// ExtraRules contains extra permissions the currently persisted role had
-	ExtraRules []rbac.PolicyRule
+	ExtraRules []rbacv1.PolicyRule
+
+	// MissingAggregationRuleSelectors contains expected selectors that were missing from the currently persisted role
+	MissingAggregationRuleSelectors []metav1.LabelSelector
+	// ExtraAggregationRuleSelectors contains extra selectors the currently persisted role had
+	ExtraAggregationRuleSelectors []metav1.LabelSelector
 
 	// Operation is the API operation required to reconcile.
 	// If no reconciliation was needed, it is set to ReconcileNone.
@@ -99,10 +110,15 @@ func (o *ReconcileRoleOptions) run(attempts int) (*ReconcileClusterRoleResult, e
 	existing, err := o.Client.Get(o.Role.GetNamespace(), o.Role.GetName())
 	switch {
 	case errors.IsNotFound(err):
+		aggregationRule := o.Role.GetAggregationRule()
+		if aggregationRule == nil {
+			aggregationRule = &rbacv1.AggregationRule{}
+		}
 		result = &ReconcileClusterRoleResult{
-			Role:         o.Role,
-			MissingRules: o.Role.GetRules(),
-			Operation:    ReconcileCreate,
+			Role:                            o.Role,
+			MissingRules:                    o.Role.GetRules(),
+			MissingAggregationRuleSelectors: aggregationRule.ClusterRoleSelectors,
+			Operation:                       ReconcileCreate,
 		}
 
 	case err != nil:
@@ -162,14 +178,10 @@ func (o *ReconcileRoleOptions) run(attempts int) (*ReconcileClusterRoleResult, e
 func computeReconciledRole(existing, expected RuleOwner, removeExtraPermissions bool) (*ReconcileClusterRoleResult, error) {
 	result := &ReconcileClusterRoleResult{Operation: ReconcileNone}
 
-	result.Protected = (existing.GetAnnotations()[rbac.AutoUpdateAnnotationKey] == "false")
+	result.Protected = (existing.GetAnnotations()[rbacv1.AutoUpdateAnnotationKey] == "false")
 
 	// Start with a copy of the existing object
-	changedObj, err := api.Scheme.DeepCopy(existing)
-	if err != nil {
-		return nil, err
-	}
-	result.Role = changedObj.(RuleOwner)
+	result.Role = existing.DeepCopyRuleOwner()
 
 	// Merge expected annotations and labels
 	result.Role.SetAnnotations(merge(expected.GetAnnotations(), result.Role.GetAnnotations()))
@@ -197,6 +209,31 @@ func computeReconciledRole(existing, expected RuleOwner, removeExtraPermissions 
 		result.Operation = ReconcileUpdate
 	}
 
+	// Compute extra and missing rules
+	_, result.ExtraAggregationRuleSelectors = aggregationRuleCovers(expected.GetAggregationRule(), existing.GetAggregationRule())
+	_, result.MissingAggregationRuleSelectors = aggregationRuleCovers(existing.GetAggregationRule(), expected.GetAggregationRule())
+
+	switch {
+	case expected.GetAggregationRule() == nil && existing.GetAggregationRule() != nil:
+		// we didn't expect this to be an aggregated role at all, remove the existing aggregation
+		result.Role.SetAggregationRule(nil)
+		result.Operation = ReconcileUpdate
+
+	case !removeExtraPermissions && len(result.MissingAggregationRuleSelectors) > 0:
+		// add missing rules in the union case
+		aggregationRule := result.Role.GetAggregationRule()
+		if aggregationRule == nil {
+			aggregationRule = &rbacv1.AggregationRule{}
+		}
+		aggregationRule.ClusterRoleSelectors = append(aggregationRule.ClusterRoleSelectors, result.MissingAggregationRuleSelectors...)
+		result.Role.SetAggregationRule(aggregationRule)
+		result.Operation = ReconcileUpdate
+
+	case removeExtraPermissions && (len(result.MissingAggregationRuleSelectors) > 0 || len(result.ExtraAggregationRuleSelectors) > 0):
+		result.Role.SetAggregationRule(expected.GetAggregationRule())
+		result.Operation = ReconcileUpdate
+	}
+
 	return result, nil
 }
 
@@ -212,4 +249,38 @@ func merge(maps ...map[string]string) map[string]string {
 		}
 	}
 	return output
+}
+
+// aggregationRuleCovers determines whether or not the ownerSelectors cover the servantSelectors in terms of semantically
+// equal label selectors.
+// It returns whether or not the ownerSelectors cover and a list of the rules that the ownerSelectors do not cover.
+func aggregationRuleCovers(ownerRule, servantRule *rbacv1.AggregationRule) (bool, []metav1.LabelSelector) {
+	switch {
+	case ownerRule == nil && servantRule == nil:
+		return true, []metav1.LabelSelector{}
+	case ownerRule == nil && servantRule != nil:
+		return false, servantRule.ClusterRoleSelectors
+	case ownerRule != nil && servantRule == nil:
+		return true, []metav1.LabelSelector{}
+
+	}
+
+	ownerSelectors := ownerRule.ClusterRoleSelectors
+	servantSelectors := servantRule.ClusterRoleSelectors
+	uncoveredSelectors := []metav1.LabelSelector{}
+
+	for _, servantSelector := range servantSelectors {
+		covered := false
+		for _, ownerSelector := range ownerSelectors {
+			if equality.Semantic.DeepEqual(ownerSelector, servantSelector) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			uncoveredSelectors = append(uncoveredSelectors, servantSelector)
+		}
+	}
+
+	return (len(uncoveredSelectors) == 0), uncoveredSelectors
 }

@@ -17,17 +17,16 @@ limitations under the License.
 package apiservice
 
 import (
+	"context"
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/generic"
 	"k8s.io/apiserver/pkg/storage"
 	"k8s.io/apiserver/pkg/storage/names"
-	kapi "k8s.io/client-go/pkg/api"
 
 	"k8s.io/kube-aggregator/pkg/apis/apiregistration"
 	"k8s.io/kube-aggregator/pkg/apis/apiregistration/validation"
@@ -38,23 +37,31 @@ type apiServerStrategy struct {
 	names.NameGenerator
 }
 
-var Strategy = apiServerStrategy{kapi.Scheme, names.SimpleNameGenerator}
+func NewStrategy(typer runtime.ObjectTyper) apiServerStrategy {
+	return apiServerStrategy{typer, names.SimpleNameGenerator}
+}
 
 func (apiServerStrategy) NamespaceScoped() bool {
 	return false
 }
 
-func (apiServerStrategy) PrepareForCreate(ctx genericapirequest.Context, obj runtime.Object) {
-	_ = obj.(*apiregistration.APIService)
+func (apiServerStrategy) PrepareForCreate(ctx context.Context, obj runtime.Object) {
+	apiservice := obj.(*apiregistration.APIService)
+	apiservice.Status = apiregistration.APIServiceStatus{}
+
+	// mark local API services as immediately available on create
+	if apiservice.Spec.Service == nil {
+		apiregistration.SetAPIServiceCondition(apiservice, apiregistration.NewLocalAvailableAPIServiceCondition())
+	}
 }
 
-func (apiServerStrategy) PrepareForUpdate(ctx genericapirequest.Context, obj, old runtime.Object) {
+func (apiServerStrategy) PrepareForUpdate(ctx context.Context, obj, old runtime.Object) {
 	newAPIService := obj.(*apiregistration.APIService)
 	oldAPIService := old.(*apiregistration.APIService)
 	newAPIService.Status = oldAPIService.Status
 }
 
-func (apiServerStrategy) Validate(ctx genericapirequest.Context, obj runtime.Object) field.ErrorList {
+func (apiServerStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
 	return validation.ValidateAPIService(obj.(*apiregistration.APIService))
 }
 
@@ -69,16 +76,54 @@ func (apiServerStrategy) AllowUnconditionalUpdate() bool {
 func (apiServerStrategy) Canonicalize(obj runtime.Object) {
 }
 
-func (apiServerStrategy) ValidateUpdate(ctx genericapirequest.Context, obj, old runtime.Object) field.ErrorList {
+func (apiServerStrategy) ValidateUpdate(ctx context.Context, obj, old runtime.Object) field.ErrorList {
 	return validation.ValidateAPIServiceUpdate(obj.(*apiregistration.APIService), old.(*apiregistration.APIService))
 }
 
-func GetAttrs(obj runtime.Object) (labels.Set, fields.Set, error) {
+type apiServerStatusStrategy struct {
+	runtime.ObjectTyper
+	names.NameGenerator
+}
+
+func NewStatusStrategy(typer runtime.ObjectTyper) apiServerStatusStrategy {
+	return apiServerStatusStrategy{typer, names.SimpleNameGenerator}
+}
+
+func (apiServerStatusStrategy) NamespaceScoped() bool {
+	return false
+}
+
+func (apiServerStatusStrategy) PrepareForUpdate(ctx context.Context, obj, old runtime.Object) {
+	newAPIService := obj.(*apiregistration.APIService)
+	oldAPIService := old.(*apiregistration.APIService)
+	newAPIService.Spec = oldAPIService.Spec
+	newAPIService.Labels = oldAPIService.Labels
+	newAPIService.Annotations = oldAPIService.Annotations
+	newAPIService.Finalizers = oldAPIService.Finalizers
+	newAPIService.OwnerReferences = oldAPIService.OwnerReferences
+}
+
+func (apiServerStatusStrategy) AllowCreateOnUpdate() bool {
+	return false
+}
+
+func (apiServerStatusStrategy) AllowUnconditionalUpdate() bool {
+	return false
+}
+
+func (apiServerStatusStrategy) Canonicalize(obj runtime.Object) {
+}
+
+func (apiServerStatusStrategy) ValidateUpdate(ctx context.Context, obj, old runtime.Object) field.ErrorList {
+	return validation.ValidateAPIServiceStatusUpdate(obj.(*apiregistration.APIService), old.(*apiregistration.APIService))
+}
+
+func GetAttrs(obj runtime.Object) (labels.Set, fields.Set, bool, error) {
 	apiserver, ok := obj.(*apiregistration.APIService)
 	if !ok {
-		return nil, nil, fmt.Errorf("given object is not a APIService.")
+		return nil, nil, false, fmt.Errorf("given object is not a APIService.")
 	}
-	return labels.Set(apiserver.ObjectMeta.Labels), APIServiceToSelectableFields(apiserver), nil
+	return labels.Set(apiserver.ObjectMeta.Labels), APIServiceToSelectableFields(apiserver), apiserver.Initializers != nil, nil
 }
 
 // MatchAPIService is the filter used by the generic etcd backend to watch events

@@ -20,16 +20,18 @@ package webhook
 import (
 	"time"
 
+	"github.com/golang/glog"
+
+	authentication "k8s.io/api/authentication/v1beta1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/cache"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authentication/user"
-	"k8s.io/apiserver/pkg/util/cache"
 	"k8s.io/apiserver/pkg/util/webhook"
+	"k8s.io/client-go/kubernetes/scheme"
 	authenticationclient "k8s.io/client-go/kubernetes/typed/authentication/v1beta1"
-	"k8s.io/client-go/pkg/api"
-	authentication "k8s.io/client-go/pkg/apis/authentication/v1beta1"
-
-	_ "k8s.io/client-go/pkg/apis/authentication/install"
 )
 
 var (
@@ -84,6 +86,8 @@ func (w *WebhookTokenAuthenticator) AuthenticateToken(token string) (user.Info, 
 			return err
 		})
 		if err != nil {
+			// An error here indicates bad configuration or an outage. Log for debugging.
+			glog.Errorf("Failed to make webhook authenticator request: %v", err)
 			return nil, false, err
 		}
 		r.Status = result.Status
@@ -113,7 +117,11 @@ func (w *WebhookTokenAuthenticator) AuthenticateToken(token string) (user.Info, 
 // and returns a TokenReviewInterface that uses that client. Note that the client submits TokenReview
 // requests to the exact path specified in the kubeconfig file, so arbitrary non-API servers can be targeted.
 func tokenReviewInterfaceFromKubeconfig(kubeConfigFile string) (authenticationclient.TokenReviewInterface, error) {
-	gw, err := webhook.NewGenericWebhook(api.Registry, api.Codecs, kubeConfigFile, groupVersions, 0)
+	localScheme := runtime.NewScheme()
+	scheme.AddToScheme(localScheme)
+	utilruntime.Must(localScheme.SetVersionPriority(groupVersions...))
+
+	gw, err := webhook.NewGenericWebhook(localScheme, scheme.Codecs, kubeConfigFile, groupVersions, 0)
 	if err != nil {
 		return nil, err
 	}

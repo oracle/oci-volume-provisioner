@@ -20,18 +20,29 @@ import (
 	"strconv"
 	"testing"
 
+	apps "k8s.io/api/apps/v1"
+	"k8s.io/api/core/v1"
+	extensions "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/v1"
-	extensions "k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset/fake"
-	informers "k8s.io/kubernetes/pkg/client/informers/informers_generated/externalversions"
+	_ "k8s.io/kubernetes/pkg/apis/apps/install"
+	_ "k8s.io/kubernetes/pkg/apis/authentication/install"
+	_ "k8s.io/kubernetes/pkg/apis/authorization/install"
+	_ "k8s.io/kubernetes/pkg/apis/autoscaling/install"
+	_ "k8s.io/kubernetes/pkg/apis/batch/install"
+	_ "k8s.io/kubernetes/pkg/apis/certificates/install"
+	_ "k8s.io/kubernetes/pkg/apis/core/install"
+	_ "k8s.io/kubernetes/pkg/apis/policy/install"
+	_ "k8s.io/kubernetes/pkg/apis/rbac/install"
+	_ "k8s.io/kubernetes/pkg/apis/settings/install"
+	_ "k8s.io/kubernetes/pkg/apis/storage/install"
 	"k8s.io/kubernetes/pkg/controller"
 	"k8s.io/kubernetes/pkg/controller/deployment/util"
 )
@@ -41,14 +52,14 @@ var (
 	noTimestamp = metav1.Time{}
 )
 
-func rs(name string, replicas int, selector map[string]string, timestamp metav1.Time) *extensions.ReplicaSet {
-	return &extensions.ReplicaSet{
+func rs(name string, replicas int, selector map[string]string, timestamp metav1.Time) *apps.ReplicaSet {
+	return &apps.ReplicaSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              name,
 			CreationTimestamp: timestamp,
 			Namespace:         metav1.NamespaceDefault,
 		},
-		Spec: extensions.ReplicaSetSpec{
+		Spec: apps.ReplicaSetSpec{
 			Replicas: func() *int32 { i := int32(replicas); return &i }(),
 			Selector: &metav1.LabelSelector{MatchLabels: selector},
 			Template: v1.PodTemplateSpec{},
@@ -56,27 +67,27 @@ func rs(name string, replicas int, selector map[string]string, timestamp metav1.
 	}
 }
 
-func newRSWithStatus(name string, specReplicas, statusReplicas int, selector map[string]string) *extensions.ReplicaSet {
+func newRSWithStatus(name string, specReplicas, statusReplicas int, selector map[string]string) *apps.ReplicaSet {
 	rs := rs(name, specReplicas, selector, noTimestamp)
-	rs.Status = extensions.ReplicaSetStatus{
+	rs.Status = apps.ReplicaSetStatus{
 		Replicas: int32(statusReplicas),
 	}
 	return rs
 }
 
-func newDeployment(name string, replicas int, revisionHistoryLimit *int32, maxSurge, maxUnavailable *intstr.IntOrString, selector map[string]string) *extensions.Deployment {
-	d := extensions.Deployment{
-		TypeMeta: metav1.TypeMeta{APIVersion: api.Registry.GroupOrDie(extensions.GroupName).GroupVersion.String()},
+func newDeployment(name string, replicas int, revisionHistoryLimit *int32, maxSurge, maxUnavailable *intstr.IntOrString, selector map[string]string) *apps.Deployment {
+	d := apps.Deployment{
+		TypeMeta: metav1.TypeMeta{APIVersion: "apps/v1"},
 		ObjectMeta: metav1.ObjectMeta{
 			UID:         uuid.NewUUID(),
 			Name:        name,
 			Namespace:   metav1.NamespaceDefault,
 			Annotations: make(map[string]string),
 		},
-		Spec: extensions.DeploymentSpec{
-			Strategy: extensions.DeploymentStrategy{
-				Type: extensions.RollingUpdateDeploymentStrategyType,
-				RollingUpdate: &extensions.RollingUpdateDeployment{
+		Spec: apps.DeploymentSpec{
+			Strategy: apps.DeploymentStrategy{
+				Type: apps.RollingUpdateDeploymentStrategyType,
+				RollingUpdate: &apps.RollingUpdateDeployment{
 					MaxUnavailable: func() *intstr.IntOrString { i := intstr.FromInt(0); return &i }(),
 					MaxSurge:       func() *intstr.IntOrString { i := intstr.FromInt(0); return &i }(),
 				},
@@ -107,16 +118,16 @@ func newDeployment(name string, replicas int, revisionHistoryLimit *int32, maxSu
 	return &d
 }
 
-func newReplicaSet(d *extensions.Deployment, name string, replicas int) *extensions.ReplicaSet {
-	return &extensions.ReplicaSet{
+func newReplicaSet(d *apps.Deployment, name string, replicas int) *apps.ReplicaSet {
+	return &apps.ReplicaSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            name,
 			UID:             uuid.NewUUID(),
 			Namespace:       metav1.NamespaceDefault,
 			Labels:          d.Spec.Selector.MatchLabels,
-			OwnerReferences: []metav1.OwnerReference{*newControllerRef(d)},
+			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(d, controllerKind)},
 		},
-		Spec: extensions.ReplicaSetSpec{
+		Spec: apps.ReplicaSetSpec{
 			Selector: d.Spec.Selector,
 			Replicas: func() *int32 { i := int32(replicas); return &i }(),
 			Template: d.Spec.Template,
@@ -124,7 +135,7 @@ func newReplicaSet(d *extensions.Deployment, name string, replicas int) *extensi
 	}
 }
 
-func getKey(d *extensions.Deployment, t *testing.T) string {
+func getKey(d *apps.Deployment, t *testing.T) string {
 	if key, err := controller.KeyFunc(d); err != nil {
 		t.Errorf("Unexpected error getting key for deployment %v: %v", d.Name, err)
 		return ""
@@ -138,8 +149,8 @@ type fixture struct {
 
 	client *fake.Clientset
 	// Objects to put in the store.
-	dLister   []*extensions.Deployment
-	rsLister  []*extensions.ReplicaSet
+	dLister   []*apps.Deployment
+	rsLister  []*apps.ReplicaSet
 	podLister []*v1.Pod
 
 	// Actions expected to happen on the client. Objects from here are also
@@ -148,23 +159,23 @@ type fixture struct {
 	objects []runtime.Object
 }
 
-func (f *fixture) expectGetDeploymentAction(d *extensions.Deployment) {
+func (f *fixture) expectGetDeploymentAction(d *apps.Deployment) {
 	action := core.NewGetAction(schema.GroupVersionResource{Resource: "deployments"}, d.Namespace, d.Name)
 	f.actions = append(f.actions, action)
 }
 
-func (f *fixture) expectUpdateDeploymentStatusAction(d *extensions.Deployment) {
+func (f *fixture) expectUpdateDeploymentStatusAction(d *apps.Deployment) {
 	action := core.NewUpdateAction(schema.GroupVersionResource{Resource: "deployments"}, d.Namespace, d)
 	action.Subresource = "status"
 	f.actions = append(f.actions, action)
 }
 
-func (f *fixture) expectUpdateDeploymentAction(d *extensions.Deployment) {
+func (f *fixture) expectUpdateDeploymentAction(d *apps.Deployment) {
 	action := core.NewUpdateAction(schema.GroupVersionResource{Resource: "deployments"}, d.Namespace, d)
 	f.actions = append(f.actions, action)
 }
 
-func (f *fixture) expectCreateRSAction(rs *extensions.ReplicaSet) {
+func (f *fixture) expectCreateRSAction(rs *apps.ReplicaSet) {
 	f.actions = append(f.actions, core.NewCreateAction(schema.GroupVersionResource{Resource: "replicasets"}, rs.Namespace, rs))
 }
 
@@ -175,24 +186,27 @@ func newFixture(t *testing.T) *fixture {
 	return f
 }
 
-func (f *fixture) newController() (*DeploymentController, informers.SharedInformerFactory) {
+func (f *fixture) newController() (*DeploymentController, informers.SharedInformerFactory, error) {
 	f.client = fake.NewSimpleClientset(f.objects...)
 	informers := informers.NewSharedInformerFactory(f.client, controller.NoResyncPeriodFunc())
-	c := NewDeploymentController(informers.Extensions().V1beta1().Deployments(), informers.Extensions().V1beta1().ReplicaSets(), informers.Core().V1().Pods(), f.client)
+	c, err := NewDeploymentController(informers.Apps().V1().Deployments(), informers.Apps().V1().ReplicaSets(), informers.Core().V1().Pods(), f.client)
+	if err != nil {
+		return nil, nil, err
+	}
 	c.eventRecorder = &record.FakeRecorder{}
 	c.dListerSynced = alwaysReady
 	c.rsListerSynced = alwaysReady
 	c.podListerSynced = alwaysReady
 	for _, d := range f.dLister {
-		informers.Extensions().V1beta1().Deployments().Informer().GetIndexer().Add(d)
+		informers.Apps().V1().Deployments().Informer().GetIndexer().Add(d)
 	}
 	for _, rs := range f.rsLister {
-		informers.Extensions().V1beta1().ReplicaSets().Informer().GetIndexer().Add(rs)
+		informers.Apps().V1().ReplicaSets().Informer().GetIndexer().Add(rs)
 	}
 	for _, pod := range f.podLister {
 		informers.Core().V1().Pods().Informer().GetIndexer().Add(pod)
 	}
-	return c, informers
+	return c, informers, nil
 }
 
 func (f *fixture) runExpectError(deploymentName string, startInformers bool) {
@@ -204,14 +218,17 @@ func (f *fixture) run(deploymentName string) {
 }
 
 func (f *fixture) run_(deploymentName string, startInformers bool, expectError bool) {
-	c, informers := f.newController()
+	c, informers, err := f.newController()
+	if err != nil {
+		f.t.Fatalf("error creating Deployment controller: %v", err)
+	}
 	if startInformers {
 		stopCh := make(chan struct{})
 		defer close(stopCh)
 		informers.Start(stopCh)
 	}
 
-	err := c.syncDeployment(deploymentName)
+	err = c.syncDeployment(deploymentName)
 	if !expectError && err != nil {
 		f.t.Errorf("error syncing deployment: %v", err)
 	} else if expectError && err == nil {
@@ -226,7 +243,7 @@ func (f *fixture) run_(deploymentName string, startInformers bool, expectError b
 		}
 
 		expectedAction := f.actions[i]
-		if !expectedAction.Matches(action.GetVerb(), action.GetResource().Resource) {
+		if !(expectedAction.Matches(action.GetVerb(), action.GetResource().Resource) && action.GetSubresource() == expectedAction.GetSubresource()) {
 			f.t.Errorf("Expected\n\t%#v\ngot\n\t%#v", expectedAction, action)
 			continue
 		}
@@ -269,32 +286,6 @@ func TestSyncDeploymentCreatesReplicaSet(t *testing.T) {
 	f.expectUpdateDeploymentStatusAction(d)
 
 	f.run(getKey(d, t))
-}
-
-func TestSyncDeploymentClearsOverlapAnnotation(t *testing.T) {
-	f := newFixture(t)
-
-	d := newDeployment("foo", 1, nil, nil, nil, map[string]string{"foo": "bar"})
-	d.Annotations[util.OverlapAnnotation] = "overlap"
-	f.dLister = append(f.dLister, d)
-	f.objects = append(f.objects, d)
-
-	rs := newReplicaSet(d, "deploymentrs-4186632231", 1)
-
-	f.expectUpdateDeploymentStatusAction(d)
-	f.expectCreateRSAction(rs)
-	f.expectUpdateDeploymentStatusAction(d)
-	f.expectUpdateDeploymentStatusAction(d)
-
-	f.run(getKey(d, t))
-
-	d, err := f.client.ExtensionsV1beta1().Deployments(d.Namespace).Get(d.Name, metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("can't get deployment: %v", err)
-	}
-	if _, ok := d.Annotations[util.OverlapAnnotation]; ok {
-		t.Errorf("OverlapAnnotation = %q, wanted absent", d.Annotations[util.OverlapAnnotation])
-	}
 }
 
 func TestSyncDeploymentDontDoAnythingDuringDeletion(t *testing.T) {
@@ -353,20 +344,19 @@ func TestReentrantRollback(t *testing.T) {
 	f := newFixture(t)
 
 	d := newDeployment("foo", 1, nil, nil, nil, map[string]string{"foo": "bar"})
-
-	d.Spec.RollbackTo = &extensions.RollbackConfig{Revision: 0}
 	d.Annotations = map[string]string{util.RevisionAnnotation: "2"}
+	setRollbackTo(d, &extensions.RollbackConfig{Revision: 0})
 	f.dLister = append(f.dLister, d)
 
 	rs1 := newReplicaSet(d, "deploymentrs-old", 0)
 	rs1.Annotations = map[string]string{util.RevisionAnnotation: "1"}
 	one := int64(1)
 	rs1.Spec.Template.Spec.TerminationGracePeriodSeconds = &one
-	rs1.Spec.Selector.MatchLabels[extensions.DefaultDeploymentUniqueLabelKey] = "hash"
+	rs1.Spec.Selector.MatchLabels[apps.DefaultDeploymentUniqueLabelKey] = "hash"
 
 	rs2 := newReplicaSet(d, "deploymentrs-new", 1)
 	rs2.Annotations = map[string]string{util.RevisionAnnotation: "2"}
-	rs2.Spec.Selector.MatchLabels[extensions.DefaultDeploymentUniqueLabelKey] = "hash"
+	rs2.Spec.Selector.MatchLabels[apps.DefaultDeploymentUniqueLabelKey] = "hash"
 
 	f.rsLister = append(f.rsLister, rs1, rs2)
 	f.objects = append(f.objects, d, rs1, rs2)
@@ -384,7 +374,7 @@ func TestPodDeletionEnqueuesRecreateDeployment(t *testing.T) {
 	f := newFixture(t)
 
 	foo := newDeployment("foo", 1, nil, nil, nil, map[string]string{"foo": "bar"})
-	foo.Spec.Strategy.Type = extensions.RecreateDeploymentStrategyType
+	foo.Spec.Strategy.Type = apps.RecreateDeploymentStrategyType
 	rs := newReplicaSet(foo, "foo-1", 1)
 	pod := generatePodFromRS(rs)
 
@@ -392,9 +382,12 @@ func TestPodDeletionEnqueuesRecreateDeployment(t *testing.T) {
 	f.rsLister = append(f.rsLister, rs)
 	f.objects = append(f.objects, foo, rs)
 
-	c, _ := f.newController()
+	c, _, err := f.newController()
+	if err != nil {
+		t.Fatalf("error creating Deployment controller: %v", err)
+	}
 	enqueued := false
-	c.enqueueDeployment = func(d *extensions.Deployment) {
+	c.enqueueDeployment = func(d *apps.Deployment) {
 		if d.Name == "foo" {
 			enqueued = true
 		}
@@ -414,19 +407,98 @@ func TestPodDeletionDoesntEnqueueRecreateDeployment(t *testing.T) {
 	f := newFixture(t)
 
 	foo := newDeployment("foo", 1, nil, nil, nil, map[string]string{"foo": "bar"})
-	foo.Spec.Strategy.Type = extensions.RecreateDeploymentStrategyType
-	rs := newReplicaSet(foo, "foo-1", 1)
-	pod := generatePodFromRS(rs)
+	foo.Spec.Strategy.Type = apps.RecreateDeploymentStrategyType
+	rs1 := newReplicaSet(foo, "foo-1", 1)
+	rs2 := newReplicaSet(foo, "foo-1", 1)
+	pod1 := generatePodFromRS(rs1)
+	pod2 := generatePodFromRS(rs2)
 
 	f.dLister = append(f.dLister, foo)
-	f.rsLister = append(f.rsLister, rs)
+	// Let's pretend this is a different pod. The gist is that the pod lister needs to
+	// return a non-empty list.
+	f.podLister = append(f.podLister, pod1, pod2)
+
+	c, _, err := f.newController()
+	if err != nil {
+		t.Fatalf("error creating Deployment controller: %v", err)
+	}
+	enqueued := false
+	c.enqueueDeployment = func(d *apps.Deployment) {
+		if d.Name == "foo" {
+			enqueued = true
+		}
+	}
+
+	c.deletePod(pod1)
+
+	if enqueued {
+		t.Errorf("expected deployment %q not to be queued after pod deletion", foo.Name)
+	}
+}
+
+// TestPodDeletionPartialReplicaSetOwnershipEnqueueRecreateDeployment ensures that
+// the deletion of a pod will requeue a Recreate deployment iff there is no other
+// pod returned from the client in the case where a deployment has multiple replica
+// sets, some of which have empty owner references.
+func TestPodDeletionPartialReplicaSetOwnershipEnqueueRecreateDeployment(t *testing.T) {
+	f := newFixture(t)
+
+	foo := newDeployment("foo", 1, nil, nil, nil, map[string]string{"foo": "bar"})
+	foo.Spec.Strategy.Type = apps.RecreateDeploymentStrategyType
+	rs1 := newReplicaSet(foo, "foo-1", 1)
+	rs2 := newReplicaSet(foo, "foo-2", 2)
+	rs2.OwnerReferences = nil
+	pod := generatePodFromRS(rs1)
+
+	f.dLister = append(f.dLister, foo)
+	f.rsLister = append(f.rsLister, rs1, rs2)
+	f.objects = append(f.objects, foo, rs1, rs2)
+
+	c, _, err := f.newController()
+	if err != nil {
+		t.Fatalf("error creating Deployment controller: %v", err)
+	}
+	enqueued := false
+	c.enqueueDeployment = func(d *apps.Deployment) {
+		if d.Name == "foo" {
+			enqueued = true
+		}
+	}
+
+	c.deletePod(pod)
+
+	if !enqueued {
+		t.Errorf("expected deployment %q to be queued after pod deletion", foo.Name)
+	}
+}
+
+// TestPodDeletionPartialReplicaSetOwnershipDoesntEnqueueRecreateDeployment that the
+// deletion of a pod will not requeue a Recreate deployment iff there are other pods
+// returned from the client in the case where a deployment has multiple replica sets,
+// some of which have empty owner references.
+func TestPodDeletionPartialReplicaSetOwnershipDoesntEnqueueRecreateDeployment(t *testing.T) {
+	f := newFixture(t)
+
+	foo := newDeployment("foo", 1, nil, nil, nil, map[string]string{"foo": "bar"})
+	foo.Spec.Strategy.Type = apps.RecreateDeploymentStrategyType
+	rs1 := newReplicaSet(foo, "foo-1", 1)
+	rs2 := newReplicaSet(foo, "foo-2", 2)
+	rs2.OwnerReferences = nil
+	pod := generatePodFromRS(rs1)
+
+	f.dLister = append(f.dLister, foo)
+	f.rsLister = append(f.rsLister, rs1, rs2)
+	f.objects = append(f.objects, foo, rs1, rs2)
 	// Let's pretend this is a different pod. The gist is that the pod lister needs to
 	// return a non-empty list.
 	f.podLister = append(f.podLister, pod)
 
-	c, _ := f.newController()
+	c, _, err := f.newController()
+	if err != nil {
+		t.Fatalf("error creating Deployment controller: %v", err)
+	}
 	enqueued := false
-	c.enqueueDeployment = func(d *extensions.Deployment) {
+	c.enqueueDeployment = func(d *apps.Deployment) {
 		if d.Name == "foo" {
 			enqueued = true
 		}
@@ -456,7 +528,10 @@ func TestGetReplicaSetsForDeployment(t *testing.T) {
 	f.objects = append(f.objects, d1, d2, rs1, rs2)
 
 	// Start the fixture.
-	c, informers := f.newController()
+	c, informers, err := f.newController()
+	if err != nil {
+		t.Fatalf("error creating Deployment controller: %v", err)
+	}
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 	informers.Start(stopCh)
@@ -503,7 +578,10 @@ func TestGetReplicaSetsForDeploymentAdoptRelease(t *testing.T) {
 	f.objects = append(f.objects, d, rsAdopt, rsRelease)
 
 	// Start the fixture.
-	c, informers := f.newController()
+	c, informers, err := f.newController()
+	if err != nil {
+		t.Fatalf("error creating Deployment controller: %v", err)
+	}
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 	informers.Start(stopCh)
@@ -547,7 +625,10 @@ func TestGetPodMapForReplicaSets(t *testing.T) {
 	f.objects = append(f.objects, d, rs1, rs2, pod1, pod2, pod3, pod4)
 
 	// Start the fixture.
-	c, informers := f.newController()
+	c, informers, err := f.newController()
+	if err != nil {
+		t.Fatalf("error creating Deployment controller: %v", err)
+	}
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 	informers.Start(stopCh)
@@ -560,18 +641,21 @@ func TestGetPodMapForReplicaSets(t *testing.T) {
 	for _, podList := range podMap {
 		podCount += len(podList.Items)
 	}
-	if got, want := podCount, 2; got != want {
+	if got, want := podCount, 3; got != want {
 		t.Errorf("podCount = %v, want %v", got, want)
 	}
 
 	if got, want := len(podMap), 2; got != want {
 		t.Errorf("len(podMap) = %v, want %v", got, want)
 	}
-	if got, want := len(podMap[rs1.UID].Items), 1; got != want {
+	if got, want := len(podMap[rs1.UID].Items), 2; got != want {
 		t.Errorf("len(podMap[rs1]) = %v, want %v", got, want)
 	}
-	if got, want := podMap[rs1.UID].Items[0].Name, "rs1-pod"; got != want {
-		t.Errorf("podMap[rs1] = [%v], want [%v]", got, want)
+	expect := map[string]struct{}{"rs1-pod": {}, "pod4": {}}
+	for _, pod := range podMap[rs1.UID].Items {
+		if _, ok := expect[pod.Name]; !ok {
+			t.Errorf("unexpected pod name for rs1: %s", pod.Name)
+		}
 	}
 	if got, want := len(podMap[rs2.UID].Items), 1; got != want {
 		t.Errorf("len(podMap[rs2]) = %v, want %v", got, want)
@@ -597,7 +681,10 @@ func TestAddReplicaSet(t *testing.T) {
 
 	// Create the fixture but don't start it,
 	// so nothing happens in the background.
-	dc, _ := f.newController()
+	dc, _, err := f.newController()
+	if err != nil {
+		t.Fatalf("error creating Deployment controller: %v", err)
+	}
 
 	dc.addReplicaSet(rs1)
 	if got, want := dc.queue.Len(), 1; got != want {
@@ -644,7 +731,10 @@ func TestAddReplicaSetOrphan(t *testing.T) {
 
 	// Create the fixture but don't start it,
 	// so nothing happens in the background.
-	dc, _ := f.newController()
+	dc, _, err := f.newController()
+	if err != nil {
+		t.Fatalf("error creating Deployment controller: %v", err)
+	}
 
 	dc.addReplicaSet(rs)
 	if got, want := dc.queue.Len(), 2; got != want {
@@ -669,7 +759,10 @@ func TestUpdateReplicaSet(t *testing.T) {
 
 	// Create the fixture but don't start it,
 	// so nothing happens in the background.
-	dc, _ := f.newController()
+	dc, _, err := f.newController()
+	if err != nil {
+		t.Fatalf("error creating Deployment controller: %v", err)
+	}
 
 	prev := *rs1
 	next := *rs1
@@ -720,7 +813,10 @@ func TestUpdateReplicaSetOrphanWithNewLabels(t *testing.T) {
 
 	// Create the fixture but don't start it,
 	// so nothing happens in the background.
-	dc, _ := f.newController()
+	dc, _, err := f.newController()
+	if err != nil {
+		t.Fatalf("error creating Deployment controller: %v", err)
+	}
 
 	// Change labels and expect all matching controllers to queue.
 	prev := *rs
@@ -747,11 +843,14 @@ func TestUpdateReplicaSetChangeControllerRef(t *testing.T) {
 
 	// Create the fixture but don't start it,
 	// so nothing happens in the background.
-	dc, _ := f.newController()
+	dc, _, err := f.newController()
+	if err != nil {
+		t.Fatalf("error creating Deployment controller: %v", err)
+	}
 
 	// Change ControllerRef and expect both old and new to queue.
 	prev := *rs
-	prev.OwnerReferences = []metav1.OwnerReference{*newControllerRef(d2)}
+	prev.OwnerReferences = []metav1.OwnerReference{*metav1.NewControllerRef(d2, controllerKind)}
 	next := *rs
 	bumpResourceVersion(&next)
 	dc.updateReplicaSet(&prev, &next)
@@ -774,7 +873,10 @@ func TestUpdateReplicaSetRelease(t *testing.T) {
 
 	// Create the fixture but don't start it,
 	// so nothing happens in the background.
-	dc, _ := f.newController()
+	dc, _, err := f.newController()
+	if err != nil {
+		t.Fatalf("error creating Deployment controller: %v", err)
+	}
 
 	// Remove ControllerRef and expect all matching controller to sync orphan.
 	prev := *rs
@@ -804,7 +906,10 @@ func TestDeleteReplicaSet(t *testing.T) {
 
 	// Create the fixture but don't start it,
 	// so nothing happens in the background.
-	dc, _ := f.newController()
+	dc, _, err := f.newController()
+	if err != nil {
+		t.Fatalf("error creating Deployment controller: %v", err)
+	}
 
 	dc.deleteReplicaSet(rs1)
 	if got, want := dc.queue.Len(), 1; got != want {
@@ -849,7 +954,10 @@ func TestDeleteReplicaSetOrphan(t *testing.T) {
 
 	// Create the fixture but don't start it,
 	// so nothing happens in the background.
-	dc, _ := f.newController()
+	dc, _, err := f.newController()
+	if err != nil {
+		t.Fatalf("error creating Deployment controller: %v", err)
+	}
 
 	dc.deleteReplicaSet(rs)
 	if got, want := dc.queue.Len(), 0; got != want {
@@ -863,7 +971,7 @@ func bumpResourceVersion(obj metav1.Object) {
 }
 
 // generatePodFromRS creates a pod, with the input ReplicaSet's selector and its template
-func generatePodFromRS(rs *extensions.ReplicaSet) *v1.Pod {
+func generatePodFromRS(rs *apps.ReplicaSet) *v1.Pod {
 	trueVar := true
 	return &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{

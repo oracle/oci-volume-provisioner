@@ -19,19 +19,21 @@ package sysctl
 import (
 	"fmt"
 
-	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/kubelet/container"
-	"k8s.io/kubernetes/pkg/kubelet/dockertools"
 	"k8s.io/kubernetes/pkg/kubelet/lifecycle"
 )
 
 const (
 	UnsupportedReason = "SysctlUnsupported"
 	// CRI uses semver-compatible API version, while docker does not
-	// (e.g., 1.24). Append the version with a ".0" so that it works
-	// with both the CRI and dockertools comparison logic.
+	// (e.g., 1.24). Append the version with a ".0".
 	dockerMinimumAPIVersion = "1.24.0"
+
+	dockerTypeName = "docker"
 )
+
+// TODO: The admission logic in this file is runtime-dependent. It should be
+// changed to be generic and CRI-compatible.
 
 type runtimeAdmitHandler struct {
 	result lifecycle.PodAdmitResult
@@ -42,13 +44,14 @@ var _ lifecycle.PodAdmitHandler = &runtimeAdmitHandler{}
 // NewRuntimeAdmitHandler returns a sysctlRuntimeAdmitHandler which checks whether
 // the given runtime support sysctls.
 func NewRuntimeAdmitHandler(runtime container.Runtime) (*runtimeAdmitHandler, error) {
-	if runtime.Type() == dockertools.DockerType {
+	switch runtime.Type() {
+	case dockerTypeName:
 		v, err := runtime.APIVersion()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get runtime version: %v", err)
 		}
 
-		// only Docker >= 1.12 supports sysctls
+		// only Docker API version >= 1.24 supports sysctls
 		c, err := v.Compare(dockerMinimumAPIVersion)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compare Docker version for sysctl support: %v", err)
@@ -64,34 +67,26 @@ func NewRuntimeAdmitHandler(runtime container.Runtime) (*runtimeAdmitHandler, er
 			result: lifecycle.PodAdmitResult{
 				Admit:   false,
 				Reason:  UnsupportedReason,
-				Message: "Docker before 1.12 does not support sysctls",
+				Message: "Docker API version before 1.24 does not support sysctls",
+			},
+		}, nil
+	default:
+		// Return admit for other runtimes.
+		return &runtimeAdmitHandler{
+			result: lifecycle.PodAdmitResult{
+				Admit: true,
 			},
 		}, nil
 	}
-
-	// for other runtimes like rkt sysctls are not supported
-	return &runtimeAdmitHandler{
-		result: lifecycle.PodAdmitResult{
-			Admit:   false,
-			Reason:  UnsupportedReason,
-			Message: fmt.Sprintf("runtime %v does not support sysctls", runtime.Type()),
-		},
-	}, nil
 }
 
 // Admit checks whether the runtime supports sysctls.
 func (w *runtimeAdmitHandler) Admit(attrs *lifecycle.PodAdmitAttributes) lifecycle.PodAdmitResult {
-	sysctls, unsafeSysctls, err := v1.SysctlsFromPodAnnotations(attrs.Pod.Annotations)
-	if err != nil {
-		return lifecycle.PodAdmitResult{
-			Admit:   false,
-			Reason:  AnnotationInvalidReason,
-			Message: fmt.Sprintf("invalid sysctl annotation: %v", err),
-		}
-	}
+	if attrs.Pod.Spec.SecurityContext != nil {
 
-	if len(sysctls)+len(unsafeSysctls) > 0 {
-		return w.result
+		if len(attrs.Pod.Spec.SecurityContext.Sysctls) > 0 {
+			return w.result
+		}
 	}
 
 	return lifecycle.PodAdmitResult{

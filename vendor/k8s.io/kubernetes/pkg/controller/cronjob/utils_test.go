@@ -21,12 +21,14 @@ import (
 	"testing"
 	"time"
 
+	batchv1 "k8s.io/api/batch/v1"
+	batchv1beta1 "k8s.io/api/batch/v1beta1"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/kubernetes/pkg/api/v1"
-	batchv1 "k8s.io/kubernetes/pkg/apis/batch/v1"
-	batchv2alpha1 "k8s.io/kubernetes/pkg/apis/batch/v2alpha1"
 )
+
+func boolptr(b bool) *bool { return &b }
 
 func TestGetJobFromTemplate(t *testing.T) {
 	// getJobFromTemplate() needs to take the job template and copy the labels and annotations
@@ -35,17 +37,17 @@ func TestGetJobFromTemplate(t *testing.T) {
 	var one int64 = 1
 	var no bool = false
 
-	sj := batchv2alpha1.CronJob{
+	sj := batchv1beta1.CronJob{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "mycronjob",
 			Namespace: "snazzycats",
 			UID:       types.UID("1a2b3c"),
 			SelfLink:  "/apis/batch/v1/namespaces/snazzycats/jobs/mycronjob",
 		},
-		Spec: batchv2alpha1.CronJobSpec{
+		Spec: batchv1beta1.CronJobSpec{
 			Schedule:          "* * * * ?",
-			ConcurrencyPolicy: batchv2alpha1.AllowConcurrent,
-			JobTemplate: batchv2alpha1.JobTemplateSpec{
+			ConcurrencyPolicy: batchv1beta1.AllowConcurrent,
+			JobTemplate: batchv1beta1.JobTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels:      map[string]string{"a": "b"},
 					Annotations: map[string]string{"x": "y"},
@@ -81,20 +83,8 @@ func TestGetJobFromTemplate(t *testing.T) {
 	if len(job.ObjectMeta.Labels) != 1 {
 		t.Errorf("Wrong number of labels")
 	}
-	if len(job.ObjectMeta.Annotations) != 2 {
+	if len(job.ObjectMeta.Annotations) != 1 {
 		t.Errorf("Wrong number of annotations")
-	}
-	v, ok := job.ObjectMeta.Annotations[v1.CreatedByAnnotation]
-	if !ok {
-		t.Errorf("Missing created-by annotation")
-	}
-	expectedCreatedBy := `{"kind":"SerializedReference","apiVersion":"v1","reference":{"kind":"CronJob","namespace":"snazzycats","name":"mycronjob","uid":"1a2b3c","apiVersion":"batch"}}
-`
-	if len(v) != len(expectedCreatedBy) {
-		t.Errorf("Wrong length for created-by annotation, expected %v got %v", len(expectedCreatedBy), len(v))
-	}
-	if v != expectedCreatedBy {
-		t.Errorf("Wrong value for created-by annotation, expected %v got %v", expectedCreatedBy, v)
 	}
 }
 
@@ -129,7 +119,7 @@ func TestGetParentUIDFromJob(t *testing.T) {
 		},
 	}
 	{
-		// Case 1: No UID annotation
+		// Case 1: No ControllerRef
 		_, found := getParentUIDFromJob(*j)
 
 		if found {
@@ -137,8 +127,14 @@ func TestGetParentUIDFromJob(t *testing.T) {
 		}
 	}
 	{
-		// Case 2: Has UID annotation
-		j.ObjectMeta.Annotations = map[string]string{v1.CreatedByAnnotation: `{"kind":"SerializedReference","apiVersion":"v1","reference":{"kind":"CronJob","namespace":"default","name":"pi","uid":"5ef034e0-1890-11e6-8935-42010af0003e","apiVersion":"extensions","resourceVersion":"427339"}}`}
+		// Case 2: Has ControllerRef
+		j.ObjectMeta.SetOwnerReferences([]metav1.OwnerReference{
+			{
+				Kind:       "CronJob",
+				UID:        types.UID("5ef034e0-1890-11e6-8935-42010af0003e"),
+				Controller: boolptr(true),
+			},
+		})
 
 		expectedUID := types.UID("5ef034e0-1890-11e6-8935-42010af0003e")
 
@@ -156,42 +152,40 @@ func TestGroupJobsByParent(t *testing.T) {
 	uid1 := types.UID("11111111-1111-1111-1111-111111111111")
 	uid2 := types.UID("22222222-2222-2222-2222-222222222222")
 	uid3 := types.UID("33333333-3333-3333-3333-333333333333")
-	createdBy1 := map[string]string{v1.CreatedByAnnotation: `{"kind":"SerializedReference","apiVersion":"v1","reference":{"kind":"CronJob","namespace":"x","name":"pi","uid":"11111111-1111-1111-1111-111111111111","apiVersion":"extensions","resourceVersion":"111111"}}`}
-	createdBy2 := map[string]string{v1.CreatedByAnnotation: `{"kind":"SerializedReference","apiVersion":"v1","reference":{"kind":"CronJob","namespace":"x","name":"pi","uid":"22222222-2222-2222-2222-222222222222","apiVersion":"extensions","resourceVersion":"222222"}}`}
-	createdBy3 := map[string]string{v1.CreatedByAnnotation: `{"kind":"SerializedReference","apiVersion":"v1","reference":{"kind":"CronJob","namespace":"y","name":"pi","uid":"33333333-3333-3333-3333-333333333333","apiVersion":"extensions","resourceVersion":"333333"}}`}
-	noCreatedBy := map[string]string{}
+
+	ownerReference1 := metav1.OwnerReference{
+		Kind:       "CronJob",
+		UID:        uid1,
+		Controller: boolptr(true),
+	}
+
+	ownerReference2 := metav1.OwnerReference{
+		Kind:       "CronJob",
+		UID:        uid2,
+		Controller: boolptr(true),
+	}
+
+	ownerReference3 := metav1.OwnerReference{
+		Kind:       "CronJob",
+		UID:        uid3,
+		Controller: boolptr(true),
+	}
 
 	{
 		// Case 1: There are no jobs and scheduledJobs
-		sjs := []batchv2alpha1.CronJob{}
 		js := []batchv1.Job{}
-		jobsBySj := groupJobsByParent(sjs, js)
+		jobsBySj := groupJobsByParent(js)
 		if len(jobsBySj) != 0 {
 			t.Errorf("Wrong number of items in map")
 		}
 	}
 
 	{
-		// Case 2: there is one controller with no job.
-		sjs := []batchv2alpha1.CronJob{
-			{ObjectMeta: metav1.ObjectMeta{Name: "e", Namespace: "x", UID: uid1}},
-		}
-		js := []batchv1.Job{}
-		jobsBySj := groupJobsByParent(sjs, js)
-		if len(jobsBySj) != 0 {
-			t.Errorf("Wrong number of items in map")
-		}
-	}
-
-	{
-		// Case 3: there is one controller with one job it created.
-		sjs := []batchv2alpha1.CronJob{
-			{ObjectMeta: metav1.ObjectMeta{Name: "e", Namespace: "x", UID: uid1}},
-		}
+		// Case 2: there is one controller with one job it created.
 		js := []batchv1.Job{
-			{ObjectMeta: metav1.ObjectMeta{Name: "a", Namespace: "x", Annotations: createdBy1}},
+			{ObjectMeta: metav1.ObjectMeta{Name: "a", Namespace: "x", OwnerReferences: []metav1.OwnerReference{ownerReference1}}},
 		}
-		jobsBySj := groupJobsByParent(sjs, js)
+		jobsBySj := groupJobsByParent(js)
 
 		if len(jobsBySj) != 1 {
 			t.Errorf("Wrong number of items in map")
@@ -206,24 +200,19 @@ func TestGroupJobsByParent(t *testing.T) {
 	}
 
 	{
-		// Case 4: Two namespaces, one has two jobs from one controller, other has 3 jobs from two controllers.
+		// Case 3: Two namespaces, one has two jobs from one controller, other has 3 jobs from two controllers.
 		// There are also two jobs with no created-by annotation.
 		js := []batchv1.Job{
-			{ObjectMeta: metav1.ObjectMeta{Name: "a", Namespace: "x", Annotations: createdBy1}},
-			{ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: "x", Annotations: createdBy2}},
-			{ObjectMeta: metav1.ObjectMeta{Name: "c", Namespace: "x", Annotations: createdBy1}},
-			{ObjectMeta: metav1.ObjectMeta{Name: "d", Namespace: "x", Annotations: noCreatedBy}},
-			{ObjectMeta: metav1.ObjectMeta{Name: "a", Namespace: "y", Annotations: createdBy3}},
-			{ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: "y", Annotations: createdBy3}},
-			{ObjectMeta: metav1.ObjectMeta{Name: "d", Namespace: "y", Annotations: noCreatedBy}},
-		}
-		sjs := []batchv2alpha1.CronJob{
-			{ObjectMeta: metav1.ObjectMeta{Name: "e", Namespace: "x", UID: uid1}},
-			{ObjectMeta: metav1.ObjectMeta{Name: "f", Namespace: "x", UID: uid2}},
-			{ObjectMeta: metav1.ObjectMeta{Name: "g", Namespace: "y", UID: uid3}},
+			{ObjectMeta: metav1.ObjectMeta{Name: "a", Namespace: "x", OwnerReferences: []metav1.OwnerReference{ownerReference1}}},
+			{ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: "x", OwnerReferences: []metav1.OwnerReference{ownerReference2}}},
+			{ObjectMeta: metav1.ObjectMeta{Name: "c", Namespace: "x", OwnerReferences: []metav1.OwnerReference{ownerReference1}}},
+			{ObjectMeta: metav1.ObjectMeta{Name: "d", Namespace: "x", OwnerReferences: []metav1.OwnerReference{}}},
+			{ObjectMeta: metav1.ObjectMeta{Name: "a", Namespace: "y", OwnerReferences: []metav1.OwnerReference{ownerReference3}}},
+			{ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: "y", OwnerReferences: []metav1.OwnerReference{ownerReference3}}},
+			{ObjectMeta: metav1.ObjectMeta{Name: "d", Namespace: "y", OwnerReferences: []metav1.OwnerReference{}}},
 		}
 
-		jobsBySj := groupJobsByParent(sjs, js)
+		jobsBySj := groupJobsByParent(js)
 
 		if len(jobsBySj) != 3 {
 			t.Errorf("Wrong number of items in map")
@@ -250,7 +239,6 @@ func TestGroupJobsByParent(t *testing.T) {
 			t.Errorf("Wrong number of items in map")
 		}
 	}
-
 }
 
 func TestGetRecentUnmetScheduleTimes(t *testing.T) {
@@ -267,16 +255,16 @@ func TestGetRecentUnmetScheduleTimes(t *testing.T) {
 		t.Errorf("test setup error: %v", err)
 	}
 
-	sj := batchv2alpha1.CronJob{
+	sj := batchv1beta1.CronJob{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "mycronjob",
 			Namespace: metav1.NamespaceDefault,
 			UID:       types.UID("1a2b3c"),
 		},
-		Spec: batchv2alpha1.CronJobSpec{
+		Spec: batchv1beta1.CronJobSpec{
 			Schedule:          schedule,
-			ConcurrencyPolicy: batchv2alpha1.AllowConcurrent,
-			JobTemplate:       batchv2alpha1.JobTemplateSpec{},
+			ConcurrencyPolicy: batchv1beta1.AllowConcurrent,
+			JobTemplate:       batchv1beta1.JobTemplateSpec{},
 		},
 	}
 	{
@@ -322,7 +310,7 @@ func TestGetRecentUnmetScheduleTimes(t *testing.T) {
 			t.Errorf("unexpected error: %v", err)
 		}
 		if len(times) != 0 {
-			t.Errorf("expected 0 start times, got: , got: %v", times)
+			t.Errorf("expected 0 start times, got: %v", times)
 		}
 	}
 	{
@@ -338,7 +326,7 @@ func TestGetRecentUnmetScheduleTimes(t *testing.T) {
 			t.Errorf("unexpected error: %v", err)
 		}
 		if len(times) != 1 {
-			t.Errorf("expected 2 start times, got: , got: %v", times)
+			t.Errorf("expected 1 start times, got: %v", times)
 		} else if !times[0].Equal(T2) {
 			t.Errorf("expected: %v, got: %v", T1, times[0])
 		}
@@ -354,7 +342,7 @@ func TestGetRecentUnmetScheduleTimes(t *testing.T) {
 			t.Errorf("unexpected error: %v", err)
 		}
 		if len(times) != 2 {
-			t.Errorf("expected 2 start times, got: , got: %v", times)
+			t.Errorf("expected 2 start times, got: %v", times)
 		} else {
 			if !times[0].Equal(T1) {
 				t.Errorf("expected: %v, got: %v", T1, times[0])
@@ -371,7 +359,7 @@ func TestGetRecentUnmetScheduleTimes(t *testing.T) {
 		now := T2.Add(10 * 24 * time.Hour)
 		_, err := getRecentUnmetScheduleTimes(sj, now)
 		if err == nil {
-			t.Errorf("unexpected lack of error")
+			t.Errorf("expected an error")
 		}
 	}
 	{
@@ -387,5 +375,4 @@ func TestGetRecentUnmetScheduleTimes(t *testing.T) {
 			t.Errorf("unexpected error")
 		}
 	}
-
 }

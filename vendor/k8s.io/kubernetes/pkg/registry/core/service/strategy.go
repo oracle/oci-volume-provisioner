@@ -17,18 +17,15 @@ limitations under the License.
 package service
 
 import (
+	"context"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
-	"k8s.io/apiserver/pkg/registry/generic"
-	apistorage "k8s.io/apiserver/pkg/storage"
 	"k8s.io/apiserver/pkg/storage/names"
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/validation"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
+	api "k8s.io/kubernetes/pkg/apis/core"
+	"k8s.io/kubernetes/pkg/apis/core/validation"
 )
 
 // svcStrategy implements behavior for Services
@@ -39,7 +36,7 @@ type svcStrategy struct {
 
 // Services is the default logic that applies when creating and updating Service
 // objects.
-var Strategy = svcStrategy{api.Scheme, names.SimpleNameGenerator}
+var Strategy = svcStrategy{legacyscheme.Scheme, names.SimpleNameGenerator}
 
 // NamespaceScoped is true for services.
 func (svcStrategy) NamespaceScoped() bool {
@@ -47,20 +44,20 @@ func (svcStrategy) NamespaceScoped() bool {
 }
 
 // PrepareForCreate clears fields that are not allowed to be set by end users on creation.
-func (svcStrategy) PrepareForCreate(ctx genericapirequest.Context, obj runtime.Object) {
+func (svcStrategy) PrepareForCreate(ctx context.Context, obj runtime.Object) {
 	service := obj.(*api.Service)
 	service.Status = api.ServiceStatus{}
 }
 
 // PrepareForUpdate clears fields that are not allowed to be set by end users on update.
-func (svcStrategy) PrepareForUpdate(ctx genericapirequest.Context, obj, old runtime.Object) {
+func (svcStrategy) PrepareForUpdate(ctx context.Context, obj, old runtime.Object) {
 	newService := obj.(*api.Service)
 	oldService := old.(*api.Service)
 	newService.Status = oldService.Status
 }
 
 // Validate validates a new service.
-func (svcStrategy) Validate(ctx genericapirequest.Context, obj runtime.Object) field.ErrorList {
+func (svcStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
 	service := obj.(*api.Service)
 	return validation.ValidateService(service)
 }
@@ -73,7 +70,7 @@ func (svcStrategy) AllowCreateOnUpdate() bool {
 	return true
 }
 
-func (svcStrategy) ValidateUpdate(ctx genericapirequest.Context, obj, old runtime.Object) field.ErrorList {
+func (svcStrategy) ValidateUpdate(ctx context.Context, obj, old runtime.Object) field.ErrorList {
 	return validation.ValidateServiceUpdate(obj.(*api.Service), old.(*api.Service))
 }
 
@@ -81,7 +78,7 @@ func (svcStrategy) AllowUnconditionalUpdate() bool {
 	return true
 }
 
-func (svcStrategy) Export(ctx genericapirequest.Context, obj runtime.Object, exact bool) error {
+func (svcStrategy) Export(ctx context.Context, obj runtime.Object, exact bool) error {
 	t, ok := obj.(*api.Service)
 	if !ok {
 		// unexpected programmer error
@@ -93,7 +90,7 @@ func (svcStrategy) Export(ctx genericapirequest.Context, obj runtime.Object, exa
 		return nil
 	}
 	if t.Spec.ClusterIP != api.ClusterIPNone {
-		t.Spec.ClusterIP = "<unknown>"
+		t.Spec.ClusterIP = ""
 	}
 	if t.Spec.Type == api.ServiceTypeNodePort {
 		for i := range t.Spec.Ports {
@@ -101,27 +98,6 @@ func (svcStrategy) Export(ctx genericapirequest.Context, obj runtime.Object, exa
 		}
 	}
 	return nil
-}
-
-// GetAttrs returns labels and fields of a given object for filtering purposes.
-func GetAttrs(obj runtime.Object) (labels.Set, fields.Set, error) {
-	service, ok := obj.(*api.Service)
-	if !ok {
-		return nil, nil, fmt.Errorf("Given object is not a service")
-	}
-	return labels.Set(service.ObjectMeta.Labels), ServiceToSelectableFields(service), nil
-}
-
-func MatchServices(label labels.Selector, field fields.Selector) apistorage.SelectionPredicate {
-	return apistorage.SelectionPredicate{
-		Label:    label,
-		Field:    field,
-		GetAttrs: GetAttrs,
-	}
-}
-
-func ServiceToSelectableFields(service *api.Service) fields.Set {
-	return generic.ObjectMetaFieldsSet(&service.ObjectMeta, true)
 }
 
 type serviceStatusStrategy struct {
@@ -132,7 +108,7 @@ type serviceStatusStrategy struct {
 var StatusStrategy = serviceStatusStrategy{Strategy}
 
 // PrepareForUpdate clears fields that are not allowed to be set by end users on update of status
-func (serviceStatusStrategy) PrepareForUpdate(ctx genericapirequest.Context, obj, old runtime.Object) {
+func (serviceStatusStrategy) PrepareForUpdate(ctx context.Context, obj, old runtime.Object) {
 	newService := obj.(*api.Service)
 	oldService := old.(*api.Service)
 	// status changes are not allowed to update spec
@@ -140,6 +116,6 @@ func (serviceStatusStrategy) PrepareForUpdate(ctx genericapirequest.Context, obj
 }
 
 // ValidateUpdate is the default update validation for an end user updating status
-func (serviceStatusStrategy) ValidateUpdate(ctx genericapirequest.Context, obj, old runtime.Object) field.ErrorList {
+func (serviceStatusStrategy) ValidateUpdate(ctx context.Context, obj, old runtime.Object) field.ErrorList {
 	return validation.ValidateServiceStatusUpdate(obj.(*api.Service), old.(*api.Service))
 }
