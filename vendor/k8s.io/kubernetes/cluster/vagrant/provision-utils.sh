@@ -19,7 +19,7 @@ function enable-accounting() {
   cat <<EOF >/etc/systemd/system.conf.d/kubernetes-accounting.conf
 [Manager]
 DefaultCPUAccounting=yes
-DefaultMemoryAccounting=yes  
+DefaultMemoryAccounting=yes
 EOF
   systemctl daemon-reload
 }
@@ -65,7 +65,6 @@ elasticsearch_replicas: '$(echo "$ELASTICSEARCH_LOGGING_REPLICAS" | sed -e "s/'/
 enable_cluster_dns: '$(echo "$ENABLE_CLUSTER_DNS" | sed -e "s/'/''/g")'
 dns_server: '$(echo "$DNS_SERVER_IP" | sed -e "s/'/''/g")'
 dns_domain: '$(echo "$DNS_DOMAIN" | sed -e "s/'/''/g")'
-federations_domain_map: ''
 instance_prefix: '$(echo "$INSTANCE_PREFIX" | sed -e "s/'/''/g")'
 admission_control: '$(echo "$ADMISSION_CONTROL" | sed -e "s/'/''/g")'
 enable_cpu_cfs_quota: '$(echo "$ENABLE_CPU_CFS_QUOTA" | sed -e "s/'/''/g")'
@@ -96,6 +95,7 @@ grains:
   network_mode: openvswitch
   networkInterfaceName: '$(echo "$NETWORK_IF_NAME" | sed -e "s/'/''/g")'
   api_servers: '$(echo "$MASTER_IP" | sed -e "s/'/''/g")'
+  kubelet_kubeconfig: /srv/salt-overlay/salt/kubelet/kubeconfig
   cloud: vagrant
   roles:
     - $role
@@ -179,6 +179,7 @@ apiVersion: v1
 kind: Config
 clusters:
 - cluster:
+    server: "https://${MASTER_IP}"
     insecure-skip-tls-verify: true
   name: local
 contexts:

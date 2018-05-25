@@ -28,13 +28,25 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
-	"k8s.io/kubernetes/pkg/client/leaderelection"
+	"k8s.io/kubernetes/pkg/client/leaderelectionconfig"
+	"k8s.io/kubernetes/pkg/controller/garbagecollector"
 	"k8s.io/kubernetes/pkg/master/ports"
 
 	// add the kubernetes feature gates
 	_ "k8s.io/kubernetes/pkg/features"
 
+	"github.com/cloudflare/cfssl/helpers"
 	"github.com/spf13/pflag"
+)
+
+const (
+	// These defaults are deprecated and exported so that we can warn if
+	// they are being used.
+
+	// DefaultClusterSigningCertFile is deprecated. Do not use.
+	DefaultClusterSigningCertFile = "/etc/kubernetes/ca/ca.pem"
+	// DefaultClusterSigningKeyFile is deprecated. Do not use.
+	DefaultClusterSigningKeyFile = "/etc/kubernetes/ca/ca.key"
 )
 
 // CMServer is the main context object for the controller manager.
@@ -47,41 +59,48 @@ type CMServer struct {
 
 // NewCMServer creates a new CMServer with a default config.
 func NewCMServer() *CMServer {
+	gcIgnoredResources := make([]componentconfig.GroupResource, 0, len(garbagecollector.DefaultIgnoredResources()))
+	for r := range garbagecollector.DefaultIgnoredResources() {
+		gcIgnoredResources = append(gcIgnoredResources, componentconfig.GroupResource{Group: r.Group, Resource: r.Resource})
+	}
+
 	s := CMServer{
+		// Part of these default values also present in 'cmd/cloud-controller-manager/app/options/options.go'.
+		// Please keep them in sync when doing update.
 		KubeControllerManagerConfiguration: componentconfig.KubeControllerManagerConfiguration{
-			Controllers:                       []string{"*"},
-			Port:                              ports.ControllerManagerPort,
-			Address:                           "0.0.0.0",
-			ConcurrentEndpointSyncs:           5,
-			ConcurrentServiceSyncs:            1,
-			ConcurrentRCSyncs:                 5,
-			ConcurrentRSSyncs:                 5,
-			ConcurrentDaemonSetSyncs:          2,
-			ConcurrentJobSyncs:                5,
-			ConcurrentResourceQuotaSyncs:      5,
-			ConcurrentDeploymentSyncs:         5,
-			ConcurrentNamespaceSyncs:          2,
-			ConcurrentSATokenSyncs:            5,
-			LookupCacheSizeForRC:              4096,
-			LookupCacheSizeForRS:              4096,
-			LookupCacheSizeForDaemonSet:       1024,
-			ServiceSyncPeriod:                 metav1.Duration{Duration: 5 * time.Minute},
-			RouteReconciliationPeriod:         metav1.Duration{Duration: 10 * time.Second},
-			ResourceQuotaSyncPeriod:           metav1.Duration{Duration: 5 * time.Minute},
-			NamespaceSyncPeriod:               metav1.Duration{Duration: 5 * time.Minute},
-			PVClaimBinderSyncPeriod:           metav1.Duration{Duration: 15 * time.Second},
-			HorizontalPodAutoscalerSyncPeriod: metav1.Duration{Duration: 30 * time.Second},
-			DeploymentControllerSyncPeriod:    metav1.Duration{Duration: 30 * time.Second},
-			MinResyncPeriod:                   metav1.Duration{Duration: 12 * time.Hour},
-			RegisterRetryCount:                10,
-			PodEvictionTimeout:                metav1.Duration{Duration: 5 * time.Minute},
-			NodeMonitorGracePeriod:            metav1.Duration{Duration: 40 * time.Second},
-			NodeStartupGracePeriod:            metav1.Duration{Duration: 60 * time.Second},
-			NodeMonitorPeriod:                 metav1.Duration{Duration: 5 * time.Second},
-			ClusterName:                       "kubernetes",
-			NodeCIDRMaskSize:                  24,
-			ConfigureCloudRoutes:              true,
-			TerminatedPodGCThreshold:          12500,
+			Controllers:                                     []string{"*"},
+			Port:                                            ports.ControllerManagerPort,
+			Address:                                         "0.0.0.0",
+			ConcurrentEndpointSyncs:                         5,
+			ConcurrentServiceSyncs:                          1,
+			ConcurrentRCSyncs:                               5,
+			ConcurrentRSSyncs:                               5,
+			ConcurrentDaemonSetSyncs:                        2,
+			ConcurrentJobSyncs:                              5,
+			ConcurrentResourceQuotaSyncs:                    5,
+			ConcurrentDeploymentSyncs:                       5,
+			ConcurrentNamespaceSyncs:                        10,
+			ConcurrentSATokenSyncs:                          5,
+			ServiceSyncPeriod:                               metav1.Duration{Duration: 5 * time.Minute},
+			RouteReconciliationPeriod:                       metav1.Duration{Duration: 10 * time.Second},
+			ResourceQuotaSyncPeriod:                         metav1.Duration{Duration: 5 * time.Minute},
+			NamespaceSyncPeriod:                             metav1.Duration{Duration: 5 * time.Minute},
+			PVClaimBinderSyncPeriod:                         metav1.Duration{Duration: 15 * time.Second},
+			HorizontalPodAutoscalerSyncPeriod:               metav1.Duration{Duration: 30 * time.Second},
+			HorizontalPodAutoscalerUpscaleForbiddenWindow:   metav1.Duration{Duration: 3 * time.Minute},
+			HorizontalPodAutoscalerDownscaleForbiddenWindow: metav1.Duration{Duration: 5 * time.Minute},
+			HorizontalPodAutoscalerTolerance:                0.1,
+			DeploymentControllerSyncPeriod:                  metav1.Duration{Duration: 30 * time.Second},
+			MinResyncPeriod:                                 metav1.Duration{Duration: 12 * time.Hour},
+			RegisterRetryCount:                              10,
+			PodEvictionTimeout:                              metav1.Duration{Duration: 5 * time.Minute},
+			NodeMonitorGracePeriod:                          metav1.Duration{Duration: 40 * time.Second},
+			NodeStartupGracePeriod:                          metav1.Duration{Duration: 60 * time.Second},
+			NodeMonitorPeriod:                               metav1.Duration{Duration: 5 * time.Second},
+			ClusterName:                                     "kubernetes",
+			NodeCIDRMaskSize:                                24,
+			ConfigureCloudRoutes:                            true,
+			TerminatedPodGCThreshold:                        12500,
 			VolumeConfiguration: componentconfig.VolumeConfiguration{
 				EnableHostPathProvisioning: false,
 				EnableDynamicProvisioning:  true,
@@ -97,15 +116,17 @@ func NewCMServer() *CMServer {
 			ContentType:                           "application/vnd.kubernetes.protobuf",
 			KubeAPIQPS:                            20.0,
 			KubeAPIBurst:                          30,
-			LeaderElection:                        leaderelection.DefaultLeaderElectionConfiguration(),
+			LeaderElection:                        leaderelectionconfig.DefaultLeaderElectionConfiguration(),
 			ControllerStartInterval:               metav1.Duration{Duration: 0 * time.Second},
 			EnableGarbageCollector:                true,
 			ConcurrentGCSyncs:                     20,
-			ClusterSigningCertFile:                "/etc/kubernetes/ca/ca.pem",
-			ClusterSigningKeyFile:                 "/etc/kubernetes/ca/ca.key",
+			GCIgnoredResources:                    gcIgnoredResources,
+			ClusterSigningCertFile:                DefaultClusterSigningCertFile,
+			ClusterSigningKeyFile:                 DefaultClusterSigningKeyFile,
+			ClusterSigningDuration:                metav1.Duration{Duration: helpers.OneYear},
 			ReconcilerSyncLoopPeriod:              metav1.Duration{Duration: 60 * time.Second},
 			EnableTaintManager:                    true,
-			HorizontalPodAutoscalerUseRESTClients: false,
+			HorizontalPodAutoscalerUseRESTClients: true,
 		},
 	}
 	s.LeaderElection.LeaderElect = true
@@ -123,6 +144,8 @@ func (s *CMServer) AddFlags(fs *pflag.FlagSet, allControllers []string, disabled
 	fs.BoolVar(&s.UseServiceAccountCredentials, "use-service-account-credentials", s.UseServiceAccountCredentials, "If true, use individual service account credentials for each controller.")
 	fs.StringVar(&s.CloudProvider, "cloud-provider", s.CloudProvider, "The provider for cloud services.  Empty string for no provider.")
 	fs.StringVar(&s.CloudConfigFile, "cloud-config", s.CloudConfigFile, "The path to the cloud provider configuration file.  Empty string for no configuration file.")
+	fs.BoolVar(&s.AllowUntaggedCloud, "allow-untagged-cloud", false, "Allow the cluster to run without the cluster-id on cloud instances.  This is a legacy mode of operation and a cluster-id will be required in the future.")
+	fs.MarkDeprecated("allow-untagged-cloud", "This flag is deprecated and will be removed in a future release.  A cluster-id will be required on cloud instances")
 	fs.Int32Var(&s.ConcurrentEndpointSyncs, "concurrent-endpoint-syncs", s.ConcurrentEndpointSyncs, "The number of endpoint syncing operations that will be done concurrently. Larger number = faster endpoint updating, but more CPU (and network) load")
 	fs.Int32Var(&s.ConcurrentServiceSyncs, "concurrent-service-syncs", s.ConcurrentServiceSyncs, "The number of services that are allowed to sync concurrently. Larger number = more responsive service management, but more CPU (and network) load")
 	fs.Int32Var(&s.ConcurrentRCSyncs, "concurrent_rc_syncs", s.ConcurrentRCSyncs, "The number of replication controllers that are allowed to sync concurrently. Larger number = more responsive replica management, but more CPU (and network) load")
@@ -131,15 +154,6 @@ func (s *CMServer) AddFlags(fs *pflag.FlagSet, allControllers []string, disabled
 	fs.Int32Var(&s.ConcurrentDeploymentSyncs, "concurrent-deployment-syncs", s.ConcurrentDeploymentSyncs, "The number of deployment objects that are allowed to sync concurrently. Larger number = more responsive deployments, but more CPU (and network) load")
 	fs.Int32Var(&s.ConcurrentNamespaceSyncs, "concurrent-namespace-syncs", s.ConcurrentNamespaceSyncs, "The number of namespace objects that are allowed to sync concurrently. Larger number = more responsive namespace termination, but more CPU (and network) load")
 	fs.Int32Var(&s.ConcurrentSATokenSyncs, "concurrent-serviceaccount-token-syncs", s.ConcurrentSATokenSyncs, "The number of service account token objects that are allowed to sync concurrently. Larger number = more responsive token generation, but more CPU (and network) load")
-	// TODO(#43388): Remove the following flag 6 months after v1.6.0 is released.
-	fs.Int32Var(&s.LookupCacheSizeForRC, "replication-controller-lookup-cache-size", s.LookupCacheSizeForRC, "This flag is deprecated and will be removed in future releases. ReplicationController no longer requires a lookup cache.")
-	fs.MarkDeprecated("replication-controller-lookup-cache-size", "This flag is deprecated and will be removed in future releases. ReplicationController no longer requires a lookup cache.")
-	// TODO(#43388): Remove the following flag 6 months after v1.6.0 is released.
-	fs.Int32Var(&s.LookupCacheSizeForRS, "replicaset-lookup-cache-size", s.LookupCacheSizeForRS, "This flag is deprecated and will be removed in future releases. ReplicaSet no longer requires a lookup cache.")
-	fs.MarkDeprecated("replicaset-lookup-cache-size", "This flag is deprecated and will be removed in future releases. ReplicaSet no longer requires a lookup cache.")
-	// TODO(#43388): Remove the following flag 6 months after v1.6.0 is released.
-	fs.Int32Var(&s.LookupCacheSizeForDaemonSet, "daemonset-lookup-cache-size", s.LookupCacheSizeForDaemonSet, "This flag is deprecated and will be removed in future releases. DaemonSet no longer requires a lookup cache.")
-	fs.MarkDeprecated("daemonset-lookup-cache-size", "This flag is deprecated and will be removed in future releases. DaemonSet no longer requires a lookup cache.")
 	fs.DurationVar(&s.ServiceSyncPeriod.Duration, "service-sync-period", s.ServiceSyncPeriod.Duration, "The period for syncing services with their external load balancers")
 	fs.DurationVar(&s.NodeSyncPeriod.Duration, "node-sync-period", 0, ""+
 		"This flag is deprecated and will be removed in future releases. See node-monitor-period for Node health checking or "+
@@ -161,6 +175,9 @@ func (s *CMServer) AddFlags(fs *pflag.FlagSet, allControllers []string, disabled
 	fs.StringVar(&s.VolumeConfiguration.FlexVolumePluginDir, "flex-volume-plugin-dir", s.VolumeConfiguration.FlexVolumePluginDir, "Full path of the directory in which the flex volume plugin should search for additional third party volume plugins.")
 	fs.Int32Var(&s.TerminatedPodGCThreshold, "terminated-pod-gc-threshold", s.TerminatedPodGCThreshold, "Number of terminated pods that can exist before the terminated pod garbage collector starts deleting terminated pods. If <= 0, the terminated pod garbage collector is disabled.")
 	fs.DurationVar(&s.HorizontalPodAutoscalerSyncPeriod.Duration, "horizontal-pod-autoscaler-sync-period", s.HorizontalPodAutoscalerSyncPeriod.Duration, "The period for syncing the number of pods in horizontal pod autoscaler.")
+	fs.DurationVar(&s.HorizontalPodAutoscalerUpscaleForbiddenWindow.Duration, "horizontal-pod-autoscaler-upscale-delay", s.HorizontalPodAutoscalerUpscaleForbiddenWindow.Duration, "The period since last upscale, before another upscale can be performed in horizontal pod autoscaler.")
+	fs.DurationVar(&s.HorizontalPodAutoscalerDownscaleForbiddenWindow.Duration, "horizontal-pod-autoscaler-downscale-delay", s.HorizontalPodAutoscalerDownscaleForbiddenWindow.Duration, "The period since last downscale, before another downscale can be performed in horizontal pod autoscaler.")
+	fs.Float64Var(&s.HorizontalPodAutoscalerTolerance, "horizontal-pod-autoscaler-tolerance", s.HorizontalPodAutoscalerTolerance, "The minimum change (from 1.0) in the desired-to-actual metrics ratio for the horizontal pod autoscaler to consider scaling.")
 	fs.DurationVar(&s.DeploymentControllerSyncPeriod.Duration, "deployment-controller-sync-period", s.DeploymentControllerSyncPeriod.Duration, "Period for syncing the deployments.")
 	fs.DurationVar(&s.PodEvictionTimeout.Duration, "pod-eviction-timeout", s.PodEvictionTimeout.Duration, "The grace period for deleting pods on failed nodes.")
 	fs.Float32Var(&s.DeletingPodsQps, "deleting-pods-qps", 0.1, "Number of nodes per second on which pods are deleted in case of node failure.")
@@ -181,14 +198,20 @@ func (s *CMServer) AddFlags(fs *pflag.FlagSet, allControllers []string, disabled
 	fs.StringVar(&s.ServiceAccountKeyFile, "service-account-private-key-file", s.ServiceAccountKeyFile, "Filename containing a PEM-encoded private RSA or ECDSA key used to sign service account tokens.")
 	fs.StringVar(&s.ClusterSigningCertFile, "cluster-signing-cert-file", s.ClusterSigningCertFile, "Filename containing a PEM-encoded X509 CA certificate used to issue cluster-scoped certificates")
 	fs.StringVar(&s.ClusterSigningKeyFile, "cluster-signing-key-file", s.ClusterSigningKeyFile, "Filename containing a PEM-encoded RSA or ECDSA private key used to sign cluster-scoped certificates")
-	fs.StringVar(&s.ApproveAllKubeletCSRsForGroup, "insecure-experimental-approve-all-kubelet-csrs-for-group", s.ApproveAllKubeletCSRsForGroup, "The group for which the controller-manager will auto approve all CSRs for kubelet client certificates.")
+	fs.DurationVar(&s.ClusterSigningDuration.Duration, "experimental-cluster-signing-duration", s.ClusterSigningDuration.Duration, "The length of duration signed certificates will be given.")
+	var dummy string
+	fs.MarkDeprecated("insecure-experimental-approve-all-kubelet-csrs-for-group", "This flag does nothing.")
+	fs.StringVar(&dummy, "insecure-experimental-approve-all-kubelet-csrs-for-group", "", "This flag does nothing.")
 	fs.BoolVar(&s.EnableProfiling, "profiling", true, "Enable profiling via web interface host:port/debug/pprof/")
 	fs.BoolVar(&s.EnableContentionProfiling, "contention-profiling", false, "Enable lock contention profiling, if profiling is enabled")
 	fs.StringVar(&s.ClusterName, "cluster-name", s.ClusterName, "The instance prefix for the cluster")
-	fs.StringVar(&s.ClusterCIDR, "cluster-cidr", s.ClusterCIDR, "CIDR Range for Pods in cluster.")
-	fs.StringVar(&s.ServiceCIDR, "service-cluster-ip-range", s.ServiceCIDR, "CIDR Range for Services in cluster.")
+	fs.StringVar(&s.ClusterCIDR, "cluster-cidr", s.ClusterCIDR, "CIDR Range for Pods in cluster. Requires --allocate-node-cidrs to be true")
+	fs.StringVar(&s.ServiceCIDR, "service-cluster-ip-range", s.ServiceCIDR, "CIDR Range for Services in cluster. Requires --allocate-node-cidrs to be true")
 	fs.Int32Var(&s.NodeCIDRMaskSize, "node-cidr-mask-size", s.NodeCIDRMaskSize, "Mask size for node cidr in cluster.")
-	fs.BoolVar(&s.AllocateNodeCIDRs, "allocate-node-cidrs", false, "Should CIDRs for Pods be allocated and set on the cloud provider.")
+	fs.BoolVar(&s.AllocateNodeCIDRs, "allocate-node-cidrs", false,
+		"Should CIDRs for Pods be allocated and set on the cloud provider.")
+	fs.StringVar(&s.CIDRAllocatorType, "cidr-allocator-type", "RangeAllocator",
+		"Type of CIDR allocator to use")
 	fs.BoolVar(&s.ConfigureCloudRoutes, "configure-cloud-routes", true, "Should CIDRs allocated by allocate-node-cidrs be configured on the cloud provider.")
 	fs.StringVar(&s.Master, "master", s.Master, "The address of the Kubernetes API server (overrides any value in kubeconfig)")
 	fs.StringVar(&s.Kubeconfig, "kubeconfig", s.Kubeconfig, "Path to kubeconfig file with authorization and master location information.")
@@ -206,9 +229,9 @@ func (s *CMServer) AddFlags(fs *pflag.FlagSet, allControllers []string, disabled
 	fs.BoolVar(&s.DisableAttachDetachReconcilerSync, "disable-attach-detach-reconcile-sync", false, "Disable volume attach detach reconciler sync. Disabling this may cause volumes to be mismatched with pods. Use wisely.")
 	fs.DurationVar(&s.ReconcilerSyncLoopPeriod.Duration, "attach-detach-reconcile-sync-period", s.ReconcilerSyncLoopPeriod.Duration, "The reconciler sync wait time between volume attach detach. This duration must be larger than one second, and increasing this value from the default may allow for volumes to be mismatched with pods.")
 	fs.BoolVar(&s.EnableTaintManager, "enable-taint-manager", s.EnableTaintManager, "WARNING: Beta feature. If set to true enables NoExecute Taints and will evict all not-tolerating Pod running on Nodes tainted with this kind of Taints.")
-	fs.BoolVar(&s.HorizontalPodAutoscalerUseRESTClients, "horizontal-pod-autoscaler-use-rest-clients", s.HorizontalPodAutoscalerUseRESTClients, "WARNING: alpha feature.  If set to true, causes the horizontal pod autoscaler controller to use REST clients through the kube-aggregator, instead of using the legacy metrics client through the API server proxy.  This is required for custom metrics support in the horizonal pod autoscaler.")
+	fs.BoolVar(&s.HorizontalPodAutoscalerUseRESTClients, "horizontal-pod-autoscaler-use-rest-clients", s.HorizontalPodAutoscalerUseRESTClients, "WARNING: alpha feature.  If set to true, causes the horizontal pod autoscaler controller to use REST clients through the kube-aggregator, instead of using the legacy metrics client through the API server proxy.  This is required for custom metrics support in the horizontal pod autoscaler.")
 
-	leaderelection.BindFlags(&s.LeaderElection, fs)
+	leaderelectionconfig.BindFlags(&s.LeaderElection, fs)
 
 	utilfeature.DefaultFeatureGate.AddFlag(fs)
 }

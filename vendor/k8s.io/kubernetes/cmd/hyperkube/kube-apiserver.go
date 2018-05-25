@@ -31,9 +31,10 @@ func NewKubeAPIServer() *Server {
 		AlternativeName: "kube-apiserver",
 		SimpleUsage:     "apiserver",
 		Long:            "The main API entrypoint and interface to the storage system.  The API server is also the focal point for all authorization decisions.",
-		Run: func(_ *Server, args []string) error {
-			return app.Run(s)
+		Run: func(_ *Server, args []string, stopCh <-chan struct{}) error {
+			return app.Run(s, stopCh)
 		},
+		RespectsStopCh: true,
 	}
 	s.AddFlags(hks.Flags())
 	return &hks

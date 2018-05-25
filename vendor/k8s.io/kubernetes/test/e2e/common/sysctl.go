@@ -17,9 +17,10 @@ limitations under the License.
 package common
 
 import (
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
-	"k8s.io/kubernetes/pkg/api/v1"
+	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	"k8s.io/kubernetes/pkg/kubelet/sysctl"
 	"k8s.io/kubernetes/test/e2e/framework"
 
@@ -42,7 +43,7 @@ var _ = framework.KubeDescribe("Sysctls", func() {
 				Containers: []v1.Container{
 					{
 						Name:  "test-container",
-						Image: "gcr.io/google_containers/busybox:1.24",
+						Image: busyboxImage,
 					},
 				},
 				RestartPolicy: v1.RestartPolicyNever,
@@ -58,7 +59,7 @@ var _ = framework.KubeDescribe("Sysctls", func() {
 
 	It("should support sysctls", func() {
 		pod := testPod()
-		pod.Annotations[v1.SysctlsPodAnnotationKey] = v1.PodAnnotationsFromSysctls([]v1.Sysctl{
+		pod.Annotations[v1.SysctlsPodAnnotationKey] = v1helper.PodAnnotationsFromSysctls([]v1.Sysctl{
 			{
 				Name:  "kernel.shm_rmid_forced",
 				Value: "1",
@@ -99,7 +100,7 @@ var _ = framework.KubeDescribe("Sysctls", func() {
 
 	It("should support unsafe sysctls which are actually whitelisted", func() {
 		pod := testPod()
-		pod.Annotations[v1.UnsafeSysctlsPodAnnotationKey] = v1.PodAnnotationsFromSysctls([]v1.Sysctl{
+		pod.Annotations[v1.UnsafeSysctlsPodAnnotationKey] = v1helper.PodAnnotationsFromSysctls([]v1.Sysctl{
 			{
 				Name:  "kernel.shm_rmid_forced",
 				Value: "1",
@@ -140,7 +141,7 @@ var _ = framework.KubeDescribe("Sysctls", func() {
 
 	It("should reject invalid sysctls", func() {
 		pod := testPod()
-		pod.Annotations[v1.SysctlsPodAnnotationKey] = v1.PodAnnotationsFromSysctls([]v1.Sysctl{
+		pod.Annotations[v1.SysctlsPodAnnotationKey] = v1helper.PodAnnotationsFromSysctls([]v1.Sysctl{
 			{
 				Name:  "foo-",
 				Value: "bar",
@@ -154,7 +155,7 @@ var _ = framework.KubeDescribe("Sysctls", func() {
 				Value: "100000000",
 			},
 		})
-		pod.Annotations[v1.UnsafeSysctlsPodAnnotationKey] = v1.PodAnnotationsFromSysctls([]v1.Sysctl{
+		pod.Annotations[v1.UnsafeSysctlsPodAnnotationKey] = v1helper.PodAnnotationsFromSysctls([]v1.Sysctl{
 			{
 				Name:  "kernel.shmall",
 				Value: "100000000",
@@ -170,7 +171,7 @@ var _ = framework.KubeDescribe("Sysctls", func() {
 		})
 
 		By("Creating a pod with one valid and two invalid sysctls")
-		client := f.ClientSet.Core().Pods(f.Namespace.Name)
+		client := f.ClientSet.CoreV1().Pods(f.Namespace.Name)
 		_, err := client.Create(pod)
 
 		Expect(err).NotTo(BeNil())
@@ -182,7 +183,7 @@ var _ = framework.KubeDescribe("Sysctls", func() {
 
 	It("should not launch unsafe, but not explicitly enabled sysctls on the node", func() {
 		pod := testPod()
-		pod.Annotations[v1.SysctlsPodAnnotationKey] = v1.PodAnnotationsFromSysctls([]v1.Sysctl{
+		pod.Annotations[v1.SysctlsPodAnnotationKey] = v1helper.PodAnnotationsFromSysctls([]v1.Sysctl{
 			{
 				Name:  "kernel.msgmax",
 				Value: "10000000000",

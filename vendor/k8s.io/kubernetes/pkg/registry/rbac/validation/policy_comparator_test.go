@@ -45,6 +45,20 @@ func TestCoversExactMatch(t *testing.T) {
 	}.test(t)
 }
 
+func TestCoversSubresourceWildcard(t *testing.T) {
+	escalationTest{
+		ownerRules: []rbac.PolicyRule{
+			{APIGroups: []string{"v1"}, Verbs: []string{"get"}, Resources: []string{"*/scale"}},
+		},
+		servantRules: []rbac.PolicyRule{
+			{APIGroups: []string{"v1"}, Verbs: []string{"get"}, Resources: []string{"foo/scale"}},
+		},
+
+		expectedCovered:        true,
+		expectedUncoveredRules: []rbac.PolicyRule{},
+	}.test(t)
+}
+
 func TestCoversMultipleRulesCoveringSingleRule(t *testing.T) {
 	escalationTest{
 		ownerRules: []rbac.PolicyRule{
@@ -407,7 +421,12 @@ func TestNonResourceURLCovers(t *testing.T) {
 		requested string
 		want      bool
 	}{
+		{"*", "", true},
+		{"*", "/", true},
 		{"*", "/api", true},
+		{"/*", "", false},
+		{"/*", "/", true},
+		{"/*", "/foo", true},
 		{"/api", "/api", true},
 		{"/apis", "/api", false},
 		{"/api/v1", "/api", false},

@@ -1,7 +1,5 @@
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])
-
 load(
     "@io_bazel_rules_go//go:def.bzl",
     "go_library",
@@ -11,26 +9,26 @@ go_library(
     name = "go_default_library",
     srcs = [
         "attach.go",
-        "constants.go",
         "doc.go",
         "exec.go",
         "httpstream.go",
         "websocket.go",
     ],
-    tags = ["automanaged"],
+    importpath = "k8s.io/kubernetes/pkg/kubelet/server/remotecommand",
     deps = [
-        "//pkg/api:go_default_library",
-        "//pkg/util/exec:go_default_library",
-        "//pkg/util/term:go_default_library",
-        "//vendor:github.com/golang/glog",
-        "//vendor:k8s.io/apimachinery/pkg/api/errors",
-        "//vendor:k8s.io/apimachinery/pkg/apis/meta/v1",
-        "//vendor:k8s.io/apimachinery/pkg/types",
-        "//vendor:k8s.io/apimachinery/pkg/util/httpstream",
-        "//vendor:k8s.io/apimachinery/pkg/util/httpstream/spdy",
-        "//vendor:k8s.io/apimachinery/pkg/util/runtime",
-        "//vendor:k8s.io/apiserver/pkg/server/httplog",
-        "//vendor:k8s.io/apiserver/pkg/util/wsstream",
+        "//pkg/apis/core:go_default_library",
+        "//vendor/github.com/golang/glog:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/api/errors:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/types:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/util/httpstream:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/util/httpstream/spdy:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/util/remotecommand:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/util/runtime:go_default_library",
+        "//vendor/k8s.io/apiserver/pkg/server/httplog:go_default_library",
+        "//vendor/k8s.io/apiserver/pkg/util/wsstream:go_default_library",
+        "//vendor/k8s.io/client-go/tools/remotecommand:go_default_library",
+        "//vendor/k8s.io/utils/exec:go_default_library",
     ],
 )
 

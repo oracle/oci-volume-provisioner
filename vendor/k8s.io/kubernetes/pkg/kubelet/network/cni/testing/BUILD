@@ -1,7 +1,5 @@
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])
-
 load(
     "@io_bazel_rules_go//go:def.bzl",
     "go_library",
@@ -10,11 +8,11 @@ load(
 go_library(
     name = "go_default_library",
     srcs = ["mock_cni.go"],
-    tags = ["automanaged"],
+    importpath = "k8s.io/kubernetes/pkg/kubelet/network/cni/testing",
     deps = [
-        "//vendor:github.com/containernetworking/cni/libcni",
-        "//vendor:github.com/containernetworking/cni/pkg/types",
-        "//vendor:github.com/stretchr/testify/mock",
+        "//vendor/github.com/containernetworking/cni/libcni:go_default_library",
+        "//vendor/github.com/containernetworking/cni/pkg/types:go_default_library",
+        "//vendor/github.com/stretchr/testify/mock:go_default_library",
     ],
 )
 

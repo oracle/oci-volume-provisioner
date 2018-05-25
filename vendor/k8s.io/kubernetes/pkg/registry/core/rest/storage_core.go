@@ -35,7 +35,8 @@ import (
 	serverstorage "k8s.io/apiserver/pkg/server/storage"
 	etcdutil "k8s.io/apiserver/pkg/storage/etcd/util"
 	restclient "k8s.io/client-go/rest"
-	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	policyclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/policy/internalversion"
 	kubeletclient "k8s.io/kubernetes/pkg/kubelet/client"
 	"k8s.io/kubernetes/pkg/master/ports"
@@ -90,21 +91,15 @@ type LegacyRESTStorage struct {
 
 func (c LegacyRESTStorageProvider) NewLegacyRESTStorage(restOptionsGetter generic.RESTOptionsGetter) (LegacyRESTStorage, genericapiserver.APIGroupInfo, error) {
 	apiGroupInfo := genericapiserver.APIGroupInfo{
-		GroupMeta:                    *api.Registry.GroupOrDie(api.GroupName),
+		GroupMeta:                    *legacyscheme.Registry.GroupOrDie(api.GroupName),
 		VersionedResourcesStorageMap: map[string]map[string]rest.Storage{},
-		Scheme:                      api.Scheme,
-		ParameterCodec:              api.ParameterCodec,
-		NegotiatedSerializer:        api.Codecs,
-		SubresourceGroupVersionKind: map[string]schema.GroupVersionKind{},
-	}
-	if autoscalingGroupVersion := (schema.GroupVersion{Group: "autoscaling", Version: "v1"}); api.Registry.IsEnabledVersion(autoscalingGroupVersion) {
-		apiGroupInfo.SubresourceGroupVersionKind["replicationcontrollers/scale"] = autoscalingGroupVersion.WithKind("Scale")
+		Scheme:               legacyscheme.Scheme,
+		ParameterCodec:       legacyscheme.ParameterCodec,
+		NegotiatedSerializer: legacyscheme.Codecs,
 	}
 
 	var podDisruptionClient policyclient.PodDisruptionBudgetsGetter
-	if policyGroupVersion := (schema.GroupVersion{Group: "policy", Version: "v1beta1"}); api.Registry.IsEnabledVersion(policyGroupVersion) {
-		apiGroupInfo.SubresourceGroupVersionKind["pods/eviction"] = policyGroupVersion.WithKind("Eviction")
-
+	if policyGroupVersion := (schema.GroupVersion{Group: "policy", Version: "v1beta1"}); legacyscheme.Registry.IsEnabledVersion(policyGroupVersion) {
 		var err error
 		podDisruptionClient, err = policyclient.NewForConfig(c.LoopbackClientConfig)
 		if err != nil {
@@ -223,10 +218,10 @@ func (c LegacyRESTStorageProvider) NewLegacyRESTStorage(restOptionsGetter generi
 
 		"componentStatuses": componentstatus.NewStorage(componentStatusStorage{c.StorageFactory}.serversToValidate),
 	}
-	if api.Registry.IsEnabledVersion(schema.GroupVersion{Group: "autoscaling", Version: "v1"}) {
+	if legacyscheme.Registry.IsEnabledVersion(schema.GroupVersion{Group: "autoscaling", Version: "v1"}) {
 		restStorageMap["replicationControllers/scale"] = controllerStorage.Scale
 	}
-	if api.Registry.IsEnabledVersion(schema.GroupVersion{Group: "policy", Version: "v1beta1"}) {
+	if legacyscheme.Registry.IsEnabledVersion(schema.GroupVersion{Group: "policy", Version: "v1beta1"}) {
 		restStorageMap["pods/eviction"] = podStorage.Eviction
 	}
 	apiGroupInfo.VersionedResourcesStorageMap["v1"] = restStorageMap
@@ -242,14 +237,14 @@ type componentStatusStorage struct {
 	storageFactory serverstorage.StorageFactory
 }
 
-func (s componentStatusStorage) serversToValidate() map[string]componentstatus.Server {
-	serversToValidate := map[string]componentstatus.Server{
+func (s componentStatusStorage) serversToValidate() map[string]*componentstatus.Server {
+	serversToValidate := map[string]*componentstatus.Server{
 		"controller-manager": {Addr: "127.0.0.1", Port: ports.ControllerManagerPort, Path: "/healthz"},
 		"scheduler":          {Addr: "127.0.0.1", Port: ports.SchedulerPort, Path: "/healthz"},
 	}
 
 	for ix, machine := range s.storageFactory.Backends() {
-		etcdUrl, err := url.Parse(machine)
+		etcdUrl, err := url.Parse(machine.Server)
 		if err != nil {
 			glog.Errorf("Failed to parse etcd url for validation: %v", err)
 			continue
@@ -269,9 +264,10 @@ func (s componentStatusStorage) serversToValidate() map[string]componentstatus.S
 			port = 2379
 		}
 		// TODO: etcd health checking should be abstracted in the storage tier
-		serversToValidate[fmt.Sprintf("etcd-%d", ix)] = componentstatus.Server{
+		serversToValidate[fmt.Sprintf("etcd-%d", ix)] = &componentstatus.Server{
 			Addr:        addr,
 			EnableHTTPS: etcdUrl.Scheme == "https",
+			TLSConfig:   machine.TLSConfig,
 			Port:        port,
 			Path:        "/health",
 			Validate:    etcdutil.EtcdHealthCheck,

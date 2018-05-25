@@ -23,12 +23,13 @@ import (
 	"github.com/golang/glog"
 
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/api/core/v1"
 	informersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	listersv1 "k8s.io/client-go/listers/core/v1"
-	"k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
+
+	kubletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/block"
@@ -124,7 +125,7 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 		persistentVolume.ObjectMeta.Annotations[ociProvisionerIdentity] = ociProvisionerIdentity
 		persistentVolume.ObjectMeta.Annotations[ociAvailabilityDomain] = availabilityDomainName
 		persistentVolume.ObjectMeta.Annotations[ociCompartment] = p.client.CompartmentOCID()
-		persistentVolume.ObjectMeta.Labels[metav1.LabelZoneFailureDomain] = mapAvailabilityDomainToFailureDomain(*availabilityDomain.Name)
+		persistentVolume.ObjectMeta.Labels[kubletapis.LabelZoneFailureDomain] = mapAvailabilityDomainToFailureDomain(*availabilityDomain.Name)
 	}
 	return persistentVolume, err
 }

@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Kubernetes Authors.
+Copyright 2018 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,29 +23,9 @@ package internalversion
 type IngressListerExpansion interface{}
 
 // IngressNamespaceListerExpansion allows custom methods to be added to
-// IngressNamespaeLister.
+// IngressNamespaceLister.
 type IngressNamespaceListerExpansion interface{}
-
-// NetworkPolicyListerExpansion allows custom methods to be added to
-// NetworkPolicyLister.
-type NetworkPolicyListerExpansion interface{}
-
-// NetworkPolicyNamespaceListerExpansion allows custom methods to be added to
-// NetworkPolicyNamespaeLister.
-type NetworkPolicyNamespaceListerExpansion interface{}
 
 // PodSecurityPolicyListerExpansion allows custom methods to be added to
 // PodSecurityPolicyLister.
 type PodSecurityPolicyListerExpansion interface{}
-
-// ScaleListerExpansion allows custom methods to be added to
-// ScaleLister.
-type ScaleListerExpansion interface{}
-
-// ScaleNamespaceListerExpansion allows custom methods to be added to
-// ScaleNamespaeLister.
-type ScaleNamespaceListerExpansion interface{}
-
-// ThirdPartyResourceListerExpansion allows custom methods to be added to
-// ThirdPartyResourceLister.
-type ThirdPartyResourceListerExpansion interface{}

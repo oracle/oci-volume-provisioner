@@ -1,31 +1,36 @@
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])
-
 load(
     "@io_bazel_rules_go//go:def.bzl",
     "go_binary",
     "go_library",
 )
+load("//pkg/version:def.bzl", "version_x_defs")
 
 go_binary(
     name = "kube-scheduler",
+    gc_linkopts = [
+        "-linkmode",
+        "external",
+        "-extldflags",
+        "-static",
+    ],
+    importpath = "k8s.io/kubernetes/plugin/cmd/kube-scheduler",
     library = ":go_default_library",
-    tags = ["automanaged"],
+    x_defs = version_x_defs(),
 )
 
 go_library(
     name = "go_default_library",
     srcs = ["scheduler.go"],
-    tags = ["automanaged"],
+    importpath = "k8s.io/kubernetes/plugin/cmd/kube-scheduler",
     deps = [
-        "//pkg/version/verflag:go_default_library",
+        "//pkg/client/metrics/prometheus:go_default_library",
+        "//pkg/version/prometheus:go_default_library",
         "//plugin/cmd/kube-scheduler/app:go_default_library",
-        "//plugin/cmd/kube-scheduler/app/options:go_default_library",
-        "//vendor:github.com/golang/glog",
-        "//vendor:github.com/spf13/pflag",
-        "//vendor:k8s.io/apiserver/pkg/util/flag",
-        "//vendor:k8s.io/apiserver/pkg/util/logs",
+        "//vendor/github.com/spf13/pflag:go_default_library",
+        "//vendor/k8s.io/apiserver/pkg/util/flag:go_default_library",
+        "//vendor/k8s.io/apiserver/pkg/util/logs:go_default_library",
     ],
 )
 

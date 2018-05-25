@@ -25,8 +25,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest/fake"
-	"k8s.io/kubernetes/pkg/api"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	cmdtesting "k8s.io/kubernetes/pkg/kubectl/cmd/testing"
 )
 
@@ -43,7 +44,7 @@ func (f *fakePortForwarder) ForwardPorts(method string, url *url.URL, opts PortF
 }
 
 func testPortForward(t *testing.T, flags map[string]string, args []string) {
-	version := api.Registry.GroupOrDie(api.GroupName).GroupVersion.Version
+	version := "v1"
 
 	tests := []struct {
 		name                       string
@@ -69,7 +70,7 @@ func testPortForward(t *testing.T, flags map[string]string, args []string) {
 		var err error
 		f, tf, codec, ns := cmdtesting.NewAPIFactory()
 		tf.Client = &fake.RESTClient{
-			APIRegistry:          api.Registry,
+			GroupVersion:         schema.GroupVersion{Group: ""},
 			NegotiatedSerializer: ns,
 			Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
 				switch p, m := req.URL.Path, req.Method; {
@@ -93,7 +94,7 @@ func testPortForward(t *testing.T, flags map[string]string, args []string) {
 		opts := &PortForwardOptions{}
 		cmd := NewCmdPortForward(f, os.Stdout, os.Stderr)
 		cmd.Run = func(cmd *cobra.Command, args []string) {
-			if err = opts.Complete(f, cmd, args, os.Stdout, os.Stderr); err != nil {
+			if err = opts.Complete(f, cmd, args); err != nil {
 				return
 			}
 			opts.PortForwarder = ff

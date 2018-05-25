@@ -48,7 +48,8 @@ source "${KUBE_ROOT}/hack/lib/init.sh"
 readonly branch=${1:-${KUBE_VERIFY_GIT_BRANCH:-master}}
 if ! [[ ${KUBE_FORCE_VERIFY_CHECKS:-} =~ ^[yY]$ ]] && \
   ! kube::util::has_changes_against_upstream_branch "${branch}" 'Godeps/' && \
-  ! kube::util::has_changes_against_upstream_branch "${branch}" 'vendor/'; then
+  ! kube::util::has_changes_against_upstream_branch "${branch}" 'vendor/' && \
+  ! kube::util::has_changes_against_upstream_branch "${branch}" 'hack/.*godep'; then
   exit 0
 fi
 
@@ -85,13 +86,8 @@ _kubetmp="${_kubetmp}/kubernetes"
 export GOPATH="${_tmpdir}"
 
 pushd "${_kubetmp}" 2>&1 > /dev/null
-  kube::util::ensure_godep_version v79
-
-  export GOPATH="${GOPATH}:${_kubetmp}/staging"
-  # Fill out that nice clean place with the kube godeps
-  echo "Starting to download all kubernetes godeps. This takes a while"
-  godep restore
-  echo "Download finished"
+  # Restore the Godeps into our temp directory
+  hack/godep-restore.sh
 
   # Destroy deps in the copy of the kube tree
   rm -rf ./Godeps ./vendor
@@ -116,7 +112,12 @@ pushd "${KUBE_ROOT}" 2>&1 > /dev/null
     echo "If you're seeing this locally, run the below command to fix your Godeps.json:"
     echo "patch -p0 < godepdiff.patch"
     echo "(The above output can be saved as godepdiff.patch if you're not running this locally)"
+    echo "(The patch file should also be exported as a build artifact if run through CI)"
     KEEP_TMP=true
+    if [[ -f godepdiff.patch && -d "${ARTIFACTS_DIR:-}" ]]; then
+      echo "Copying patch to artifacts.."
+      cp godepdiff.patch "${ARTIFACTS_DIR:-}/"
+    fi
     ret=1
   fi
 
@@ -128,7 +129,12 @@ pushd "${KUBE_ROOT}" 2>&1 > /dev/null
     echo "If you're seeing this locally, run the below command to fix your directories:"
     echo "patch -p0 < vendordiff.patch"
     echo "(The above output can be saved as godepdiff.patch if you're not running this locally)"
+    echo "(The patch file should also be exported as a build artifact if run through CI)"
     KEEP_TMP=true
+    if [[ -f vendordiff.patch && -d "${ARTIFACTS_DIR:-}" ]]; then
+      echo "Copying patch to artifacts.."
+      cp vendordiff.patch "${ARTIFACTS_DIR:-}/"
+    fi
     ret=1
   fi
 popd 2>&1 > /dev/null

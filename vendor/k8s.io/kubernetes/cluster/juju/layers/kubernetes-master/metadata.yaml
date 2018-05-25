@@ -1,8 +1,12 @@
 name: kubernetes-master
 summary: The Kubernetes control plane.
 maintainers:
-    - Matthew Bruzek <matthew.bruzek@canonical.com>
-    - Charles Butler <charles.butler@canonical.com>
+    - Tim Van Steenburgh <tim.van.steenburgh@canonical.com>
+    - George Kraft <george.kraft@canonical.com>
+    - Rye Terrell <rye.terrell@canonical.com>
+    - Konstantinos Tsakalozos <kos.tsakalozos@canonical.com>
+    - Charles Butler <Chuck@dasroot.net>
+    - Matthew Bruzek <mbruzek@ubuntu.com>
 description: |
   Kubernetes is an open-source platform for deploying, scaling, and operations
   of application containers across a cluster of hosts. Kubernetes is portable
@@ -20,7 +24,12 @@ provides:
   kube-api-endpoint:
     interface: http
   cluster-dns:
+    # kube-dns is deprecated. Its functionality has been rolled into the
+    # kube-control interface. The cluster-dns relation will be removed in
+    # a future release.
     interface: kube-dns
+  kube-control:
+    interface: kube-control
   cni:
     interface: kubernetes-cni
     scope: container
@@ -32,7 +41,23 @@ requires:
   ceph-storage:
     interface: ceph-admin
 resources:
-  kubernetes:
+  kubectl:
     type: file
-    filename: kubernetes.tar.gz
-    description: "A tarball packaged release of the kubernetes bins."
+    filename: kubectl.snap
+    description: kubectl snap
+  kube-apiserver:
+    type: file
+    filename: kube-apiserver.snap
+    description: kube-apiserver snap
+  kube-controller-manager:
+    type: file
+    filename: kube-controller-manager.snap
+    description: kube-controller-manager snap
+  kube-scheduler:
+    type: file
+    filename: kube-scheduler.snap
+    description: kube-scheduler snap
+  cdk-addons:
+    type: file
+    filename: cdk-addons.snap
+    description: CDK addons snap

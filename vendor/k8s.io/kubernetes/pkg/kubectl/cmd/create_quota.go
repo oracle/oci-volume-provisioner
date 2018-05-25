@@ -17,7 +17,6 @@ limitations under the License.
 package cmd
 
 import (
-	"fmt"
 	"io"
 
 	"github.com/spf13/cobra"
@@ -25,19 +24,19 @@ import (
 	"k8s.io/kubernetes/pkg/kubectl"
 	"k8s.io/kubernetes/pkg/kubectl/cmd/templates"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
-	"k8s.io/kubernetes/pkg/util/i18n"
+	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
 )
 
 var (
-	quotaLong = templates.LongDesc(`
-		Create a resourcequota with the specified name, hard limits and optional scopes`)
+	quotaLong = templates.LongDesc(i18n.T(`
+		Create a resourcequota with the specified name, hard limits and optional scopes`))
 
-	quotaExample = templates.Examples(`
+	quotaExample = templates.Examples(i18n.T(`
 		# Create a new resourcequota named my-quota
 		kubectl create quota my-quota --hard=cpu=1,memory=1G,pods=2,services=3,replicationcontrollers=2,resourcequotas=1,secrets=5,persistentvolumeclaims=10
 
 		# Create a new resourcequota named best-effort
-		kubectl create quota best-effort --hard=pods=100 --scopes=BestEffort`)
+		kubectl create quota best-effort --hard=pods=100 --scopes=BestEffort`))
 )
 
 // NewCmdCreateQuota is a macro command to create a new quota
@@ -78,7 +77,7 @@ func CreateQuota(f cmdutil.Factory, cmdOut io.Writer, cmd *cobra.Command, args [
 			Scopes: cmdutil.GetFlagString(cmd, "scopes"),
 		}
 	default:
-		return cmdutil.UsageError(cmd, fmt.Sprintf("Generator: %s not supported.", generatorName))
+		return errUnsupportedGenerator(cmd, generatorName)
 	}
 	return RunCreateSubcommand(f, cmd, cmdOut, &CreateSubcommandOptions{
 		Name:                name,

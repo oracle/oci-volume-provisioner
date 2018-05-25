@@ -28,7 +28,7 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/kubernetes/pkg/kubectl/cmd/templates"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
-	"k8s.io/kubernetes/pkg/util/i18n"
+	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
 )
 
 type createContextOptions struct {
@@ -59,12 +59,14 @@ func NewCmdConfigSetContext(out io.Writer, configAccess clientcmd.ConfigAccess) 
 		Long:    create_context_long,
 		Example: create_context_example,
 		Run: func(cmd *cobra.Command, args []string) {
-			if !options.complete(cmd) {
-				return
+			cmdutil.CheckErr(options.complete(cmd))
+			exists, err := options.run()
+			cmdutil.CheckErr(err)
+			if exists {
+				fmt.Fprintf(out, "Context %q modified.\n", options.name)
+			} else {
+				fmt.Fprintf(out, "Context %q created.\n", options.name)
 			}
-
-			cmdutil.CheckErr(options.run())
-			fmt.Fprintf(out, "Context %q set.\n", options.name)
 		},
 	}
 
@@ -75,15 +77,15 @@ func NewCmdConfigSetContext(out io.Writer, configAccess clientcmd.ConfigAccess) 
 	return cmd
 }
 
-func (o createContextOptions) run() error {
+func (o createContextOptions) run() (bool, error) {
 	err := o.validate()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	config, err := o.configAccess.GetStartingConfig()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	startingStanza, exists := config.Contexts[o.name]
@@ -94,10 +96,10 @@ func (o createContextOptions) run() error {
 	config.Contexts[o.name] = &context
 
 	if err := clientcmd.ModifyConfig(o.configAccess, *config, true); err != nil {
-		return err
+		return exists, err
 	}
 
-	return nil
+	return exists, nil
 }
 
 func (o *createContextOptions) modifyContext(existingContext clientcmdapi.Context) clientcmdapi.Context {
@@ -116,15 +118,14 @@ func (o *createContextOptions) modifyContext(existingContext clientcmdapi.Contex
 	return modifiedContext
 }
 
-func (o *createContextOptions) complete(cmd *cobra.Command) bool {
+func (o *createContextOptions) complete(cmd *cobra.Command) error {
 	args := cmd.Flags().Args()
 	if len(args) != 1 {
-		cmd.Help()
-		return false
+		return helpErrorf(cmd, "Unexpected args: %v", args)
 	}
 
 	o.name = args[0]
-	return true
+	return nil
 }
 
 func (o createContextOptions) validate() error {

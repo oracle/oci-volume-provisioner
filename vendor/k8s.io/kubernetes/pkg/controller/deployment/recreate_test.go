@@ -20,12 +20,13 @@ import (
 	"fmt"
 	"testing"
 
+	"k8s.io/api/core/v1"
+	extensions "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/kubernetes/pkg/api"
-	extensions "k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset/fake"
-	informers "k8s.io/kubernetes/pkg/client/informers/informers_generated/externalversions"
 	"k8s.io/kubernetes/pkg/controller"
 )
 
@@ -51,12 +52,7 @@ func TestScaleDownOldReplicaSets(t *testing.T) {
 			rs := newReplicaSet(test.d, fmt.Sprintf("%s-%d", test.d.Name, n), size)
 			oldRSs = append(oldRSs, rs)
 
-			objCopy, err := api.Scheme.Copy(rs)
-			if err != nil {
-				t.Errorf("unexpected error while deep-copying: %v", err)
-				continue
-			}
-			rsCopy := objCopy.(*extensions.ReplicaSet)
+			rsCopy := rs.DeepCopy()
 
 			zero := int32(0)
 			rsCopy.Spec.Replicas = &zero
@@ -69,7 +65,10 @@ func TestScaleDownOldReplicaSets(t *testing.T) {
 
 		kc := fake.NewSimpleClientset(expected...)
 		informers := informers.NewSharedInformerFactory(kc, controller.NoResyncPeriodFunc())
-		c := NewDeploymentController(informers.Extensions().V1beta1().Deployments(), informers.Extensions().V1beta1().ReplicaSets(), informers.Core().V1().Pods(), kc)
+		c, err := NewDeploymentController(informers.Extensions().V1beta1().Deployments(), informers.Extensions().V1beta1().ReplicaSets(), informers.Core().V1().Pods(), kc)
+		if err != nil {
+			t.Fatalf("error creating Deployment controller: %v", err)
+		}
 		c.eventRecorder = &record.FakeRecorder{}
 
 		c.scaleDownOldReplicaSetsForRecreate(oldRSs, test.d)
@@ -81,4 +80,63 @@ func TestScaleDownOldReplicaSets(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestOldPodsRunning(t *testing.T) {
+	tests := []struct {
+		name string
+
+		newRS  *extensions.ReplicaSet
+		oldRSs []*extensions.ReplicaSet
+		podMap map[types.UID]*v1.PodList
+
+		expected bool
+	}{
+		{
+			name:     "no old RSs",
+			expected: false,
+		},
+		{
+			name:     "old RSs with running pods",
+			oldRSs:   []*extensions.ReplicaSet{rsWithUID("some-uid"), rsWithUID("other-uid")},
+			podMap:   podMapWithUIDs([]string{"some-uid", "other-uid"}),
+			expected: true,
+		},
+		{
+			name:     "old RSs without pods but with non-zero status replicas",
+			oldRSs:   []*extensions.ReplicaSet{newRSWithStatus("rs-blabla", 0, 1, nil)},
+			expected: true,
+		},
+		{
+			name:     "old RSs without pods or non-zero status replicas",
+			oldRSs:   []*extensions.ReplicaSet{newRSWithStatus("rs-blabla", 0, 0, nil)},
+			expected: false,
+		},
+	}
+
+	for _, test := range tests {
+		if expected, got := test.expected, oldPodsRunning(test.newRS, test.oldRSs, test.podMap); expected != got {
+			t.Errorf("%s: expected %t, got %t", test.name, expected, got)
+		}
+	}
+}
+
+func rsWithUID(uid string) *extensions.ReplicaSet {
+	d := newDeployment("foo", 1, nil, nil, nil, map[string]string{"foo": "bar"})
+	rs := newReplicaSet(d, fmt.Sprintf("foo-%s", uid), 0)
+	rs.UID = types.UID(uid)
+	return rs
+}
+
+func podMapWithUIDs(uids []string) map[types.UID]*v1.PodList {
+	podMap := make(map[types.UID]*v1.PodList)
+	for _, uid := range uids {
+		podMap[types.UID(uid)] = &v1.PodList{
+			Items: []v1.Pod{
+				{ /* supposedly a pod */ },
+				{ /* supposedly another pod pod */ },
+			},
+		}
+	}
+	return podMap
 }

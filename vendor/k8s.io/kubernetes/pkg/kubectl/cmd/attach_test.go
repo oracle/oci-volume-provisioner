@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -32,9 +33,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/rest/fake"
-	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/client-go/tools/remotecommand"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	cmdtesting "k8s.io/kubernetes/pkg/kubectl/cmd/testing"
-	"k8s.io/kubernetes/pkg/util/term"
+	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 )
 
 type fakeRemoteAttach struct {
@@ -43,7 +46,7 @@ type fakeRemoteAttach struct {
 	err    error
 }
 
-func (f *fakeRemoteAttach) Attach(method string, url *url.URL, config *restclient.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool, terminalSizeQueue term.TerminalSizeQueue) error {
+func (f *fakeRemoteAttach) Attach(method string, url *url.URL, config *restclient.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool, terminalSizeQueue remotecommand.TerminalSizeQueue) error {
 	f.method = method
 	f.url = url
 	return f.err
@@ -57,18 +60,21 @@ func TestPodAndContainerAttach(t *testing.T) {
 		expectError       bool
 		expectedPod       string
 		expectedContainer string
+		timeout           time.Duration
 		obj               runtime.Object
 	}{
 		{
 			p:           &AttachOptions{},
 			expectError: true,
 			name:        "empty",
+			timeout:     1,
 		},
 		{
 			p:           &AttachOptions{},
 			args:        []string{"one", "two", "three"},
 			expectError: true,
 			name:        "too many args",
+			timeout:     2,
 		},
 		{
 			p:           &AttachOptions{},
@@ -76,6 +82,7 @@ func TestPodAndContainerAttach(t *testing.T) {
 			expectedPod: "foo",
 			name:        "no container, no flags",
 			obj:         attachPod(),
+			timeout:     defaultPodLogsTimeout,
 		},
 		{
 			p:                 &AttachOptions{StreamOptions: StreamOptions{ContainerName: "bar"}},
@@ -84,6 +91,7 @@ func TestPodAndContainerAttach(t *testing.T) {
 			expectedContainer: "bar",
 			name:              "container in flag",
 			obj:               attachPod(),
+			timeout:           10000000,
 		},
 		{
 			p:                 &AttachOptions{StreamOptions: StreamOptions{ContainerName: "initfoo"}},
@@ -92,6 +100,7 @@ func TestPodAndContainerAttach(t *testing.T) {
 			expectedContainer: "initfoo",
 			name:              "init container in flag",
 			obj:               attachPod(),
+			timeout:           30,
 		},
 		{
 			p:           &AttachOptions{StreamOptions: StreamOptions{ContainerName: "bar"}},
@@ -99,6 +108,7 @@ func TestPodAndContainerAttach(t *testing.T) {
 			expectError: true,
 			name:        "non-existing container in flag",
 			obj:         attachPod(),
+			timeout:     10,
 		},
 		{
 			p:           &AttachOptions{},
@@ -106,6 +116,7 @@ func TestPodAndContainerAttach(t *testing.T) {
 			expectedPod: "foo",
 			name:        "no container, no flags, pods and name",
 			obj:         attachPod(),
+			timeout:     10000,
 		},
 		{
 			p:           &AttachOptions{},
@@ -113,13 +124,23 @@ func TestPodAndContainerAttach(t *testing.T) {
 			expectedPod: "foo",
 			name:        "no container, no flags, pod/name",
 			obj:         attachPod(),
+			timeout:     1,
+		},
+		{
+			p:           &AttachOptions{},
+			args:        []string{"pod/foo"},
+			expectedPod: "foo",
+			name:        "invalid get pod timeout value",
+			obj:         attachPod(),
+			expectError: true,
+			timeout:     0,
 		},
 	}
 
 	for _, test := range tests {
 		f, tf, codec, ns := cmdtesting.NewAPIFactory()
 		tf.Client = &fake.RESTClient{
-			APIRegistry:          api.Registry,
+			GroupVersion:         legacyscheme.Registry.GroupOrDie(api.GroupName).GroupVersion,
 			NegotiatedSerializer: ns,
 			Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
 				if test.obj != nil {
@@ -133,27 +154,29 @@ func TestPodAndContainerAttach(t *testing.T) {
 
 		cmd := &cobra.Command{}
 		options := test.p
+		cmdutil.AddPodRunningTimeoutFlag(cmd, test.timeout)
+
 		err := options.Complete(f, cmd, test.args)
 		if test.expectError && err == nil {
-			t.Errorf("unexpected non-error (%s)", test.name)
+			t.Errorf("%s: unexpected non-error", test.name)
 		}
 		if !test.expectError && err != nil {
-			t.Errorf("unexpected error: %v (%s)", err, test.name)
+			t.Errorf("%s: unexpected error: %v", test.name, err)
 		}
 		if err != nil {
 			continue
 		}
 		if options.PodName != test.expectedPod {
-			t.Errorf("expected: %s, got: %s (%s)", test.expectedPod, options.PodName, test.name)
+			t.Errorf("%s: expected: %s, got: %s", test.name, test.expectedPod, options.PodName)
 		}
 		if options.ContainerName != test.expectedContainer {
-			t.Errorf("expected: %s, got: %s (%s)", test.expectedContainer, options.ContainerName, test.name)
+			t.Errorf("%s: expected: %s, got: %s", test.name, test.expectedContainer, options.ContainerName)
 		}
 	}
 }
 
 func TestAttach(t *testing.T) {
-	version := api.Registry.GroupOrDie(api.GroupName).GroupVersion.Version
+	version := legacyscheme.Registry.GroupOrDie(api.GroupName).GroupVersion.Version
 	tests := []struct {
 		name, version, podPath, fetchPodPath, attachPath, container string
 		pod                                                         *api.Pod
@@ -194,7 +217,7 @@ func TestAttach(t *testing.T) {
 	for _, test := range tests {
 		f, tf, codec, ns := cmdtesting.NewAPIFactory()
 		tf.Client = &fake.RESTClient{
-			APIRegistry:          api.Registry,
+			GroupVersion:         legacyscheme.Registry.GroupOrDie(api.GroupName).GroupVersion,
 			NegotiatedSerializer: ns,
 			Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
 				switch p, m := req.URL.Path, req.Method; {
@@ -212,7 +235,7 @@ func TestAttach(t *testing.T) {
 			}),
 		}
 		tf.Namespace = "test"
-		tf.ClientConfig = &restclient.Config{APIPath: "/api", ContentConfig: restclient.ContentConfig{NegotiatedSerializer: api.Codecs, GroupVersion: &schema.GroupVersion{Version: test.version}}}
+		tf.ClientConfig = &restclient.Config{APIPath: "/api", ContentConfig: restclient.ContentConfig{NegotiatedSerializer: legacyscheme.Codecs, GroupVersion: &schema.GroupVersion{Version: test.version}}}
 		bufOut := bytes.NewBuffer([]byte{})
 		bufErr := bytes.NewBuffer([]byte{})
 		bufIn := bytes.NewBuffer([]byte{})
@@ -227,9 +250,11 @@ func TestAttach(t *testing.T) {
 				Out:           bufOut,
 				Err:           bufErr,
 			},
-			Attach: remoteAttach,
+			Attach:        remoteAttach,
+			GetPodTimeout: 1000,
 		}
 		cmd := &cobra.Command{}
+		cmdutil.AddPodRunningTimeoutFlag(cmd, 1000)
 		if err := params.Complete(f, cmd, []string{"foo"}); err != nil {
 			t.Fatal(err)
 		}
@@ -259,7 +284,7 @@ func TestAttach(t *testing.T) {
 }
 
 func TestAttachWarnings(t *testing.T) {
-	version := api.Registry.GroupOrDie(api.GroupName).GroupVersion.Version
+	version := legacyscheme.Registry.GroupOrDie(api.GroupName).GroupVersion.Version
 	tests := []struct {
 		name, container, version, podPath, fetchPodPath, expectedErr, expectedOut string
 		pod                                                                       *api.Pod
@@ -279,7 +304,7 @@ func TestAttachWarnings(t *testing.T) {
 	for _, test := range tests {
 		f, tf, codec, ns := cmdtesting.NewAPIFactory()
 		tf.Client = &fake.RESTClient{
-			APIRegistry:          api.Registry,
+			GroupVersion:         legacyscheme.Registry.GroupOrDie(api.GroupName).GroupVersion,
 			NegotiatedSerializer: ns,
 			Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
 				switch p, m := req.URL.Path, req.Method; {
@@ -296,7 +321,7 @@ func TestAttachWarnings(t *testing.T) {
 			}),
 		}
 		tf.Namespace = "test"
-		tf.ClientConfig = &restclient.Config{APIPath: "/api", ContentConfig: restclient.ContentConfig{NegotiatedSerializer: api.Codecs, GroupVersion: &schema.GroupVersion{Version: test.version}}}
+		tf.ClientConfig = &restclient.Config{APIPath: "/api", ContentConfig: restclient.ContentConfig{NegotiatedSerializer: legacyscheme.Codecs, GroupVersion: &schema.GroupVersion{Version: test.version}}}
 		bufOut := bytes.NewBuffer([]byte{})
 		bufErr := bytes.NewBuffer([]byte{})
 		bufIn := bytes.NewBuffer([]byte{})
@@ -310,9 +335,11 @@ func TestAttachWarnings(t *testing.T) {
 				Stdin:         test.stdin,
 				TTY:           test.tty,
 			},
-			Attach: ex,
+			Attach:        ex,
+			GetPodTimeout: 1000,
 		}
 		cmd := &cobra.Command{}
+		cmdutil.AddPodRunningTimeoutFlag(cmd, 1000)
 		if err := params.Complete(f, cmd, []string{"foo"}); err != nil {
 			t.Fatal(err)
 		}

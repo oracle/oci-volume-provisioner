@@ -24,8 +24,9 @@ import (
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/identity"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/api/core/v1"
+
+	kubletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -59,7 +60,7 @@ func (p *OCIProvisioner) chooseAvailabilityDomain(pvc *v1.PersistentVolumeClaim)
 
 	if pvc.Spec.Selector != nil {
 		// Try the standard Kube label
-		availabilityDomainName, ok = pvc.Spec.Selector.MatchLabels[metav1.LabelZoneFailureDomain]
+		availabilityDomainName, ok = pvc.Spec.Selector.MatchLabels[kubletapis.LabelZoneFailureDomain]
 		if !ok {
 			// If not try backwards compat label
 			availabilityDomainName, ok = pvc.Spec.Selector.MatchLabels["oci-availability-domain"]
@@ -73,13 +74,13 @@ func (p *OCIProvisioner) chooseAvailabilityDomain(pvc *v1.PersistentVolumeClaim)
 		}
 		validADs := sets.NewString()
 		for _, node := range nodes {
-			zone, ok := node.Labels[metav1.LabelZoneFailureDomain]
+			zone, ok := node.Labels[kubletapis.LabelZoneFailureDomain]
 			if ok {
 				validADs.Insert(zone)
 			}
 		}
 		if validADs.Len() == 0 {
-			return "", nil, fmt.Errorf("failed to choose availability domain; no zone labels (%q) on nodes", metav1.LabelZoneFailureDomain)
+			return "", nil, fmt.Errorf("failed to choose availability domain; no zone labels (%q) on nodes", kubletapis.LabelZoneFailureDomain)
 		}
 		availabilityDomainName = volume.ChooseZoneForVolume(validADs, pvc.Name)
 		glog.Infof("Zone not specified so %s selected", availabilityDomainName)

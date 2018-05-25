@@ -20,10 +20,32 @@ set -o pipefail
 export KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
 source "${KUBE_ROOT}/hack/lib/init.sh"
 
-git config http.https://gopkg.in.followRedirects true
+if [[ ! -f "${KUBE_ROOT}/vendor/BUILD" ]]; then
+  echo "${KUBE_ROOT}/vendor/BUILD does not exist."
+  echo
+  echo "Run ./hack/update-bazel.sh"
+  exit 1
+fi
 
-go get -u gopkg.in/mikedanese/gazel.v14/gazel
-if ! "${GOPATH}/bin/gazel" -validate -print-diff -root="$(kube::realpath ${KUBE_ROOT})" ; then
+# Remove generated files prior to running kazel.
+# TODO(spxtr): Remove this line once Bazel is the only way to build.
+rm -f "${KUBE_ROOT}/pkg/generated/openapi/zz_generated.openapi.go"
+
+_tmpdir="$(mktemp -d -t verify-bazel.XXXXXX)"
+kube::util::trap_add "rm -rf ${_tmpdir}" EXIT
+
+_tmp_gopath="${_tmpdir}/go"
+_tmp_kuberoot="${_tmp_gopath}/src/k8s.io/kubernetes"
+mkdir -p "${_tmp_kuberoot}/.."
+cp -a "${KUBE_ROOT}" "${_tmp_kuberoot}/.."
+
+cd "${_tmp_kuberoot}"
+GOPATH="${_tmp_gopath}" ./hack/update-bazel.sh
+
+diff=$(diff -Naupr "${KUBE_ROOT}" "${_tmp_kuberoot}" || true)
+
+if [[ -n "${diff}" ]]; then
+  echo "${diff}"
   echo
   echo "Run ./hack/update-bazel.sh"
   exit 1

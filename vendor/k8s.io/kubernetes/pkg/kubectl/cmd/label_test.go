@@ -25,9 +25,8 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/rest/fake"
-	"k8s.io/kubernetes/pkg/api"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	cmdtesting "k8s.io/kubernetes/pkg/kubectl/cmd/testing"
 	"k8s.io/kubernetes/pkg/kubectl/resource"
 )
@@ -289,6 +288,14 @@ func TestLabelErrors(t *testing.T) {
 			args:  []string{"pods"},
 			errFn: func(err error) bool { return strings.Contains(err.Error(), "at least one label update is required") },
 		},
+		"wrong labels": {
+			args:  []string{"pods", "-"},
+			errFn: func(err error) bool { return strings.Contains(err.Error(), "at least one label update is required") },
+		},
+		"wrong labels 2": {
+			args:  []string{"pods", "=bar"},
+			errFn: func(err error) bool { return strings.Contains(err.Error(), "at least one label update is required") },
+		},
 		"no resources": {
 			args:  []string{"pods-"},
 			errFn: func(err error) bool { return strings.Contains(err.Error(), "one or more resources must be specified") },
@@ -315,7 +322,7 @@ func TestLabelErrors(t *testing.T) {
 		f, tf, _, _ := cmdtesting.NewAPIFactory()
 		tf.Printer = &testPrinter{}
 		tf.Namespace = "test"
-		tf.ClientConfig = &restclient.Config{ContentConfig: restclient.ContentConfig{GroupVersion: &api.Registry.GroupOrDie(api.GroupName).GroupVersion}}
+		tf.ClientConfig = defaultClientConfig()
 
 		buf := bytes.NewBuffer([]byte{})
 		cmd := NewCmdLabel(f, buf)
@@ -325,7 +332,7 @@ func TestLabelErrors(t *testing.T) {
 			cmd.Flags().Set(k, v)
 		}
 		opts := LabelOptions{}
-		err := opts.Complete(f, buf, cmd, testCase.args)
+		err := opts.Complete(buf, cmd, testCase.args)
 		if err == nil {
 			err = opts.Validate()
 		}
@@ -349,7 +356,6 @@ func TestLabelForResourceFromFile(t *testing.T) {
 	pods, _, _ := testData()
 	f, tf, codec, _ := cmdtesting.NewAPIFactory()
 	tf.UnstructuredClient = &fake.RESTClient{
-		APIRegistry:          api.Registry,
 		NegotiatedSerializer: unstructuredSerializer,
 		Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
 			switch req.Method {
@@ -376,13 +382,13 @@ func TestLabelForResourceFromFile(t *testing.T) {
 		}),
 	}
 	tf.Namespace = "test"
-	tf.ClientConfig = &restclient.Config{ContentConfig: restclient.ContentConfig{GroupVersion: &api.Registry.GroupOrDie(api.GroupName).GroupVersion}}
+	tf.ClientConfig = defaultClientConfig()
 
 	buf := bytes.NewBuffer([]byte{})
 	cmd := NewCmdLabel(f, buf)
 	opts := LabelOptions{FilenameOptions: resource.FilenameOptions{
 		Filenames: []string{"../../../examples/storage/cassandra/cassandra-controller.yaml"}}}
-	err := opts.Complete(f, buf, cmd, []string{"a=b"})
+	err := opts.Complete(buf, cmd, []string{"a=b"})
 	if err == nil {
 		err = opts.Validate()
 	}
@@ -400,7 +406,6 @@ func TestLabelForResourceFromFile(t *testing.T) {
 func TestLabelLocal(t *testing.T) {
 	f, tf, _, _ := cmdtesting.NewAPIFactory()
 	tf.UnstructuredClient = &fake.RESTClient{
-		APIRegistry:          api.Registry,
 		NegotiatedSerializer: unstructuredSerializer,
 		Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
 			t.Fatalf("unexpected request: %s %#v\n%#v", req.Method, req.URL, req)
@@ -408,14 +413,14 @@ func TestLabelLocal(t *testing.T) {
 		}),
 	}
 	tf.Namespace = "test"
-	tf.ClientConfig = &restclient.Config{ContentConfig: restclient.ContentConfig{GroupVersion: &api.Registry.GroupOrDie(api.GroupName).GroupVersion}}
+	tf.ClientConfig = defaultClientConfig()
 
 	buf := bytes.NewBuffer([]byte{})
 	cmd := NewCmdLabel(f, buf)
 	cmd.Flags().Set("local", "true")
 	opts := LabelOptions{FilenameOptions: resource.FilenameOptions{
 		Filenames: []string{"../../../examples/storage/cassandra/cassandra-controller.yaml"}}}
-	err := opts.Complete(f, buf, cmd, []string{"a=b"})
+	err := opts.Complete(buf, cmd, []string{"a=b"})
 	if err == nil {
 		err = opts.Validate()
 	}
@@ -434,7 +439,6 @@ func TestLabelMultipleObjects(t *testing.T) {
 	pods, _, _ := testData()
 	f, tf, codec, _ := cmdtesting.NewAPIFactory()
 	tf.UnstructuredClient = &fake.RESTClient{
-		APIRegistry:          api.Registry,
 		NegotiatedSerializer: unstructuredSerializer,
 		Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
 			switch req.Method {
@@ -463,14 +467,14 @@ func TestLabelMultipleObjects(t *testing.T) {
 		}),
 	}
 	tf.Namespace = "test"
-	tf.ClientConfig = &restclient.Config{ContentConfig: restclient.ContentConfig{GroupVersion: &api.Registry.GroupOrDie(api.GroupName).GroupVersion}}
+	tf.ClientConfig = defaultClientConfig()
 
 	buf := bytes.NewBuffer([]byte{})
 	cmd := NewCmdLabel(f, buf)
 	cmd.Flags().Set("all", "true")
 
 	opts := LabelOptions{}
-	err := opts.Complete(f, buf, cmd, []string{"pods", "a=b"})
+	err := opts.Complete(buf, cmd, []string{"pods", "a=b"})
 	if err == nil {
 		err = opts.Validate()
 	}

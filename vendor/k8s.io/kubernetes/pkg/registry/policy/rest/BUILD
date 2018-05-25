@@ -1,7 +1,5 @@
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])
-
 load(
     "@io_bazel_rules_go//go:def.bzl",
     "go_library",
@@ -10,16 +8,16 @@ load(
 go_library(
     name = "go_default_library",
     srcs = ["storage_policy.go"],
-    tags = ["automanaged"],
+    importpath = "k8s.io/kubernetes/pkg/registry/policy/rest",
     deps = [
-        "//pkg/api:go_default_library",
+        "//pkg/api/legacyscheme:go_default_library",
         "//pkg/apis/policy:go_default_library",
-        "//pkg/apis/policy/v1beta1:go_default_library",
         "//pkg/registry/policy/poddisruptionbudget/storage:go_default_library",
-        "//vendor:k8s.io/apiserver/pkg/registry/generic",
-        "//vendor:k8s.io/apiserver/pkg/registry/rest",
-        "//vendor:k8s.io/apiserver/pkg/server",
-        "//vendor:k8s.io/apiserver/pkg/server/storage",
+        "//vendor/k8s.io/api/policy/v1beta1:go_default_library",
+        "//vendor/k8s.io/apiserver/pkg/registry/generic:go_default_library",
+        "//vendor/k8s.io/apiserver/pkg/registry/rest:go_default_library",
+        "//vendor/k8s.io/apiserver/pkg/server:go_default_library",
+        "//vendor/k8s.io/apiserver/pkg/server/storage:go_default_library",
     ],
 )
 

@@ -27,9 +27,11 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/generic"
+	"k8s.io/apiserver/pkg/registry/rest"
 	"k8s.io/apiserver/pkg/storage"
 	"k8s.io/apiserver/pkg/storage/names"
-	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
+	"k8s.io/kubernetes/pkg/api/pod"
 	"k8s.io/kubernetes/pkg/apis/batch"
 	"k8s.io/kubernetes/pkg/apis/batch/validation"
 )
@@ -41,7 +43,13 @@ type jobStrategy struct {
 }
 
 // Strategy is the default logic that applies when creating and updating Replication Controller objects.
-var Strategy = jobStrategy{api.Scheme, names.SimpleNameGenerator}
+var Strategy = jobStrategy{legacyscheme.Scheme, names.SimpleNameGenerator}
+
+// DefaultGarbageCollectionPolicy returns Orphan because that was the default
+// behavior before the server-side garbage collection was implemented.
+func (jobStrategy) DefaultGarbageCollectionPolicy(ctx genericapirequest.Context) rest.GarbageCollectionPolicy {
+	return rest.OrphanDependents
+}
 
 // NamespaceScoped returns true because all jobs need to be within a namespace.
 func (jobStrategy) NamespaceScoped() bool {
@@ -52,6 +60,8 @@ func (jobStrategy) NamespaceScoped() bool {
 func (jobStrategy) PrepareForCreate(ctx genericapirequest.Context, obj runtime.Object) {
 	job := obj.(*batch.Job)
 	job.Status = batch.JobStatus{}
+
+	pod.DropDisabledAlphaFields(&job.Spec.Template.Spec)
 }
 
 // PrepareForUpdate clears fields that are not allowed to be set by end users on update.
@@ -59,6 +69,9 @@ func (jobStrategy) PrepareForUpdate(ctx genericapirequest.Context, obj, old runt
 	newJob := obj.(*batch.Job)
 	oldJob := old.(*batch.Job)
 	newJob.Status = oldJob.Status
+
+	pod.DropDisabledAlphaFields(&newJob.Spec.Template.Spec)
+	pod.DropDisabledAlphaFields(&oldJob.Spec.Template.Spec)
 }
 
 // Validate validates a new job.
@@ -167,12 +180,12 @@ func JobToSelectableFields(job *batch.Job) fields.Set {
 }
 
 // GetAttrs returns labels and fields of a given object for filtering purposes.
-func GetAttrs(obj runtime.Object) (labels.Set, fields.Set, error) {
+func GetAttrs(obj runtime.Object) (labels.Set, fields.Set, bool, error) {
 	job, ok := obj.(*batch.Job)
 	if !ok {
-		return nil, nil, fmt.Errorf("Given object is not a job.")
+		return nil, nil, false, fmt.Errorf("given object is not a job.")
 	}
-	return labels.Set(job.ObjectMeta.Labels), JobToSelectableFields(job), nil
+	return labels.Set(job.ObjectMeta.Labels), JobToSelectableFields(job), job.Initializers != nil, nil
 }
 
 // MatchJob is the filter used by the generic etcd backend to route

@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Kubernetes Authors.
+Copyright 2018 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ limitations under the License.
 package externalversions
 
 import (
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	cache "k8s.io/client-go/tools/cache"
@@ -31,9 +32,11 @@ import (
 )
 
 type sharedInformerFactory struct {
-	client        clientset.Interface
-	lock          sync.Mutex
-	defaultResync time.Duration
+	client           clientset.Interface
+	namespace        string
+	tweakListOptions internalinterfaces.TweakListOptionsFunc
+	lock             sync.Mutex
+	defaultResync    time.Duration
 
 	informers map[reflect.Type]cache.SharedIndexInformer
 	// startedInformers is used for tracking which informers have been started.
@@ -43,8 +46,17 @@ type sharedInformerFactory struct {
 
 // NewSharedInformerFactory constructs a new instance of sharedInformerFactory
 func NewSharedInformerFactory(client clientset.Interface, defaultResync time.Duration) SharedInformerFactory {
+	return NewFilteredSharedInformerFactory(client, defaultResync, v1.NamespaceAll, nil)
+}
+
+// NewFilteredSharedInformerFactory constructs a new instance of sharedInformerFactory.
+// Listers obtained via this SharedInformerFactory will be subject to the same filters
+// as specified here.
+func NewFilteredSharedInformerFactory(client clientset.Interface, defaultResync time.Duration, namespace string, tweakListOptions internalinterfaces.TweakListOptionsFunc) SharedInformerFactory {
 	return &sharedInformerFactory{
 		client:           client,
+		namespace:        namespace,
+		tweakListOptions: tweakListOptions,
 		defaultResync:    defaultResync,
 		informers:        make(map[reflect.Type]cache.SharedIndexInformer),
 		startedInformers: make(map[reflect.Type]bool),
@@ -62,6 +74,28 @@ func (f *sharedInformerFactory) Start(stopCh <-chan struct{}) {
 			f.startedInformers[informerType] = true
 		}
 	}
+}
+
+// WaitForCacheSync waits for all started informers' cache were synced.
+func (f *sharedInformerFactory) WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool {
+	informers := func() map[reflect.Type]cache.SharedIndexInformer {
+		f.lock.Lock()
+		defer f.lock.Unlock()
+
+		informers := map[reflect.Type]cache.SharedIndexInformer{}
+		for informerType, informer := range f.informers {
+			if f.startedInformers[informerType] {
+				informers[informerType] = informer
+			}
+		}
+		return informers
+	}()
+
+	res := map[reflect.Type]bool{}
+	for informType, informer := range informers {
+		res[informType] = cache.WaitForCacheSync(stopCh, informer.HasSynced)
+	}
+	return res
 }
 
 // InternalInformerFor returns the SharedIndexInformer for obj using an internal
@@ -86,10 +120,11 @@ func (f *sharedInformerFactory) InformerFor(obj runtime.Object, newFunc internal
 type SharedInformerFactory interface {
 	internalinterfaces.SharedInformerFactory
 	ForResource(resource schema.GroupVersionResource) (GenericInformer, error)
+	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
 
 	Apiregistration() apiregistration.Interface
 }
 
 func (f *sharedInformerFactory) Apiregistration() apiregistration.Interface {
-	return apiregistration.New(f)
+	return apiregistration.New(f, f.namespace, f.tweakListOptions)
 }

@@ -29,12 +29,12 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/api/v1"
 )
 
 const (
@@ -63,6 +63,10 @@ const (
 	// object that specifies a supplemental GID.
 	VolumeGidAnnotationKey = "pv.beta.kubernetes.io/gid"
 
+	// MountOptionAnnotation is the annotation on a PV object that specifies a
+	// comma separated list of mount options
+	MountOptionAnnotation = "volume.beta.kubernetes.io/mount-options"
+
 	// A PV annotation for the identity of the nfsProvisioner that provisioned it
 	annProvisionerID = "Provisioner_Id"
 
@@ -74,12 +78,12 @@ const (
 
 // NewNFSProvisioner creates a Provisioner that provisions NFS PVs backed by
 // the given directory.
-func NewNFSProvisioner(exportDir string, client kubernetes.Interface, outOfCluster bool, useGanesha bool, ganeshaConfig string, rootSquash bool, enableXfsQuota bool, serverHostname string) controller.Provisioner {
-	var exporter exporter
+func NewNFSProvisioner(exportDir string, client kubernetes.Interface, outOfCluster bool, useGanesha bool, ganeshaConfig string, enableXfsQuota bool, serverHostname string, maxExports int) controller.Provisioner {
+	var exp exporter
 	if useGanesha {
-		exporter = newGaneshaExporter(ganeshaConfig, rootSquash)
+		exp = newGaneshaExporter(ganeshaConfig)
 	} else {
-		exporter = newKernelExporter(rootSquash)
+		exp = newKernelExporter()
 	}
 	var quotaer quotaer
 	var err error
@@ -91,10 +95,10 @@ func NewNFSProvisioner(exportDir string, client kubernetes.Interface, outOfClust
 	} else {
 		quotaer = newDummyQuotaer()
 	}
-	return newNFSProvisionerInternal(exportDir, client, outOfCluster, exporter, quotaer, serverHostname)
+	return newNFSProvisionerInternal(exportDir, client, outOfCluster, exp, quotaer, serverHostname, maxExports)
 }
 
-func newNFSProvisionerInternal(exportDir string, client kubernetes.Interface, outOfCluster bool, exporter exporter, quotaer quotaer, serverHostname string) *nfsProvisioner {
+func newNFSProvisionerInternal(exportDir string, client kubernetes.Interface, outOfCluster bool, exporter exporter, quotaer quotaer, serverHostname string, maxExports int) *nfsProvisioner {
 	if _, err := os.Stat(exportDir); os.IsNotExist(err) {
 		glog.Fatalf("exportDir %s does not exist!", exportDir)
 	}
@@ -122,6 +126,7 @@ func newNFSProvisionerInternal(exportDir string, client kubernetes.Interface, ou
 		exporter:       exporter,
 		quotaer:        quotaer,
 		serverHostname: serverHostname,
+		maxExports:     maxExports,
 		identity:       identity,
 		podIPEnv:       podIPEnv,
 		serviceEnv:     serviceEnv,
@@ -154,6 +159,9 @@ type nfsProvisioner struct {
 	// running as a Docker container
 	serverHostname string
 
+	// The maximum number of volumes to be exported by the provisioner
+	maxExports int
+
 	// Identity of this nfsProvisioner, generated & persisted to exportDir or
 	// recovered from there. Used to mark provisioned PVs
 	identity types.UID
@@ -168,23 +176,38 @@ type nfsProvisioner struct {
 }
 
 var _ controller.Provisioner = &nfsProvisioner{}
+var _ controller.Qualifier = &nfsProvisioner{}
+
+// ShouldProvision returns whether provisioning should be attempted for the given
+// claim.
+func (p *nfsProvisioner) ShouldProvision(claim *v1.PersistentVolumeClaim) bool {
+	// As long as the export limit has not been reached we're ok to provision
+	ok := p.checkExportLimit()
+	if !ok {
+		glog.Infof("export limit reached. skipping claim %s/%s", claim.Namespace, claim.Name)
+	}
+	return ok
+}
 
 // Provision creates a volume i.e. the storage asset and returns a PV object for
 // the volume.
 func (p *nfsProvisioner) Provision(options controller.VolumeOptions) (*v1.PersistentVolume, error) {
-	server, path, supGroup, exportBlock, exportID, projectBlock, projectID, err := p.createVolume(options)
+	volume, err := p.createVolume(options)
 	if err != nil {
 		return nil, err
 	}
 
 	annotations := make(map[string]string)
 	annotations[annCreatedBy] = createdBy
-	annotations[annExportBlock] = exportBlock
-	annotations[annExportID] = strconv.FormatUint(uint64(exportID), 10)
-	annotations[annProjectBlock] = projectBlock
-	annotations[annProjectID] = strconv.FormatUint(uint64(projectID), 10)
-	if supGroup != 0 {
-		annotations[VolumeGidAnnotationKey] = strconv.FormatUint(supGroup, 10)
+	annotations[annExportBlock] = volume.exportBlock
+	annotations[annExportID] = strconv.FormatUint(uint64(volume.exportID), 10)
+	annotations[annProjectBlock] = volume.projectBlock
+	annotations[annProjectID] = strconv.FormatUint(uint64(volume.projectID), 10)
+	if volume.supGroup != 0 {
+		annotations[VolumeGidAnnotationKey] = strconv.FormatUint(volume.supGroup, 10)
+	}
+	if volume.mountOptions != "" {
+		annotations[MountOptionAnnotation] = volume.mountOptions
 	}
 	annotations[annProvisionerID] = string(p.identity)
 
@@ -202,8 +225,8 @@ func (p *nfsProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 			},
 			PersistentVolumeSource: v1.PersistentVolumeSource{
 				NFS: &v1.NFSVolumeSource{
-					Server:   server,
-					Path:     path,
+					Server:   volume.server,
+					Path:     volume.path,
 					ReadOnly: false,
 				},
 			},
@@ -213,46 +236,72 @@ func (p *nfsProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 	return pv, nil
 }
 
+type volume struct {
+	server       string
+	path         string
+	exportBlock  string
+	exportID     uint16
+	projectBlock string
+	projectID    uint16
+	supGroup     uint64
+	mountOptions string
+}
+
 // createVolume creates a volume i.e. the storage asset. It creates a unique
 // directory under /export and exports it. Returns the server IP, the path, a
 // zero/non-zero supplemental group, the block it added to either the ganesha
 // config or /etc/exports, and the exportID
 // TODO return values
-func (p *nfsProvisioner) createVolume(options controller.VolumeOptions) (string, string, uint64, string, uint16, string, uint16, error) {
-	gid, err := p.validateOptions(options)
+func (p *nfsProvisioner) createVolume(options controller.VolumeOptions) (volume, error) {
+	gid, rootSquash, mountOptions, err := p.validateOptions(options)
 	if err != nil {
-		return "", "", 0, "", 0, "", 0, fmt.Errorf("error validating options for volume: %v", err)
+		return volume{}, fmt.Errorf("error validating options for volume: %v", err)
 	}
 
 	server, err := p.getServer()
 	if err != nil {
-		return "", "", 0, "", 0, "", 0, fmt.Errorf("error getting NFS server IP for volume: %v", err)
+		return volume{}, fmt.Errorf("error getting NFS server IP for volume: %v", err)
+	}
+
+	if ok := p.checkExportLimit(); !ok {
+		return volume{}, &controller.IgnoredError{Reason: fmt.Sprintf("export limit of %v has been reached", p.maxExports)}
 	}
 
 	path := path.Join(p.exportDir, options.PVName)
 
 	err = p.createDirectory(options.PVName, gid)
 	if err != nil {
-		return "", "", 0, "", 0, "", 0, fmt.Errorf("error creating directory for volume: %v", err)
+		return volume{}, fmt.Errorf("error creating directory for volume: %v", err)
 	}
 
-	exportBlock, exportID, err := p.createExport(options.PVName)
+	exportBlock, exportID, err := p.createExport(options.PVName, rootSquash)
 	if err != nil {
 		os.RemoveAll(path)
-		return "", "", 0, "", 0, "", 0, fmt.Errorf("error creating export for volume: %v", err)
+		return volume{}, fmt.Errorf("error creating export for volume: %v", err)
 	}
 
 	projectBlock, projectID, err := p.createQuota(options.PVName, options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)])
 	if err != nil {
 		os.RemoveAll(path)
-		return "", "", 0, "", 0, "", 0, fmt.Errorf("error creating quota for volume: %v", err)
+		return volume{}, fmt.Errorf("error creating quota for volume: %v", err)
 	}
 
-	return server, path, 0, exportBlock, exportID, projectBlock, projectID, nil
+	return volume{
+		server:       server,
+		path:         path,
+		exportBlock:  exportBlock,
+		exportID:     exportID,
+		projectBlock: projectBlock,
+		projectID:    projectID,
+		supGroup:     0,
+		mountOptions: mountOptions,
+	}, nil
 }
 
-func (p *nfsProvisioner) validateOptions(options controller.VolumeOptions) (string, error) {
+func (p *nfsProvisioner) validateOptions(options controller.VolumeOptions) (string, bool, string, error) {
 	gid := "none"
+	rootSquash := false
+	mountOptions := ""
 	for k, v := range options.Parameters {
 		switch strings.ToLower(k) {
 		case "gid":
@@ -261,10 +310,18 @@ func (p *nfsProvisioner) validateOptions(options controller.VolumeOptions) (stri
 			} else if i, err := strconv.ParseUint(v, 10, 64); err == nil && i != 0 {
 				gid = v
 			} else {
-				return "", fmt.Errorf("invalid value for parameter gid: %v. valid values are: 'none' or a non-zero integer", v)
+				return "", false, "", fmt.Errorf("invalid value for parameter gid: %v. valid values are: 'none' or a non-zero integer", v)
 			}
+		case "rootsquash":
+			var err error
+			rootSquash, err = strconv.ParseBool(v)
+			if err != nil {
+				return "", false, "", fmt.Errorf("invalid value for parameter rootSquash: %v. valid values are: 'true' or 'false'", v)
+			}
+		case "mountoptions":
+			mountOptions = v
 		default:
-			return "", fmt.Errorf("invalid parameter: %q", k)
+			return "", false, "", fmt.Errorf("invalid parameter: %q", k)
 		}
 	}
 
@@ -272,21 +329,21 @@ func (p *nfsProvisioner) validateOptions(options controller.VolumeOptions) (stri
 	// pv.Labels MUST be set to match claim.spec.selector
 	// gid selector? with or without pv annotation?
 	if options.PVC.Spec.Selector != nil {
-		return "", fmt.Errorf("claim.Spec.Selector is not supported")
+		return "", false, "", fmt.Errorf("claim.Spec.Selector is not supported")
 	}
 
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs(p.exportDir, &stat); err != nil {
-		return "", fmt.Errorf("error calling statfs on %v: %v", p.exportDir, err)
+		return "", false, "", fmt.Errorf("error calling statfs on %v: %v", p.exportDir, err)
 	}
 	capacity := options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
 	requestBytes := capacity.Value()
 	available := int64(stat.Bavail) * int64(stat.Bsize)
 	if requestBytes > available {
-		return "", fmt.Errorf("insufficient available space %v bytes to satisfy claim for %v bytes", available, requestBytes)
+		return "", false, "", fmt.Errorf("insufficient available space %v bytes to satisfy claim for %v bytes", available, requestBytes)
 	}
 
-	return gid, nil
+	return gid, rootSquash, mountOptions, nil
 }
 
 // getServer gets the server IP to put in a provisioned PV's spec.
@@ -329,7 +386,7 @@ func (p *nfsProvisioner) getServer() (string, error) {
 	if namespace == "" {
 		return "", fmt.Errorf("service env %s is set but namespace env %s isn't; no way to get the service cluster IP", p.serviceEnv, p.namespaceEnv)
 	}
-	service, err := p.client.Core().Services(namespace).Get(serviceName, metav1.GetOptions{})
+	service, err := p.client.CoreV1().Services(namespace).Get(serviceName, metav1.GetOptions{})
 	if err != nil {
 		return "", fmt.Errorf("error getting service %s=%s in namespace %s=%s", p.serviceEnv, serviceName, p.namespaceEnv, namespace)
 	}
@@ -341,13 +398,15 @@ func (p *nfsProvisioner) getServer() (string, error) {
 		protocol v1.Protocol
 	}
 	expectedPorts := map[endpointPort]bool{
-		endpointPort{2049, v1.ProtocolTCP}:  true,
-		endpointPort{20048, v1.ProtocolTCP}: true,
-		endpointPort{111, v1.ProtocolUDP}:   true,
-		endpointPort{111, v1.ProtocolTCP}:   true,
+		{2049, v1.ProtocolTCP}:  true,
+		{20048, v1.ProtocolTCP}: true,
+		{111, v1.ProtocolUDP}:   true,
+		{111, v1.ProtocolTCP}:   true,
 	}
-	endpoints, err := p.client.Core().Endpoints(namespace).Get(serviceName, metav1.GetOptions{})
+	endpoints, err := p.client.CoreV1().Endpoints(namespace).Get(serviceName, metav1.GetOptions{})
 	for _, subset := range endpoints.Subsets {
+		// One service can't have multiple nfs-provisioner endpoints. If it had, kubernetes would round-robin
+		// the request which would probably go to the wrong instance.
 		if len(subset.Addresses) != 1 {
 			continue
 		}
@@ -365,7 +424,7 @@ func (p *nfsProvisioner) getServer() (string, error) {
 		break
 	}
 	if !valid {
-		return "", fmt.Errorf("service %s=%s is not valid; check that it has for ports %v one endpoint, this pod's IP %s=%s", p.serviceEnv, serviceName, expectedPorts, p.podIPEnv, podIP)
+		return "", fmt.Errorf("service %s=%s is not valid; check that it has for ports %v exactly one endpoint, this pod's IP %s=%s", p.serviceEnv, serviceName, expectedPorts, p.podIPEnv, podIP)
 	}
 	if service.Spec.ClusterIP == v1.ClusterIPNone {
 		return "", fmt.Errorf("service %s=%s is valid but it doesn't have a cluster IP", p.serviceEnv, serviceName)
@@ -373,6 +432,10 @@ func (p *nfsProvisioner) getServer() (string, error) {
 
 	glog.Infof("using service %s=%s cluster IP %s as NFS server IP", p.serviceEnv, serviceName, service.Spec.ClusterIP)
 	return service.Spec.ClusterIP, nil
+}
+
+func (p *nfsProvisioner) checkExportLimit() bool {
+	return p.exporter.CanExport(p.maxExports)
 }
 
 // createDirectory creates the given directory in exportDir with appropriate
@@ -399,7 +462,11 @@ func (p *nfsProvisioner) createDirectory(directory, gid string) error {
 	}
 
 	if gid != "none" {
-		groupID, _ := strconv.ParseUint(gid, 10, 64)
+		groupID, err := strconv.ParseUint(gid, 10, 64)
+		if err != nil {
+			os.RemoveAll(path)
+			return fmt.Errorf("strconv.ParseUint failed with error: %v", err)
+		}
 		cmd := exec.Command("chgrp", strconv.FormatUint(groupID, 10), path)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -413,10 +480,10 @@ func (p *nfsProvisioner) createDirectory(directory, gid string) error {
 
 // createExport creates the export by adding a block to the appropriate config
 // file and exporting it
-func (p *nfsProvisioner) createExport(directory string) (string, uint16, error) {
+func (p *nfsProvisioner) createExport(directory string, rootSquash bool) (string, uint16, error) {
 	path := path.Join(p.exportDir, directory)
 
-	block, exportID, err := p.exporter.AddExportBlock(path)
+	block, exportID, err := p.exporter.AddExportBlock(path, rootSquash)
 	if err != nil {
 		return "", 0, fmt.Errorf("error adding export block for path %s: %v", path, err)
 	}

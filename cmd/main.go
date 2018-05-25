@@ -98,16 +98,17 @@ func main() {
 	// PVs
 	pc := controller.NewProvisionController(
 		clientset,
-		resyncPeriod,
 		provisionerName,
 		ociProvisioner,
 		serverVersion.GitVersion,
-		exponentialBackOffOnError,
-		failedRetryThreshold,
-		leasePeriod,
-		renewDeadline,
-		retryPeriod,
-		termLimit)
+		controller.ResyncPeriod(resyncPeriod),
+		controller.ExponentialBackOffOnError(exponentialBackOffOnError),
+		controller.FailedProvisionThreshold(failedRetryThreshold),
+		controller.LeaseDuration(leasePeriod),
+		controller.RenewDeadline(renewDeadline),
+		controller.RetryPeriod(retryPeriod),
+		controller.TermLimit(termLimit),
+	)
 
 	go sharedInformerFactory.Start(stopCh)
 

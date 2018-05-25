@@ -10,7 +10,6 @@ reviewers:
 - mikedanese
 - liggitt
 - nikhiljindal
-- bprashanth
 - gmarek
 - erictune
 - pmorie
@@ -18,8 +17,8 @@ reviewers:
 - timothysc
 - dims
 - hongchaodeng
-- krousey
 - a-robinson
 - ddysher
 - mqliang
 - sdminonne
+- enj
