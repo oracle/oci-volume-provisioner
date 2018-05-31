@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/oracle/oci-volume-provisioner/pkg/helpers"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 
@@ -35,6 +36,7 @@ import (
 var (
 	volumeBackupID = "dummyVolumeBackupId"
 	defaultAD      = identity.AvailabilityDomain{Name: common.String("PHX-AD-1"), CompartmentId: common.String("ocid1.compartment.oc1")}
+	fileSystemID   = "dummyFileSystemId"
 )
 
 func TestResolveFSTypeWhenNotConfigured(t *testing.T) {
@@ -121,7 +123,7 @@ func TestCreateVolumeFromBackup(t *testing.T) {
 		PVC: &v1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					ociVolumeBackupID: volumeBackupID,
+					ociVolumeBackupID: helpers.VolumeBackupID,
 				},
 			},
 			Spec: v1.PersistentVolumeClaimSpec{
@@ -148,8 +150,8 @@ func TestCreateVolumeFromBackup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to provision volume from block storage: %v", err)
 	}
-	if provisionedVolume.Annotations[ociVolumeID] != volumeBackupID {
-		t.Fatalf("Failed to assign the id of the blockID: %s, assigned %s instead", volumeBackupID,
+	if provisionedVolume.Annotations[ociVolumeID] != helpers.VolumeBackupID {
+		t.Fatalf("Failed to assign the id of the blockID: %s, assigned %s instead", helpers.VolumeBackupID,
 			provisionedVolume.Annotations[ociVolumeID])
 	}
 }
