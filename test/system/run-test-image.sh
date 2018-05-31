@@ -40,15 +40,6 @@ if [[ -z "${KUBECONFIG}" ]]; then
    fi
 fi
 
-if [[ -z "${OCI_API_KEY}" ]]; then
-    if [[ -z "${OCI_API_KEY_VAR}" ]]; then
-        echo "OCI_API_KEY or OCI_API_KEY_VAR must be set"
-        exit 1
-    else
-       echo "$OCI_API_KEY_VAR" | openssl enc -base64 -d -A > /tmp/oci_api_key.pem
-       export OCI_API_KEY=/tmp/oci_api_key.pem
-   fi
-fi
 # Starts the test image inside the cluster and waits for it to complete.
 exitCodeCmd="kubectl get po volume-provisioner-system-test-$TEST_ID -o json | jq '.status.containerStatuses[0].state.terminated.exitCode'"
 kubectl create -f $DIR/run-test-image.yaml.$TEST_ID

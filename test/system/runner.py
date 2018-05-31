@@ -702,15 +702,16 @@ def _main():
                             "demooci-no-ad-" + test_id, args['check_oci'])
         _log("Running system test: Create volume from backup", as_banner=True)
 
-        terraform_env = _get_terraform_env()
-        _backup_ocid, _availability_domain = _setup_create_volume_from_backup(terraform_env, test_id)
-        _claim_target = _create_yaml("../../manifests/example-claim-from-backup.template", test_id, 
-                                     region=_availability_domain.split(':')[1], backup_id=_backup_ocid)
-        _test_create_volume(compartment_id, _claim_target,
-                            "demooci-from-backup-" + test_id, args['check_oci'],
-                            test_id=test_id, availability_domain=_availability_domain,
-                            verify_func=_volume_from_backup_check)
-        _tear_down_create_volume_from_backup(terraform_env, _backup_ocid)
+        if args['check_oci']: 
+            terraform_env = _get_terraform_env()
+            _backup_ocid, _availability_domain = _setup_create_volume_from_backup(terraform_env, test_id)
+            _claim_target = _create_yaml("../../manifests/example-claim-from-backup.template", test_id, 
+                                        region=_availability_domain.split(':')[1], backup_id=_backup_ocid)
+            _test_create_volume(compartment_id, _claim_target,
+                                "demooci-from-backup-" + test_id, args['check_oci'],
+                                test_id=test_id, availability_domain=_availability_domain,
+                                verify_func=_volume_from_backup_check)
+            _tear_down_create_volume_from_backup(terraform_env, _backup_ocid)
     if not success:
         _finish_with_exit_code(1)
     else: 
