@@ -136,7 +136,6 @@ system-test:
         name: test
         code: |
           cd /test/system
-          cat /tmp/oci_api_key.pem
           ./runner.py --setup --check-oci
 
 validate-test-image:
