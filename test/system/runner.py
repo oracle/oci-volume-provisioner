@@ -188,10 +188,7 @@ def _get_terraform_env():
     return "TF_VAR_test_id=" + timestamp
 
 def _terraform(action, cwd, terraform_env):
-    if "KUBECONFIG" not in os.environ and "KUBECONFIG_VAR" not in os.environ:
-        (stdout, _, returncode) = _run_command(terraform_env + " terraform " + action, cwd)
-    else:
-        (stdout, _, returncode) = _run_command("KUBECONFIG=" + _get_kubeconfig()+ " " + terraform_env + " terraform " + action, cwd)
+    (stdout, _, returncode) = _run_command(terraform_env + " terraform " + action, cwd)
     if returncode != 0:
         _log("Error running terraform")
         sys.exit(1)
