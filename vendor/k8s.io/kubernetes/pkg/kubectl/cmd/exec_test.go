@@ -32,9 +32,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/rest/fake"
-	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/client-go/tools/remotecommand"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	cmdtesting "k8s.io/kubernetes/pkg/kubectl/cmd/testing"
-	"k8s.io/kubernetes/pkg/util/term"
+	"k8s.io/kubernetes/pkg/kubectl/scheme"
+	"k8s.io/kubernetes/pkg/kubectl/util/term"
 )
 
 type fakeRemoteExecutor struct {
@@ -43,7 +46,7 @@ type fakeRemoteExecutor struct {
 	execErr error
 }
 
-func (f *fakeRemoteExecutor) Execute(method string, url *url.URL, config *restclient.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool, terminalSizeQueue term.TerminalSizeQueue) error {
+func (f *fakeRemoteExecutor) Execute(method string, url *url.URL, config *restclient.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool, terminalSizeQueue remotecommand.TerminalSizeQueue) error {
 	f.method = method
 	f.url = url
 	return f.execErr
@@ -127,45 +130,51 @@ func TestPodAndContainer(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		f, tf, _, ns := cmdtesting.NewAPIFactory()
-		tf.Client = &fake.RESTClient{
-			APIRegistry:          api.Registry,
-			NegotiatedSerializer: ns,
-			Client:               fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) { return nil, nil }),
-		}
-		tf.Namespace = "test"
-		tf.ClientConfig = defaultClientConfig()
+		t.Run(test.name, func(t *testing.T) {
+			tf := cmdtesting.NewTestFactory()
+			defer tf.Cleanup()
 
-		cmd := &cobra.Command{}
-		options := test.p
-		err := options.Complete(f, cmd, test.args, test.argsLenAtDash)
-		if test.expectError && err == nil {
-			t.Errorf("unexpected non-error (%s)", test.name)
-		}
-		if !test.expectError && err != nil {
-			t.Errorf("unexpected error: %v (%s)", err, test.name)
-		}
-		if err != nil {
-			continue
-		}
-		if options.PodName != test.expectedPod {
-			t.Errorf("expected: %s, got: %s (%s)", test.expectedPod, options.PodName, test.name)
-		}
-		if options.ContainerName != test.expectedContainer {
-			t.Errorf("expected: %s, got: %s (%s)", test.expectedContainer, options.ContainerName, test.name)
-		}
-		if !reflect.DeepEqual(test.expectedArgs, options.Command) {
-			t.Errorf("expected: %v, got %v (%s)", test.expectedArgs, options.Command, test.name)
-		}
+			ns := legacyscheme.Codecs
+
+			tf.Client = &fake.RESTClient{
+				NegotiatedSerializer: ns,
+				Client:               fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) { return nil, nil }),
+			}
+			tf.Namespace = "test"
+			tf.ClientConfigVal = defaultClientConfig()
+
+			cmd := &cobra.Command{}
+			options := test.p
+			options.Err = bytes.NewBuffer([]byte{})
+			err := options.Complete(tf, cmd, test.args, test.argsLenAtDash)
+			if test.expectError && err == nil {
+				t.Errorf("%s: unexpected non-error", test.name)
+			}
+			if !test.expectError && err != nil {
+				t.Errorf("%s: unexpected error: %v", test.name, err)
+			}
+			if err != nil {
+				return
+			}
+			if options.PodName != test.expectedPod {
+				t.Errorf("%s: expected: %s, got: %s", test.name, test.expectedPod, options.PodName)
+			}
+			if options.ContainerName != test.expectedContainer {
+				t.Errorf("%s: expected: %s, got: %s", test.name, test.expectedContainer, options.ContainerName)
+			}
+			if !reflect.DeepEqual(test.expectedArgs, options.Command) {
+				t.Errorf("%s: expected: %v, got %v", test.name, test.expectedArgs, options.Command)
+			}
+		})
 	}
 }
 
 func TestExec(t *testing.T) {
-	version := api.Registry.GroupOrDie(api.GroupName).GroupVersion.Version
+	version := "v1"
 	tests := []struct {
-		name, podPath, execPath, container string
-		pod                                *api.Pod
-		execErr                            bool
+		name, podPath, execPath string
+		pod                     *api.Pod
+		execErr                 bool
 	}{
 		{
 			name:     "pod exec",
@@ -182,65 +191,71 @@ func TestExec(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		f, tf, codec, ns := cmdtesting.NewAPIFactory()
-		tf.Client = &fake.RESTClient{
-			APIRegistry:          api.Registry,
-			NegotiatedSerializer: ns,
-			Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
-				switch p, m := req.URL.Path, req.Method; {
-				case p == test.podPath && m == "GET":
-					body := objBody(codec, test.pod)
-					return &http.Response{StatusCode: 200, Header: defaultHeader(), Body: body}, nil
-				default:
-					// Ensures no GET is performed when deleting by name
-					t.Errorf("%s: unexpected request: %s %#v\n%#v", test.name, req.Method, req.URL, req)
-					return nil, fmt.Errorf("unexpected request")
-				}
-			}),
-		}
-		tf.Namespace = "test"
-		tf.ClientConfig = defaultClientConfig()
-		bufOut := bytes.NewBuffer([]byte{})
-		bufErr := bytes.NewBuffer([]byte{})
-		bufIn := bytes.NewBuffer([]byte{})
-		ex := &fakeRemoteExecutor{}
-		if test.execErr {
-			ex.execErr = fmt.Errorf("exec error")
-		}
-		params := &ExecOptions{
-			StreamOptions: StreamOptions{
-				PodName:       "foo",
-				ContainerName: "bar",
-				In:            bufIn,
-				Out:           bufOut,
-				Err:           bufErr,
-			},
-			Executor: ex,
-		}
-		cmd := &cobra.Command{}
-		args := []string{"test", "command"}
-		if err := params.Complete(f, cmd, args, -1); err != nil {
-			t.Fatal(err)
-		}
-		err := params.Run()
-		if test.execErr && err != ex.execErr {
-			t.Errorf("%s: Unexpected exec error: %v", test.name, err)
-			continue
-		}
-		if !test.execErr && err != nil {
-			t.Errorf("%s: Unexpected error: %v", test.name, err)
-			continue
-		}
-		if test.execErr {
-			continue
-		}
-		if ex.url.Path != test.execPath {
-			t.Errorf("%s: Did not get expected path for exec request", test.name)
-			continue
-		}
-		if ex.method != "POST" {
-			t.Errorf("%s: Did not get method for exec request: %s", test.name, ex.method)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			tf := cmdtesting.NewTestFactory()
+			defer tf.Cleanup()
+
+			codec := legacyscheme.Codecs.LegacyCodec(scheme.Versions...)
+			ns := legacyscheme.Codecs
+
+			tf.Client = &fake.RESTClient{
+				NegotiatedSerializer: ns,
+				Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
+					switch p, m := req.URL.Path, req.Method; {
+					case p == test.podPath && m == "GET":
+						body := objBody(codec, test.pod)
+						return &http.Response{StatusCode: 200, Header: defaultHeader(), Body: body}, nil
+					default:
+						// Ensures no GET is performed when deleting by name
+						t.Errorf("%s: unexpected request: %s %#v\n%#v", test.name, req.Method, req.URL, req)
+						return nil, fmt.Errorf("unexpected request")
+					}
+				}),
+			}
+			tf.Namespace = "test"
+			tf.ClientConfigVal = defaultClientConfig()
+			bufOut := bytes.NewBuffer([]byte{})
+			bufErr := bytes.NewBuffer([]byte{})
+			bufIn := bytes.NewBuffer([]byte{})
+			ex := &fakeRemoteExecutor{}
+			if test.execErr {
+				ex.execErr = fmt.Errorf("exec error")
+			}
+			params := &ExecOptions{
+				StreamOptions: StreamOptions{
+					PodName:       "foo",
+					ContainerName: "bar",
+					In:            bufIn,
+					Out:           bufOut,
+					Err:           bufErr,
+				},
+				Executor: ex,
+			}
+			cmd := &cobra.Command{}
+			args := []string{"test", "command"}
+			if err := params.Complete(tf, cmd, args, -1); err != nil {
+				t.Fatal(err)
+			}
+			err := params.Run()
+			if test.execErr && err != ex.execErr {
+				t.Errorf("%s: Unexpected exec error: %v", test.name, err)
+				return
+			}
+			if !test.execErr && err != nil {
+				t.Errorf("%s: Unexpected error: %v", test.name, err)
+				return
+			}
+			if test.execErr {
+				return
+			}
+			if ex.url.Path != test.execPath {
+				t.Errorf("%s: Did not get expected path for exec request", test.name)
+				return
+			}
+			if ex.method != "POST" {
+				t.Errorf("%s: Did not get method for exec request: %s", test.name, ex.method)
+			}
+		})
 	}
 }
 

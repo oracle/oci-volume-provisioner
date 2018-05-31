@@ -19,9 +19,9 @@ package metrics
 import (
 	"time"
 
+	autoscaling "k8s.io/api/autoscaling/v2beta1"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/kubernetes/pkg/api/v1"
-	autoscaling "k8s.io/kubernetes/pkg/apis/autoscaling/v2alpha1"
 )
 
 // PodMetricsInfo contains pod metric values as a map from pod names to
@@ -42,4 +42,8 @@ type MetricsClient interface {
 	// GetObjectMetric gets the given metric (and an associated timestamp) for the given
 	// object in the given namespace
 	GetObjectMetric(metricName string, namespace string, objectRef *autoscaling.CrossVersionObjectReference) (int64, time.Time, error)
+
+	// GetExternalMetric gets all the values of a given external metric
+	// that match the specified selector.
+	GetExternalMetric(metricName string, namespace string, selector labels.Selector) ([]int64, time.Time, error)
 }

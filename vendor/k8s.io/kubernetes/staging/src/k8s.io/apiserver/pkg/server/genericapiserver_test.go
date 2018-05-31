@@ -24,8 +24,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	goruntime "runtime"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,20 +36,22 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apimachinery"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/openapi"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
-	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/apiserver/pkg/apis/example"
 	examplev1 "k8s.io/apiserver/pkg/apis/example/v1"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
-	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
+	"k8s.io/apiserver/pkg/endpoints/discovery"
+	genericapifilters "k8s.io/apiserver/pkg/endpoints/filters"
+	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
-	etcdtesting "k8s.io/apiserver/pkg/storage/etcd/testing"
+	genericfilters "k8s.io/apiserver/pkg/server/filters"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes/fake"
 	restclient "k8s.io/client-go/rest"
 )
 
@@ -77,19 +80,18 @@ func init() {
 	examplev1.AddToScheme(scheme)
 }
 
-func testGetOpenAPIDefinitions(ref openapi.ReferenceCallback) map[string]openapi.OpenAPIDefinition {
-	return map[string]openapi.OpenAPIDefinition{}
-}
-
 // setUp is a convience function for setting up for (most) tests.
-func setUp(t *testing.T) (*etcdtesting.EtcdTestServer, Config, *assert.Assertions) {
-	etcdServer, _ := etcdtesting.NewUnsecuredEtcd3TestClientServer(t, scheme)
-
-	config := NewConfig().WithSerializer(codecs)
+func setUp(t *testing.T) (Config, *assert.Assertions) {
+	config := NewConfig(codecs)
 	config.PublicAddress = net.ParseIP("192.168.10.4")
-	config.RequestContextMapper = genericapirequest.NewRequestContextMapper()
+	config.RequestContextMapper = apirequest.NewRequestContextMapper()
 	config.LegacyAPIGroupPrefixes = sets.NewString("/api")
 	config.LoopbackClientConfig = &restclient.Config{}
+
+	clientset := fake.NewSimpleClientset()
+	if clientset == nil {
+		t.Fatal("unable to create fake client set")
+	}
 
 	// TODO restore this test, but right now, eliminate our cycle
 	// config.OpenAPIConfig = DefaultOpenAPIConfig(testGetOpenAPIDefinitions, runtime.NewScheme())
@@ -100,25 +102,26 @@ func setUp(t *testing.T) (*etcdtesting.EtcdTestServer, Config, *assert.Assertion
 	// 	},
 	// }
 	config.SwaggerConfig = DefaultSwaggerConfig()
+	sharedInformers := informers.NewSharedInformerFactory(clientset, config.LoopbackClientConfig.Timeout)
+	config.Complete(sharedInformers)
 
-	return etcdServer, *config, assert.New(t)
+	return *config, assert.New(t)
 }
 
-func newMaster(t *testing.T) (*GenericAPIServer, *etcdtesting.EtcdTestServer, Config, *assert.Assertions) {
-	etcdserver, config, assert := setUp(t)
+func newMaster(t *testing.T) (*GenericAPIServer, Config, *assert.Assertions) {
+	config, assert := setUp(t)
 
-	s, err := config.Complete().New()
+	s, err := config.Complete(nil).New("test", EmptyDelegate)
 	if err != nil {
 		t.Fatalf("Error in bringing up the server: %v", err)
 	}
-	return s, etcdserver, config, assert
+	return s, config, assert
 }
 
 // TestNew verifies that the New function returns a GenericAPIServer
 // using the configuration properly.
 func TestNew(t *testing.T) {
-	s, etcdserver, config, assert := newMaster(t)
-	defer etcdserver.Terminate(t)
+	s, config, assert := newMaster(t)
 
 	// Verify many of the variables match their config counterparts
 	assert.Equal(s.legacyAPIGroupPrefixes, config.LegacyAPIGroupPrefixes)
@@ -133,13 +136,12 @@ func TestNew(t *testing.T) {
 
 // Verifies that AddGroupVersions works as expected.
 func TestInstallAPIGroups(t *testing.T) {
-	etcdserver, config, assert := setUp(t)
-	defer etcdserver.Terminate(t)
+	config, assert := setUp(t)
 
 	config.LegacyAPIGroupPrefixes = sets.NewString("/apiPrefix")
-	config.DiscoveryAddresses = DefaultDiscoveryAddresses{DefaultAddress: "ExternalAddress"}
+	config.DiscoveryAddresses = discovery.DefaultAddresses{DefaultAddress: "ExternalAddress"}
 
-	s, err := config.SkipComplete().New()
+	s, err := config.Complete(nil).New("test", EmptyDelegate)
 	if err != nil {
 		t.Fatalf("Error in bringing up the server: %v", err)
 	}
@@ -160,7 +162,10 @@ func TestInstallAPIGroups(t *testing.T) {
 			}, nil
 		}
 
-		mapper := meta.NewDefaultRESTMapperFromScheme([]schema.GroupVersion{gv}, interfacesFor, "", sets.NewString(), sets.NewString(), scheme)
+		mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{gv}, interfacesFor)
+		for kind := range scheme.KnownTypes(gv) {
+			mapper.Add(gv.WithKind(kind), meta.RESTScopeNamespace)
+		}
 		groupMeta := apimachinery.GroupMeta{
 			GroupVersion:  gv,
 			GroupVersions: []schema.GroupVersion{gv},
@@ -200,7 +205,7 @@ func TestInstallAPIGroups(t *testing.T) {
 		groupPaths = append(groupPaths, APIGroupPrefix+"/"+api.GroupMeta.GroupVersion.Group) // /apis/<group>
 	}
 
-	server := httptest.NewServer(s.InsecureHandler)
+	server := httptest.NewServer(s.Handler)
 	defer server.Close()
 
 	for i := range apis {
@@ -297,21 +302,16 @@ func TestInstallAPIGroups(t *testing.T) {
 }
 
 func TestPrepareRun(t *testing.T) {
-	s, etcdserver, config, assert := newMaster(t)
-	defer etcdserver.Terminate(t)
+	s, config, assert := newMaster(t)
 
 	assert.NotNil(config.SwaggerConfig)
-	// assert.NotNil(config.OpenAPIConfig)
 
-	server := httptest.NewServer(s.HandlerContainer.ServeMux)
+	server := httptest.NewServer(s.Handler.Director)
 	defer server.Close()
+	done := make(chan struct{})
 
 	s.PrepareRun()
-
-	// openapi is installed in PrepareRun
-	// resp, err := http.Get(server.URL + "/swagger.json")
-	// assert.NoError(err)
-	// assert.Equal(http.StatusOK, resp.StatusCode)
+	s.RunPostStartHooks(done)
 
 	// swagger is installed in PrepareRun
 	resp, err := http.Get(server.URL + "/swaggerapi/")
@@ -329,31 +329,27 @@ func TestPrepareRun(t *testing.T) {
 
 // TestCustomHandlerChain verifies the handler chain with custom handler chain builder functions.
 func TestCustomHandlerChain(t *testing.T) {
-	etcdserver, config, _ := setUp(t)
-	defer etcdserver.Terminate(t)
+	config, _ := setUp(t)
 
 	var protected, called bool
 
-	config.BuildHandlerChainsFunc = func(apiHandler http.Handler, c *Config) (secure, insecure http.Handler) {
+	config.BuildHandlerChainFunc = func(apiHandler http.Handler, c *Config) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				protected = true
-				apiHandler.ServeHTTP(w, req)
-			}), http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				protected = false
-				apiHandler.ServeHTTP(w, req)
-			})
+			protected = true
+			apiHandler.ServeHTTP(w, req)
+		})
 	}
 	handler := http.HandlerFunc(func(r http.ResponseWriter, req *http.Request) {
 		called = true
 	})
 
-	s, err := config.SkipComplete().New()
+	s, err := config.Complete(nil).New("test", EmptyDelegate)
 	if err != nil {
 		t.Fatalf("Error in bringing up the server: %v", err)
 	}
 
-	s.HandlerContainer.NonSwaggerRoutes.Handle("/nonswagger", handler)
-	s.HandlerContainer.UnlistedRoutes.Handle("/secret", handler)
+	s.Handler.NonGoRestfulMux.Handle("/nonswagger", handler)
+	s.Handler.NonGoRestfulMux.Handle("/secret", handler)
 
 	type Test struct {
 		handler   http.Handler
@@ -363,8 +359,6 @@ func TestCustomHandlerChain(t *testing.T) {
 	for i, test := range []Test{
 		{s.Handler, "/nonswagger", true},
 		{s.Handler, "/secret", true},
-		{s.InsecureHandler, "/nonswagger", false},
-		{s.InsecureHandler, "/secret", false},
 	} {
 		protected, called = false, false
 
@@ -388,13 +382,12 @@ func TestCustomHandlerChain(t *testing.T) {
 
 // TestNotRestRoutesHaveAuth checks that special non-routes are behind authz/authn.
 func TestNotRestRoutesHaveAuth(t *testing.T) {
-	etcdserver, config, _ := setUp(t)
-	defer etcdserver.Terminate(t)
+	config, _ := setUp(t)
 
 	authz := mockAuthorizer{}
 
 	config.LegacyAPIGroupPrefixes = sets.NewString("/apiPrefix")
-	config.Authorizer = &authz
+	config.Authorization.Authorizer = &authz
 
 	config.EnableSwaggerUI = true
 	config.EnableIndex = true
@@ -404,7 +397,7 @@ func TestNotRestRoutesHaveAuth(t *testing.T) {
 	kubeVersion := fakeVersion()
 	config.Version = &kubeVersion
 
-	s, err := config.SkipComplete().New()
+	s, err := config.Complete(nil).New("test", EmptyDelegate)
 	if err != nil {
 		t.Fatalf("Error in bringing up the server: %v", err)
 	}
@@ -435,9 +428,9 @@ type mockAuthorizer struct {
 	lastURI string
 }
 
-func (authz *mockAuthorizer) Authorize(a authorizer.Attributes) (authorized bool, reason string, err error) {
+func (authz *mockAuthorizer) Authorize(a authorizer.Attributes) (authorized authorizer.Decision, reason string, err error) {
 	authz.lastURI = a.GetPath()
-	return true, "", nil
+	return authorizer.DecisionAllow, "", nil
 }
 
 type mockAuthenticator struct {
@@ -464,218 +457,6 @@ func decodeResponse(resp *http.Response, obj interface{}) error {
 	return nil
 }
 
-func getGroupList(server *httptest.Server) (*metav1.APIGroupList, error) {
-	resp, err := http.Get(server.URL + "/apis")
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected server response, expected %d, actual: %d", http.StatusOK, resp.StatusCode)
-	}
-
-	groupList := metav1.APIGroupList{}
-	err = decodeResponse(resp, &groupList)
-	return &groupList, err
-}
-
-func TestDiscoveryAtAPIS(t *testing.T) {
-	master, etcdserver, _, assert := newMaster(t)
-	defer etcdserver.Terminate(t)
-
-	server := httptest.NewServer(master.InsecureHandler)
-	groupList, err := getGroupList(server)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	assert.Equal(0, len(groupList.Groups))
-
-	// Add a Group.
-	extensionsVersions := []metav1.GroupVersionForDiscovery{
-		{
-			GroupVersion: examplev1.SchemeGroupVersion.String(),
-			Version:      examplev1.SchemeGroupVersion.Version,
-		},
-	}
-	extensionsPreferredVersion := metav1.GroupVersionForDiscovery{
-		GroupVersion: extensionsGroupName + "/preferred",
-		Version:      "preferred",
-	}
-	master.AddAPIGroupForDiscovery(metav1.APIGroup{
-		Name:             extensionsGroupName,
-		Versions:         extensionsVersions,
-		PreferredVersion: extensionsPreferredVersion,
-	})
-
-	groupList, err = getGroupList(server)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	assert.Equal(1, len(groupList.Groups))
-	groupListGroup := groupList.Groups[0]
-	assert.Equal(extensionsGroupName, groupListGroup.Name)
-	assert.Equal(extensionsVersions, groupListGroup.Versions)
-	assert.Equal(extensionsPreferredVersion, groupListGroup.PreferredVersion)
-	assert.Equal(master.discoveryAddresses.ServerAddressByClientCIDRs(utilnet.GetClientIP(&http.Request{})), groupListGroup.ServerAddressByClientCIDRs)
-
-	// Remove the group.
-	master.RemoveAPIGroupForDiscovery(extensionsGroupName)
-	groupList, err = getGroupList(server)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	assert.Equal(0, len(groupList.Groups))
-}
-
-func TestDiscoveryOrdering(t *testing.T) {
-	master, etcdserver, _, assert := newMaster(t)
-	defer etcdserver.Terminate(t)
-
-	server := httptest.NewServer(master.InsecureHandler)
-	groupList, err := getGroupList(server)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	assert.Equal(0, len(groupList.Groups))
-
-	// Register three groups
-	master.AddAPIGroupForDiscovery(metav1.APIGroup{Name: "x"})
-	master.AddAPIGroupForDiscovery(metav1.APIGroup{Name: "y"})
-	master.AddAPIGroupForDiscovery(metav1.APIGroup{Name: "z"})
-	// Register three additional groups that come earlier alphabetically
-	master.AddAPIGroupForDiscovery(metav1.APIGroup{Name: "a"})
-	master.AddAPIGroupForDiscovery(metav1.APIGroup{Name: "b"})
-	master.AddAPIGroupForDiscovery(metav1.APIGroup{Name: "c"})
-	// Make sure re-adding doesn't double-register or make a group lose its place
-	master.AddAPIGroupForDiscovery(metav1.APIGroup{Name: "x"})
-
-	groupList, err = getGroupList(server)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	assert.Equal(6, len(groupList.Groups))
-	assert.Equal("x", groupList.Groups[0].Name)
-	assert.Equal("y", groupList.Groups[1].Name)
-	assert.Equal("z", groupList.Groups[2].Name)
-	assert.Equal("a", groupList.Groups[3].Name)
-	assert.Equal("b", groupList.Groups[4].Name)
-	assert.Equal("c", groupList.Groups[5].Name)
-
-	// Remove a group.
-	master.RemoveAPIGroupForDiscovery("a")
-	groupList, err = getGroupList(server)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	assert.Equal(5, len(groupList.Groups))
-
-	// Re-adding should move to the end.
-	master.AddAPIGroupForDiscovery(metav1.APIGroup{Name: "a"})
-	groupList, err = getGroupList(server)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	assert.Equal(6, len(groupList.Groups))
-	assert.Equal("x", groupList.Groups[0].Name)
-	assert.Equal("y", groupList.Groups[1].Name)
-	assert.Equal("z", groupList.Groups[2].Name)
-	assert.Equal("b", groupList.Groups[3].Name)
-	assert.Equal("c", groupList.Groups[4].Name)
-	assert.Equal("a", groupList.Groups[5].Name)
-}
-
-func TestGetServerAddressByClientCIDRs(t *testing.T) {
-	publicAddressCIDRMap := []metav1.ServerAddressByClientCIDR{
-		{
-			ClientCIDR:    "0.0.0.0/0",
-			ServerAddress: "ExternalAddress",
-		},
-	}
-	internalAddressCIDRMap := []metav1.ServerAddressByClientCIDR{
-		publicAddressCIDRMap[0],
-		{
-			ClientCIDR:    "10.0.0.0/24",
-			ServerAddress: "serviceIP",
-		},
-	}
-	internalIP := "10.0.0.1"
-	publicIP := "1.1.1.1"
-	testCases := []struct {
-		Request     http.Request
-		ExpectedMap []metav1.ServerAddressByClientCIDR
-	}{
-		{
-			Request:     http.Request{},
-			ExpectedMap: publicAddressCIDRMap,
-		},
-		{
-			Request: http.Request{
-				Header: map[string][]string{
-					"X-Real-Ip": {internalIP},
-				},
-			},
-			ExpectedMap: internalAddressCIDRMap,
-		},
-		{
-			Request: http.Request{
-				Header: map[string][]string{
-					"X-Real-Ip": {publicIP},
-				},
-			},
-			ExpectedMap: publicAddressCIDRMap,
-		},
-		{
-			Request: http.Request{
-				Header: map[string][]string{
-					"X-Forwarded-For": {internalIP},
-				},
-			},
-			ExpectedMap: internalAddressCIDRMap,
-		},
-		{
-			Request: http.Request{
-				Header: map[string][]string{
-					"X-Forwarded-For": {publicIP},
-				},
-			},
-			ExpectedMap: publicAddressCIDRMap,
-		},
-
-		{
-			Request: http.Request{
-				RemoteAddr: internalIP,
-			},
-			ExpectedMap: internalAddressCIDRMap,
-		},
-		{
-			Request: http.Request{
-				RemoteAddr: publicIP,
-			},
-			ExpectedMap: publicAddressCIDRMap,
-		},
-		{
-			Request: http.Request{
-				RemoteAddr: "invalidIP",
-			},
-			ExpectedMap: publicAddressCIDRMap,
-		},
-	}
-
-	_, ipRange, _ := net.ParseCIDR("10.0.0.0/24")
-	discoveryAddresses := DefaultDiscoveryAddresses{DefaultAddress: "ExternalAddress"}
-	discoveryAddresses.DiscoveryCIDRRules = append(discoveryAddresses.DiscoveryCIDRRules,
-		DiscoveryCIDRRule{IPRange: *ipRange, Address: "serviceIP"})
-
-	for i, test := range testCases {
-		if a, e := discoveryAddresses.ServerAddressByClientCIDRs(utilnet.GetClientIP(&test.Request)), test.ExpectedMap; reflect.DeepEqual(e, a) != true {
-			t.Fatalf("test case %d failed. expected: %v, actual: %v", i+1, e, a)
-		}
-	}
-}
-
 type testGetterStorage struct {
 	Version string
 }
@@ -689,7 +470,7 @@ func (p *testGetterStorage) New() runtime.Object {
 	}
 }
 
-func (p *testGetterStorage) Get(ctx genericapirequest.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
+func (p *testGetterStorage) Get(ctx apirequest.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
 	return nil, nil
 }
 
@@ -717,5 +498,84 @@ func fakeVersion() version.Info {
 		GoVersion:    goruntime.Version(),
 		Compiler:     goruntime.Compiler,
 		Platform:     fmt.Sprintf("%s/%s", goruntime.GOOS, goruntime.GOARCH),
+	}
+}
+
+// TestGracefulShutdown verifies server shutdown after request handler finish.
+func TestGracefulShutdown(t *testing.T) {
+	config, _ := setUp(t)
+
+	var graceShutdown bool
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	config.BuildHandlerChainFunc = func(apiHandler http.Handler, c *Config) http.Handler {
+		handler := genericfilters.WithWaitGroup(apiHandler, c.RequestContextMapper, c.LongRunningFunc, c.HandlerChainWaitGroup)
+		handler = genericapifilters.WithRequestInfo(handler, c.RequestInfoResolver, c.RequestContextMapper)
+		handler = apirequest.WithRequestContext(handler, c.RequestContextMapper)
+		return handler
+	}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		wg.Done()
+		time.Sleep(2 * time.Second)
+		w.WriteHeader(http.StatusOK)
+		graceShutdown = true
+	})
+
+	s, err := config.Complete(nil).New("test", EmptyDelegate)
+	if err != nil {
+		t.Fatalf("Error in bringing up the server: %v", err)
+	}
+
+	s.Handler.NonGoRestfulMux.Handle("/test", handler)
+
+	insecureServer := &http.Server{
+		Addr:    "0.0.0.0:0",
+		Handler: s.Handler,
+	}
+	stopCh := make(chan struct{})
+
+	ln, err := net.Listen("tcp", insecureServer.Addr)
+	if err != nil {
+		t.Errorf("failed to listen on %v: %v", insecureServer.Addr, err)
+	}
+
+	// get port
+	serverPort := ln.Addr().(*net.TCPAddr).Port
+	err = RunServer(insecureServer, ln, 10*time.Second, stopCh)
+	if err != nil {
+		t.Errorf("RunServer err: %v", err)
+	}
+
+	graceCh := make(chan struct{})
+	// mock a client request
+	go func() {
+		resp, err := http.Get("http://127.0.0.1:" + strconv.Itoa(serverPort) + "/test")
+		if err != nil {
+			t.Errorf("Unexpected http error: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("Unexpected http status code: %v", resp.StatusCode)
+		}
+		close(graceCh)
+	}()
+
+	// close stopCh after request sent to server to guarantee request handler is running.
+	wg.Wait()
+	close(stopCh)
+	// wait for wait group handler finish
+	s.HandlerChainWaitGroup.Wait()
+
+	// check server all handlers finished.
+	if !graceShutdown {
+		t.Errorf("server shutdown not gracefully.")
+	}
+	// check client to make sure receive response.
+	select {
+	case <-graceCh:
+		t.Logf("server shutdown gracefully.")
+	case <-time.After(30 * time.Second):
+		t.Errorf("Timed out waiting for response.")
 	}
 }

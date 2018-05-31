@@ -23,22 +23,32 @@ import (
 	"testing"
 
 	"k8s.io/client-go/rest/fake"
-	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	cmdtesting "k8s.io/kubernetes/pkg/kubectl/cmd/testing"
-	"k8s.io/kubernetes/pkg/printers"
+	"k8s.io/kubernetes/pkg/kubectl/scheme"
 )
 
 func TestPatchObject(t *testing.T) {
 	_, svc, _ := testData()
 
-	f, tf, codec, _ := cmdtesting.NewAPIFactory()
+	tf := cmdtesting.NewTestFactory()
+	defer tf.Cleanup()
+
+	codec := legacyscheme.Codecs.LegacyCodec(scheme.Versions...)
+
 	tf.UnstructuredClient = &fake.RESTClient{
-		APIRegistry:          api.Registry,
 		NegotiatedSerializer: unstructuredSerializer,
 		Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
 			switch p, m := req.URL.Path, req.Method; {
 			case p == "/namespaces/test/services/frontend" && (m == "PATCH" || m == "GET"):
-				return &http.Response{StatusCode: 200, Header: defaultHeader(), Body: objBody(codec, &svc.Items[0])}, nil
+				obj := svc.Items[0]
+
+				// ensure patched object reflects successful
+				// patch edits from the client
+				if m == "PATCH" {
+					obj.Spec.Type = "NodePort"
+				}
+				return &http.Response{StatusCode: 200, Header: defaultHeader(), Body: objBody(codec, &obj)}, nil
 			default:
 				t.Fatalf("unexpected request: %#v\n%#v", req.URL, req)
 				return nil, nil
@@ -48,7 +58,7 @@ func TestPatchObject(t *testing.T) {
 	tf.Namespace = "test"
 	buf := bytes.NewBuffer([]byte{})
 
-	cmd := NewCmdPatch(f, buf)
+	cmd := NewCmdPatch(tf, buf)
 	cmd.Flags().Set("namespace", "test")
 	cmd.Flags().Set("patch", `{"spec":{"type":"NodePort"}}`)
 	cmd.Flags().Set("output", "name")
@@ -63,9 +73,12 @@ func TestPatchObject(t *testing.T) {
 func TestPatchObjectFromFile(t *testing.T) {
 	_, svc, _ := testData()
 
-	f, tf, codec, _ := cmdtesting.NewAPIFactory()
+	tf := cmdtesting.NewTestFactory()
+	defer tf.Cleanup()
+
+	codec := legacyscheme.Codecs.LegacyCodec(scheme.Versions...)
+
 	tf.UnstructuredClient = &fake.RESTClient{
-		APIRegistry:          api.Registry,
 		NegotiatedSerializer: unstructuredSerializer,
 		Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
 			switch p, m := req.URL.Path, req.Method; {
@@ -80,7 +93,7 @@ func TestPatchObjectFromFile(t *testing.T) {
 	tf.Namespace = "test"
 	buf := bytes.NewBuffer([]byte{})
 
-	cmd := NewCmdPatch(f, buf)
+	cmd := NewCmdPatch(tf, buf)
 	cmd.Flags().Set("namespace", "test")
 	cmd.Flags().Set("patch", `{"spec":{"type":"NodePort"}}`)
 	cmd.Flags().Set("output", "name")
@@ -98,9 +111,12 @@ func TestPatchNoop(t *testing.T) {
 	getObject := &svc.Items[0]
 	patchObject := &svc.Items[0]
 
-	f, tf, codec, _ := cmdtesting.NewAPIFactory()
+	tf := cmdtesting.NewTestFactory()
+	defer tf.Cleanup()
+
+	codec := legacyscheme.Codecs.LegacyCodec(scheme.Versions...)
+
 	tf.UnstructuredClient = &fake.RESTClient{
-		APIRegistry:          api.Registry,
 		NegotiatedSerializer: unstructuredSerializer,
 		Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
 			switch p, m := req.URL.Path, req.Method; {
@@ -116,28 +132,15 @@ func TestPatchNoop(t *testing.T) {
 	}
 	tf.Namespace = "test"
 
-	// No-op
-	{
-		buf := bytes.NewBuffer([]byte{})
-		cmd := NewCmdPatch(f, buf)
-		cmd.Flags().Set("namespace", "test")
-		cmd.Flags().Set("patch", `{}`)
-		cmd.Run(cmd, []string{"services", "frontend"})
-		if buf.String() != "service \"baz\" not patched\n" {
-			t.Errorf("unexpected output: %s", buf.String())
-		}
-	}
-
 	// Patched
 	{
-		copied, _ := api.Scheme.DeepCopy(patchObject)
-		patchObject = copied.(*api.Service)
+		patchObject = patchObject.DeepCopy()
 		if patchObject.Annotations == nil {
 			patchObject.Annotations = map[string]string{}
 		}
 		patchObject.Annotations["foo"] = "bar"
 		buf := bytes.NewBuffer([]byte{})
-		cmd := NewCmdPatch(f, buf)
+		cmd := NewCmdPatch(tf, buf)
 		cmd.Flags().Set("namespace", "test")
 		cmd.Flags().Set("patch", `{"metadata":{"annotations":{"foo":"bar"}}}`)
 		cmd.Run(cmd, []string{"services", "frontend"})
@@ -150,21 +153,18 @@ func TestPatchNoop(t *testing.T) {
 func TestPatchObjectFromFileOutput(t *testing.T) {
 	_, svc, _ := testData()
 
-	svcCopyObj, err := api.Scheme.DeepCopy(&svc.Items[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	svcCopy := svcCopyObj.(*api.Service)
+	svcCopy := svc.Items[0].DeepCopy()
 	if svcCopy.Labels == nil {
 		svcCopy.Labels = map[string]string{}
 	}
 	svcCopy.Labels["post-patch"] = "post-patch-value"
 
-	f, tf, codec, _ := cmdtesting.NewAPIFactory()
-	tf.CommandPrinter = &printers.YAMLPrinter{}
-	tf.GenericPrinter = true
+	tf := cmdtesting.NewTestFactory()
+	defer tf.Cleanup()
+
+	codec := legacyscheme.Codecs.LegacyCodec(scheme.Versions...)
+
 	tf.UnstructuredClient = &fake.RESTClient{
-		APIRegistry:          api.Registry,
 		NegotiatedSerializer: unstructuredSerializer,
 		Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
 			switch p, m := req.URL.Path, req.Method; {
@@ -181,7 +181,7 @@ func TestPatchObjectFromFileOutput(t *testing.T) {
 	tf.Namespace = "test"
 	buf := bytes.NewBuffer([]byte{})
 
-	cmd := NewCmdPatch(f, buf)
+	cmd := NewCmdPatch(tf, buf)
 	cmd.Flags().Set("namespace", "test")
 	cmd.Flags().Set("patch", `{"spec":{"type":"NodePort"}}`)
 	cmd.Flags().Set("output", "yaml")

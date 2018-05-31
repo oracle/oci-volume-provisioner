@@ -17,11 +17,10 @@ limitations under the License.
 package util
 
 import (
+	api "k8s.io/kubernetes/pkg/apis/core"
+	"k8s.io/kubernetes/pkg/apis/extensions"
 	"reflect"
 	"testing"
-
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/apis/extensions"
 )
 
 // TestVolumeSourceFSTypeDrift ensures that for every known type of volume source (by the fields on
@@ -42,7 +41,7 @@ func TestVolumeSourceFSTypeDrift(t *testing.T) {
 
 		fsType, err := GetVolumeFSType(api.Volume{VolumeSource: volumeSource})
 		if err != nil {
-			t.Errorf("error getting fstype for field %s.  This likely means that drift has occured between FSType and VolumeSource.  Please update the api and getVolumeFSType", fieldVal.Name)
+			t.Errorf("error getting fstype for field %s.  This likely means that drift has occurred between FSType and VolumeSource.  Please update the api and getVolumeFSType", fieldVal.Name)
 		}
 
 		if !allFSTypes.Has(string(fsType)) {
@@ -100,6 +99,133 @@ func TestPSPAllowsFSType(t *testing.T) {
 		allows := PSPAllowsFSType(v.psp, v.fsType)
 		if v.allows != allows {
 			t.Errorf("%s expected PSPAllowsFSType to return %t but got %t", k, v.allows, allows)
+		}
+	}
+}
+
+func TestAllowsHostVolumePath(t *testing.T) {
+	tests := map[string]struct {
+		psp    *extensions.PodSecurityPolicy
+		path   string
+		allows bool
+	}{
+		"nil psp": {
+			psp:    nil,
+			path:   "/test",
+			allows: false,
+		},
+		"empty allowed paths": {
+			psp:    &extensions.PodSecurityPolicy{},
+			path:   "/test",
+			allows: true,
+		},
+		"non-matching": {
+			psp: &extensions.PodSecurityPolicy{
+				Spec: extensions.PodSecurityPolicySpec{
+					AllowedHostPaths: []extensions.AllowedHostPath{
+						{PathPrefix: "/foo"},
+					},
+				},
+			},
+			path:   "/foobar",
+			allows: false,
+		},
+		"match on direct match": {
+			psp: &extensions.PodSecurityPolicy{
+				Spec: extensions.PodSecurityPolicySpec{
+					AllowedHostPaths: []extensions.AllowedHostPath{
+						{PathPrefix: "/foo"},
+					},
+				},
+			},
+			path:   "/foo",
+			allows: true,
+		},
+		"match with trailing slash on host path": {
+			psp: &extensions.PodSecurityPolicy{
+				Spec: extensions.PodSecurityPolicySpec{
+					AllowedHostPaths: []extensions.AllowedHostPath{
+						{PathPrefix: "/foo"},
+					},
+				},
+			},
+			path:   "/foo/",
+			allows: true,
+		},
+		"match with trailing slash on allowed path": {
+			psp: &extensions.PodSecurityPolicy{
+				Spec: extensions.PodSecurityPolicySpec{
+					AllowedHostPaths: []extensions.AllowedHostPath{
+						{PathPrefix: "/foo/"},
+					},
+				},
+			},
+			path:   "/foo",
+			allows: true,
+		},
+		"match child directory": {
+			psp: &extensions.PodSecurityPolicy{
+				Spec: extensions.PodSecurityPolicySpec{
+					AllowedHostPaths: []extensions.AllowedHostPath{
+						{PathPrefix: "/foo/"},
+					},
+				},
+			},
+			path:   "/foo/bar",
+			allows: true,
+		},
+		"non-matching parent directory": {
+			psp: &extensions.PodSecurityPolicy{
+				Spec: extensions.PodSecurityPolicySpec{
+					AllowedHostPaths: []extensions.AllowedHostPath{
+						{PathPrefix: "/foo/bar"},
+					},
+				},
+			},
+			path:   "/foo",
+			allows: false,
+		},
+	}
+
+	for k, v := range tests {
+		allows := AllowsHostVolumePath(v.psp, v.path)
+		if v.allows != allows {
+			t.Errorf("%s expected %t but got %t", k, v.allows, allows)
+		}
+	}
+}
+
+func TestEqualStringSlices(t *testing.T) {
+	tests := map[string]struct {
+		arg1           []string
+		arg2           []string
+		expectedResult bool
+	}{
+		"nil equals to nil": {
+			arg1:           nil,
+			arg2:           nil,
+			expectedResult: true,
+		},
+		"equal by size": {
+			arg1:           []string{"1", "1"},
+			arg2:           []string{"1", "1"},
+			expectedResult: true,
+		},
+		"not equal by size": {
+			arg1:           []string{"1"},
+			arg2:           []string{"1", "1"},
+			expectedResult: false,
+		},
+		"not equal by elements": {
+			arg1:           []string{"1", "1"},
+			arg2:           []string{"1", "2"},
+			expectedResult: false,
+		},
+	}
+
+	for k, v := range tests {
+		if result := EqualStringSlices(v.arg1, v.arg2); result != v.expectedResult {
+			t.Errorf("%s expected to return %t but got %t", k, v.expectedResult, result)
 		}
 	}
 }

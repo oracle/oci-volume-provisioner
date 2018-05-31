@@ -30,9 +30,10 @@ func TestMasterExportsSymbols(t *testing.T) {
 		GenericConfig: &genericapiserver.Config{
 			EnableMetrics: true,
 		},
-		EnableCoreControllers: false,
-		EnableUISupport:       false,
-		EnableLogsSupport:     false,
+		ExtraConfig: master.ExtraConfig{
+			EnableCoreControllers: false,
+			EnableLogsSupport:     false,
+		},
 	}
 	_ = &master.Master{
 		GenericAPIServer: &genericapiserver.GenericAPIServer{},

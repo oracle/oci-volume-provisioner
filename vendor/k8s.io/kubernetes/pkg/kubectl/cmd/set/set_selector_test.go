@@ -17,16 +17,23 @@ limitations under the License.
 package set
 
 import (
+	"bytes"
+	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
+	batchv1 "k8s.io/api/batch/v1"
+	"k8s.io/api/core/v1"
+	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/apis/batch"
-	"k8s.io/kubernetes/pkg/apis/extensions"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	restclient "k8s.io/client-go/rest"
+	"k8s.io/client-go/rest/fake"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
+	cmdtesting "k8s.io/kubernetes/pkg/kubectl/cmd/testing"
 )
 
 func TestUpdateSelectorForObjectTypes(t *testing.T) {
@@ -39,14 +46,14 @@ func TestUpdateSelectorForObjectTypes(t *testing.T) {
 			},
 		}}
 
-	rc := api.ReplicationController{}
-	ser := api.Service{}
-	dep := extensions.Deployment{Spec: extensions.DeploymentSpec{Selector: &before}}
-	ds := extensions.DaemonSet{Spec: extensions.DaemonSetSpec{Selector: &before}}
-	rs := extensions.ReplicaSet{Spec: extensions.ReplicaSetSpec{Selector: &before}}
-	job := batch.Job{Spec: batch.JobSpec{Selector: &before}}
-	pvc := api.PersistentVolumeClaim{Spec: api.PersistentVolumeClaimSpec{Selector: &before}}
-	sa := api.ServiceAccount{}
+	rc := v1.ReplicationController{}
+	ser := v1.Service{}
+	dep := extensionsv1beta1.Deployment{Spec: extensionsv1beta1.DeploymentSpec{Selector: &before}}
+	ds := extensionsv1beta1.DaemonSet{Spec: extensionsv1beta1.DaemonSetSpec{Selector: &before}}
+	rs := extensionsv1beta1.ReplicaSet{Spec: extensionsv1beta1.ReplicaSetSpec{Selector: &before}}
+	job := batchv1.Job{Spec: batchv1.JobSpec{Selector: &before}}
+	pvc := v1.PersistentVolumeClaim{Spec: v1.PersistentVolumeClaimSpec{Selector: &before}}
+	sa := v1.ServiceAccount{}
 	type args struct {
 		obj      runtime.Object
 		selector metav1.LabelSelector
@@ -121,7 +128,7 @@ func TestUpdateSelectorForObjectTypes(t *testing.T) {
 }
 
 func TestUpdateNewSelectorValuesForObject(t *testing.T) {
-	ser := api.Service{}
+	ser := v1.Service{}
 	type args struct {
 		obj      runtime.Object
 		selector metav1.LabelSelector
@@ -163,7 +170,7 @@ func TestUpdateNewSelectorValuesForObject(t *testing.T) {
 }
 
 func TestUpdateOldSelectorValuesForObject(t *testing.T) {
-	ser := api.Service{Spec: api.ServiceSpec{Selector: map[string]string{"fee": "true"}}}
+	ser := v1.Service{Spec: v1.ServiceSpec{Selector: map[string]string{"fee": "true"}}}
 	type args struct {
 		obj      runtime.Object
 		selector metav1.LabelSelector
@@ -305,5 +312,35 @@ func TestGetResourcesAndSelector(t *testing.T) {
 		if !reflect.DeepEqual(gotSelector, tt.wantSelector) {
 			t.Errorf("%q. getResourcesAndSelector() gotSelector = %v, want %v", tt.name, gotSelector, tt.wantSelector)
 		}
+	}
+}
+
+func TestSelectorTest(t *testing.T) {
+	tf := cmdtesting.NewTestFactory()
+	defer tf.Cleanup()
+
+	ns := legacyscheme.Codecs
+	tf.Client = &fake.RESTClient{
+		GroupVersion:         schema.GroupVersion{Version: ""},
+		NegotiatedSerializer: ns,
+		Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
+			t.Fatalf("unexpected request: %s %#v\n%#v", req.Method, req.URL, req)
+			return nil, nil
+		}),
+	}
+	tf.Namespace = "test"
+	tf.ClientConfigVal = &restclient.Config{ContentConfig: restclient.ContentConfig{GroupVersion: &schema.GroupVersion{Version: ""}}}
+
+	buf := bytes.NewBuffer([]byte{})
+	cmd := NewCmdSelector(tf, buf)
+	cmd.SetOutput(buf)
+	cmd.Flags().Set("output", "name")
+	cmd.Flags().Set("local", "true")
+	cmd.Flags().Set("filename", "../../../../test/e2e/testing-manifests/statefulset/cassandra/service.yaml")
+
+	cmd.Run(cmd, []string{"environment=qa"})
+
+	if !strings.Contains(buf.String(), "service/cassandra") {
+		t.Errorf("did not set selector: %s", buf.String())
 	}
 }

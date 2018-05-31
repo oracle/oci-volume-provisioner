@@ -1,23 +1,23 @@
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])
-
 load(
     "@io_bazel_rules_go//go:def.bzl",
     "go_binary",
     "go_library",
 )
+load("//pkg/version:def.bzl", "version_x_defs")
 
 go_binary(
     name = "kubeadm",
-    library = ":go_default_library",
-    tags = ["automanaged"],
+    embed = [":go_default_library"],
+    pure = "on",
+    x_defs = version_x_defs(),
 )
 
 go_library(
     name = "go_default_library",
     srcs = ["kubeadm.go"],
-    tags = ["automanaged"],
+    importpath = "k8s.io/kubernetes/cmd/kubeadm",
     deps = ["//cmd/kubeadm/app:go_default_library"],
 )
 
@@ -33,7 +33,7 @@ filegroup(
     srcs = [
         ":package-srcs",
         "//cmd/kubeadm/app:all-srcs",
-        "//cmd/kubeadm/test/cmd:all-srcs",
+        "//cmd/kubeadm/test:all-srcs",
     ],
     tags = ["automanaged"],
 )

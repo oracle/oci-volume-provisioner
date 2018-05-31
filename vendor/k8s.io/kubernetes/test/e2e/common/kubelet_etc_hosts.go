@@ -17,27 +17,32 @@ limitations under the License.
 package common
 
 import (
+	"io/ioutil"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/golang/glog"
 	. "github.com/onsi/ginkgo"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/test/e2e/framework"
+	imageutils "k8s.io/kubernetes/test/utils/image"
 )
 
 const (
-	etcHostsImageName          = "gcr.io/google_containers/netexec:1.7"
 	etcHostsPodName            = "test-pod"
 	etcHostsHostNetworkPodName = "test-host-network-pod"
 	etcHostsPartialContent     = "# Kubernetes-managed hosts file."
 )
 
+var etcHostsImageName = imageutils.GetE2EImage(imageutils.Netexec)
+
 type KubeletManagedHostConfig struct {
 	hostNetworkPod *v1.Pod
 	pod            *v1.Pod
 	f              *framework.Framework
+	tmpEtcHostFile *os.File
 }
 
 var _ = framework.KubeDescribe("KubeletManagedEtcHosts", func() {
@@ -46,12 +51,19 @@ var _ = framework.KubeDescribe("KubeletManagedEtcHosts", func() {
 		f: f,
 	}
 
-	It("should test kubelet managed /etc/hosts file [Conformance]", func() {
+	/*
+		    Testname: kubelet-managed-etc-hosts
+		    Description: Make sure Kubelet correctly manages /etc/hosts and mounts
+			it into the container.
+	*/
+	framework.ConformanceIt("should test kubelet managed /etc/hosts file ", func() {
 		By("Setting up the test")
 		config.setup()
 
 		By("Running the test")
 		config.verifyEtcHosts()
+
+		config.cleanup()
 	})
 })
 
@@ -69,11 +81,37 @@ func (config *KubeletManagedHostConfig) verifyEtcHosts() {
 }
 
 func (config *KubeletManagedHostConfig) setup() {
+	etcHostContents := `127.0.0.1	localhost
+::1	localhost ip6-localhost ip6-loopback
+fe00::0	ip6-localnet
+ff00::0	ip6-mcastprefix
+ff02::1	ip6-allnodes
+ff02::2	ip6-allrouters`
+
+	// Write the data to a temp file.
+	var err error
+	config.tmpEtcHostFile, err = ioutil.TempFile("", "etc-hosts")
+	if err != nil {
+		framework.Failf("failed to create temp file for /etc/hosts: %v", err)
+	}
+	if _, err := config.tmpEtcHostFile.Write([]byte(etcHostContents)); err != nil {
+		framework.Failf("Failed to write temp file for /etc/hosts data: %v", err)
+	}
+	if err := config.tmpEtcHostFile.Close(); err != nil {
+		framework.Failf("Failed to close temp file: %v", err)
+	}
+
 	By("Creating hostNetwork=false pod")
 	config.createPodWithoutHostNetwork()
 
 	By("Creating hostNetwork=true pod")
 	config.createPodWithHostNetwork()
+}
+
+func (config *KubeletManagedHostConfig) cleanup() {
+	if config.tmpEtcHostFile != nil {
+		os.Remove(config.tmpEtcHostFile.Name())
+	}
 }
 
 func (config *KubeletManagedHostConfig) createPodWithoutHostNetwork() {
@@ -130,6 +168,8 @@ func (config *KubeletManagedHostConfig) getEtcHostsContent(podName, containerNam
 }
 
 func (config *KubeletManagedHostConfig) createPodSpec(podName string) *v1.Pod {
+	hostPathType := new(v1.HostPathType)
+	*hostPathType = v1.HostPathType(string(v1.HostPathFileOrCreate))
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: podName,
@@ -175,7 +215,8 @@ func (config *KubeletManagedHostConfig) createPodSpec(podName string) *v1.Pod {
 					Name: "host-etc-hosts",
 					VolumeSource: v1.VolumeSource{
 						HostPath: &v1.HostPathVolumeSource{
-							Path: "/etc/hosts",
+							Path: config.tmpEtcHostFile.Name(),
+							Type: hostPathType,
 						},
 					},
 				},

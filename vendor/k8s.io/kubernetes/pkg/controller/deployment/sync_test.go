@@ -20,20 +20,20 @@ import (
 	"testing"
 	"time"
 
+	extensions "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes/fake"
 	testclient "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
-	extensions "k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset/fake"
-	informers "k8s.io/kubernetes/pkg/client/informers/informers_generated/externalversions"
 	"k8s.io/kubernetes/pkg/controller"
 	deploymentutil "k8s.io/kubernetes/pkg/controller/deployment/util"
 )
 
-func maxSurge(val int) *intstr.IntOrString {
-	surge := intstr.FromInt(val)
-	return &surge
+func intOrStrP(val int) *intstr.IntOrString {
+	intOrStr := intstr.FromInt(val)
+	return &intOrStr
 }
 
 func TestScale(t *testing.T) {
@@ -218,8 +218,8 @@ func TestScale(t *testing.T) {
 		},
 		{
 			name:          "deployment with surge pods",
-			deployment:    newDeployment("foo", 20, nil, maxSurge(2), nil, nil),
-			oldDeployment: newDeployment("foo", 10, nil, maxSurge(2), nil, nil),
+			deployment:    newDeployment("foo", 20, nil, intOrStrP(2), nil, nil),
+			oldDeployment: newDeployment("foo", 10, nil, intOrStrP(2), nil, nil),
 
 			newRS:  rs("foo-v2", 6, nil, newTimestamp),
 			oldRSs: []*extensions.ReplicaSet{rs("foo-v1", 6, nil, oldTimestamp)},
@@ -229,8 +229,8 @@ func TestScale(t *testing.T) {
 		},
 		{
 			name:          "change both surge and size",
-			deployment:    newDeployment("foo", 50, nil, maxSurge(6), nil, nil),
-			oldDeployment: newDeployment("foo", 10, nil, maxSurge(3), nil, nil),
+			deployment:    newDeployment("foo", 50, nil, intOrStrP(6), nil, nil),
+			oldDeployment: newDeployment("foo", 10, nil, intOrStrP(3), nil, nil),
 
 			newRS:  rs("foo-v2", 5, nil, newTimestamp),
 			oldRSs: []*extensions.ReplicaSet{rs("foo-v1", 8, nil, oldTimestamp)},
@@ -249,75 +249,92 @@ func TestScale(t *testing.T) {
 			expectedNew: nil,
 			expectedOld: []*extensions.ReplicaSet{rs("foo-v2", 10, nil, newTimestamp), rs("foo-v1", 4, nil, oldTimestamp)},
 		},
+		{
+			name:          "saturated but broken new replica set does not affect old pods",
+			deployment:    newDeployment("foo", 2, nil, intOrStrP(1), intOrStrP(1), nil),
+			oldDeployment: newDeployment("foo", 2, nil, intOrStrP(1), intOrStrP(1), nil),
+
+			newRS: func() *extensions.ReplicaSet {
+				rs := rs("foo-v2", 2, nil, newTimestamp)
+				rs.Status.AvailableReplicas = 0
+				return rs
+			}(),
+			oldRSs: []*extensions.ReplicaSet{rs("foo-v1", 1, nil, oldTimestamp)},
+
+			expectedNew: rs("foo-v2", 2, nil, newTimestamp),
+			expectedOld: []*extensions.ReplicaSet{rs("foo-v1", 1, nil, oldTimestamp)},
+		},
 	}
 
 	for _, test := range tests {
-		_ = olderTimestamp
-		t.Log(test.name)
-		fake := fake.Clientset{}
-		dc := &DeploymentController{
-			client:        &fake,
-			eventRecorder: &record.FakeRecorder{},
-		}
-
-		if test.newRS != nil {
-			desiredReplicas := *(test.oldDeployment.Spec.Replicas)
-			if desired, ok := test.desiredReplicasAnnotations[test.newRS.Name]; ok {
-				desiredReplicas = desired
+		t.Run(test.name, func(t *testing.T) {
+			_ = olderTimestamp
+			t.Log(test.name)
+			fake := fake.Clientset{}
+			dc := &DeploymentController{
+				client:        &fake,
+				eventRecorder: &record.FakeRecorder{},
 			}
-			deploymentutil.SetReplicasAnnotations(test.newRS, desiredReplicas, desiredReplicas+deploymentutil.MaxSurge(*test.oldDeployment))
-		}
-		for i := range test.oldRSs {
-			rs := test.oldRSs[i]
-			if rs == nil {
-				continue
-			}
-			desiredReplicas := *(test.oldDeployment.Spec.Replicas)
-			if desired, ok := test.desiredReplicasAnnotations[rs.Name]; ok {
-				desiredReplicas = desired
-			}
-			deploymentutil.SetReplicasAnnotations(rs, desiredReplicas, desiredReplicas+deploymentutil.MaxSurge(*test.oldDeployment))
-		}
 
-		if err := dc.scale(test.deployment, test.newRS, test.oldRSs); err != nil {
-			t.Errorf("%s: unexpected error: %v", test.name, err)
-			continue
-		}
+			if test.newRS != nil {
+				desiredReplicas := *(test.oldDeployment.Spec.Replicas)
+				if desired, ok := test.desiredReplicasAnnotations[test.newRS.Name]; ok {
+					desiredReplicas = desired
+				}
+				deploymentutil.SetReplicasAnnotations(test.newRS, desiredReplicas, desiredReplicas+deploymentutil.MaxSurge(*test.oldDeployment))
+			}
+			for i := range test.oldRSs {
+				rs := test.oldRSs[i]
+				if rs == nil {
+					continue
+				}
+				desiredReplicas := *(test.oldDeployment.Spec.Replicas)
+				if desired, ok := test.desiredReplicasAnnotations[rs.Name]; ok {
+					desiredReplicas = desired
+				}
+				deploymentutil.SetReplicasAnnotations(rs, desiredReplicas, desiredReplicas+deploymentutil.MaxSurge(*test.oldDeployment))
+			}
 
-		// Construct the nameToSize map that will hold all the sizes we got our of tests
-		// Skip updating the map if the replica set wasn't updated since there will be
-		// no update action for it.
-		nameToSize := make(map[string]int32)
-		if test.newRS != nil {
-			nameToSize[test.newRS.Name] = *(test.newRS.Spec.Replicas)
-		}
-		for i := range test.oldRSs {
-			rs := test.oldRSs[i]
-			nameToSize[rs.Name] = *(rs.Spec.Replicas)
-		}
-		// Get all the UPDATE actions and update nameToSize with all the updated sizes.
-		for _, action := range fake.Actions() {
-			rs := action.(testclient.UpdateAction).GetObject().(*extensions.ReplicaSet)
-			if !test.wasntUpdated[rs.Name] {
+			if err := dc.scale(test.deployment, test.newRS, test.oldRSs); err != nil {
+				t.Errorf("%s: unexpected error: %v", test.name, err)
+				return
+			}
+
+			// Construct the nameToSize map that will hold all the sizes we got our of tests
+			// Skip updating the map if the replica set wasn't updated since there will be
+			// no update action for it.
+			nameToSize := make(map[string]int32)
+			if test.newRS != nil {
+				nameToSize[test.newRS.Name] = *(test.newRS.Spec.Replicas)
+			}
+			for i := range test.oldRSs {
+				rs := test.oldRSs[i]
 				nameToSize[rs.Name] = *(rs.Spec.Replicas)
 			}
-		}
-
-		if test.expectedNew != nil && test.newRS != nil && *(test.expectedNew.Spec.Replicas) != nameToSize[test.newRS.Name] {
-			t.Errorf("%s: expected new replicas: %d, got: %d", test.name, *(test.expectedNew.Spec.Replicas), nameToSize[test.newRS.Name])
-			continue
-		}
-		if len(test.expectedOld) != len(test.oldRSs) {
-			t.Errorf("%s: expected %d old replica sets, got %d", test.name, len(test.expectedOld), len(test.oldRSs))
-			continue
-		}
-		for n := range test.oldRSs {
-			rs := test.oldRSs[n]
-			expected := test.expectedOld[n]
-			if *(expected.Spec.Replicas) != nameToSize[rs.Name] {
-				t.Errorf("%s: expected old (%s) replicas: %d, got: %d", test.name, rs.Name, *(expected.Spec.Replicas), nameToSize[rs.Name])
+			// Get all the UPDATE actions and update nameToSize with all the updated sizes.
+			for _, action := range fake.Actions() {
+				rs := action.(testclient.UpdateAction).GetObject().(*extensions.ReplicaSet)
+				if !test.wasntUpdated[rs.Name] {
+					nameToSize[rs.Name] = *(rs.Spec.Replicas)
+				}
 			}
-		}
+
+			if test.expectedNew != nil && test.newRS != nil && *(test.expectedNew.Spec.Replicas) != nameToSize[test.newRS.Name] {
+				t.Errorf("%s: expected new replicas: %d, got: %d", test.name, *(test.expectedNew.Spec.Replicas), nameToSize[test.newRS.Name])
+				return
+			}
+			if len(test.expectedOld) != len(test.oldRSs) {
+				t.Errorf("%s: expected %d old replica sets, got %d", test.name, len(test.expectedOld), len(test.oldRSs))
+				return
+			}
+			for n := range test.oldRSs {
+				rs := test.oldRSs[n]
+				expected := test.expectedOld[n]
+				if *(expected.Spec.Replicas) != nameToSize[rs.Name] {
+					t.Errorf("%s: expected old (%s) replicas: %d, got: %d", test.name, rs.Name, *(expected.Spec.Replicas), nameToSize[rs.Name])
+				}
+			}
+		})
 	}
 }
 
@@ -384,7 +401,10 @@ func TestDeploymentController_cleanupDeployment(t *testing.T) {
 
 		fake := &fake.Clientset{}
 		informers := informers.NewSharedInformerFactory(fake, controller.NoResyncPeriodFunc())
-		controller := NewDeploymentController(informers.Extensions().V1beta1().Deployments(), informers.Extensions().V1beta1().ReplicaSets(), informers.Core().V1().Pods(), fake)
+		controller, err := NewDeploymentController(informers.Extensions().V1beta1().Deployments(), informers.Extensions().V1beta1().ReplicaSets(), informers.Core().V1().Pods(), fake)
+		if err != nil {
+			t.Fatalf("error creating Deployment controller: %v", err)
+		}
 
 		controller.eventRecorder = &record.FakeRecorder{}
 		controller.dListerSynced = alwaysReady

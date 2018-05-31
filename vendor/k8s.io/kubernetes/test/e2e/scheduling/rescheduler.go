@@ -20,9 +20,10 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/kubernetes/pkg/api/v1"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	"k8s.io/kubernetes/test/e2e/framework"
 	testutils "k8s.io/kubernetes/test/utils"
 
@@ -35,13 +36,13 @@ const (
 )
 
 // This test requires Rescheduler to be enabled.
-var _ = framework.KubeDescribe("Rescheduler [Serial]", func() {
+var _ = SIGDescribe("Rescheduler [Serial]", func() {
 	f := framework.NewDefaultFramework("rescheduler")
 	var ns string
 	var totalMillicores int
 
 	BeforeEach(func() {
-		framework.SkipUnlessProviderIs("gce", "gke")
+		framework.Skipf("Rescheduler is being deprecated soon in Kubernetes 1.10")
 		ns = f.Namespace.Name
 		nodes := framework.GetReadySchedulableNodesOrDie(f.ClientSet)
 		nodeCount := len(nodes.Items)
@@ -60,15 +61,15 @@ var _ = framework.KubeDescribe("Rescheduler [Serial]", func() {
 		By("creating a new instance of Dashboard and waiting for Dashboard to be scheduled")
 		label := labels.SelectorFromSet(labels.Set(map[string]string{"k8s-app": "kubernetes-dashboard"}))
 		listOpts := metav1.ListOptions{LabelSelector: label.String()}
-		deployments, err := f.ClientSet.Extensions().Deployments(metav1.NamespaceSystem).List(listOpts)
+		deployments, err := f.ClientSet.ExtensionsV1beta1().Deployments(metav1.NamespaceSystem).List(listOpts)
 		framework.ExpectNoError(err)
 		Expect(len(deployments.Items)).Should(Equal(1))
 
 		deployment := deployments.Items[0]
 		replicas := uint(*(deployment.Spec.Replicas))
 
-		err = framework.ScaleDeployment(f.ClientSet, f.InternalClientset, metav1.NamespaceSystem, deployment.Name, replicas+1, true)
-		defer framework.ExpectNoError(framework.ScaleDeployment(f.ClientSet, f.InternalClientset, metav1.NamespaceSystem, deployment.Name, replicas, true))
+		err = framework.ScaleDeployment(f.ClientSet, f.InternalClientset, f.ScalesGetter, metav1.NamespaceSystem, deployment.Name, replicas+1, true)
+		defer framework.ExpectNoError(framework.ScaleDeployment(f.ClientSet, f.InternalClientset, f.ScalesGetter, metav1.NamespaceSystem, deployment.Name, replicas, true))
 		framework.ExpectNoError(err)
 
 	})
@@ -79,7 +80,7 @@ func reserveAllCpu(f *framework.Framework, id string, millicores int) error {
 	replicas := millicores / 100
 
 	reserveCpu(f, id, 1, 100)
-	framework.ExpectNoError(framework.ScaleRC(f.ClientSet, f.InternalClientset, f.Namespace.Name, id, uint(replicas), false))
+	framework.ExpectNoError(framework.ScaleRC(f.ClientSet, f.InternalClientset, f.ScalesGetter, f.Namespace.Name, id, uint(replicas), false))
 
 	for start := time.Now(); time.Since(start) < timeout; time.Sleep(10 * time.Second) {
 		pods, err := framework.GetPodsInNamespace(f.ClientSet, f.Namespace.Name, framework.ImagePullerLabels)
@@ -106,7 +107,7 @@ func reserveAllCpu(f *framework.Framework, id string, millicores int) error {
 }
 
 func podRunningOrUnschedulable(pod *v1.Pod) bool {
-	_, cond := v1.GetPodCondition(&pod.Status, v1.PodScheduled)
+	_, cond := podutil.GetPodCondition(&pod.Status, v1.PodScheduled)
 	if cond != nil && cond.Status == v1.ConditionFalse && cond.Reason == "Unschedulable" {
 		return true
 	}

@@ -19,10 +19,10 @@ package eviction
 import (
 	"time"
 
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/api/v1"
-	statsapi "k8s.io/kubernetes/pkg/kubelet/api/v1alpha1/stats"
+	statsapi "k8s.io/kubernetes/pkg/kubelet/apis/stats/v1alpha1"
 	evictionapi "k8s.io/kubernetes/pkg/kubelet/eviction/api"
 )
 
@@ -53,13 +53,16 @@ type Config struct {
 // Manager evaluates when an eviction threshold for node stability has been met on the node.
 type Manager interface {
 	// Start starts the control loop to monitor eviction thresholds at specified interval.
-	Start(diskInfoProvider DiskInfoProvider, podFunc ActivePodsFunc, nodeProvider NodeProvider, monitoringInterval time.Duration)
+	Start(diskInfoProvider DiskInfoProvider, podFunc ActivePodsFunc, podCleanedUpFunc PodCleanedUpFunc, monitoringInterval time.Duration)
 
 	// IsUnderMemoryPressure returns true if the node is under memory pressure.
 	IsUnderMemoryPressure() bool
 
 	// IsUnderDiskPressure returns true if the node is under disk pressure.
 	IsUnderDiskPressure() bool
+
+	// IsUnderPIDPressure returns true if the node is under PID pressure.
+	IsUnderPIDPressure() bool
 }
 
 // DiskInfoProvider is responsible for informing the manager how disk is configured.
@@ -68,16 +71,16 @@ type DiskInfoProvider interface {
 	HasDedicatedImageFs() (bool, error)
 }
 
-// NodeProvider is responsible for providing the node api object describing this node
-type NodeProvider interface {
-	// GetNode returns the node info for this node
-	GetNode() (*v1.Node, error)
-}
-
 // ImageGC is responsible for performing garbage collection of unused images.
 type ImageGC interface {
-	// DeleteUnusedImages deletes unused images and returns the number of bytes freed, or an error.
-	DeleteUnusedImages() (int64, error)
+	// DeleteUnusedImages deletes unused images.
+	DeleteUnusedImages() error
+}
+
+// ContainerGC is responsible for performing garbage collection of unused containers.
+type ContainerGC interface {
+	// DeleteAllUnusedContainers deletes all unused containers, even those that belong to pods that are terminated, but not deleted.
+	DeleteAllUnusedContainers() error
 }
 
 // KillPodFunc kills a pod.
@@ -91,6 +94,9 @@ type KillPodFunc func(pod *v1.Pod, status v1.PodStatus, gracePeriodOverride *int
 
 // ActivePodsFunc returns pods bound to the kubelet that are active (i.e. non-terminal state)
 type ActivePodsFunc func() []*v1.Pod
+
+// PodCleanedUpFunc returns true if all resources associated with a pod have been reclaimed.
+type PodCleanedUpFunc func(*v1.Pod) bool
 
 // statsFunc returns the usage stats if known for an input pod.
 type statsFunc func(pod *v1.Pod) (statsapi.PodStats, bool)
@@ -118,7 +124,7 @@ type thresholdsObservedAt map[evictionapi.Threshold]time.Time
 type nodeConditionsObservedAt map[v1.NodeConditionType]time.Time
 
 // nodeReclaimFunc is a function that knows how to reclaim a resource from the node without impacting pods.
-type nodeReclaimFunc func() (*resource.Quantity, error)
+type nodeReclaimFunc func() error
 
 // nodeReclaimFuncs is an ordered list of nodeReclaimFunc
 type nodeReclaimFuncs []nodeReclaimFunc

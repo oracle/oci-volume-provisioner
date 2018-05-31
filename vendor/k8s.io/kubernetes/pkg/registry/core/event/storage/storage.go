@@ -21,8 +21,10 @@ import (
 	"k8s.io/apiserver/pkg/registry/generic"
 	genericregistry "k8s.io/apiserver/pkg/registry/generic/registry"
 	"k8s.io/apiserver/pkg/registry/rest"
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/registry/cachesize"
+	api "k8s.io/kubernetes/pkg/apis/core"
+	"k8s.io/kubernetes/pkg/printers"
+	printersinternal "k8s.io/kubernetes/pkg/printers/internalversion"
+	printerstorage "k8s.io/kubernetes/pkg/printers/storage"
 	"k8s.io/kubernetes/pkg/registry/core/event"
 )
 
@@ -43,22 +45,19 @@ func NewREST(optsGetter generic.RESTOptionsGetter, ttl uint64) *REST {
 	opts.Decorator = generic.UndecoratedStorage // TODO use watchCacheSize=-1 to signal UndecoratedStorage
 
 	store := &genericregistry.Store{
-		Copier:      api.Scheme,
-		NewFunc:     func() runtime.Object { return &api.Event{} },
-		NewListFunc: func() runtime.Object { return &api.EventList{} },
-		ObjectNameFunc: func(obj runtime.Object) (string, error) {
-			return obj.(*api.Event).Name, nil
-		},
+		NewFunc:       func() runtime.Object { return &api.Event{} },
+		NewListFunc:   func() runtime.Object { return &api.EventList{} },
 		PredicateFunc: event.MatchEvent,
 		TTLFunc: func(runtime.Object, uint64, bool) (uint64, error) {
 			return ttl, nil
 		},
-		QualifiedResource: resource,
-		WatchCacheSize:    cachesize.GetWatchCacheSizeByResource(resource.Resource),
+		DefaultQualifiedResource: resource,
 
 		CreateStrategy: event.Strategy,
 		UpdateStrategy: event.Strategy,
 		DeleteStrategy: event.Strategy,
+
+		TableConvertor: printerstorage.TableConvertor{TablePrinter: printers.NewTablePrinter().With(printersinternal.AddHandlers)},
 	}
 	options := &generic.StoreOptions{RESTOptions: opts, AttrFunc: event.GetAttrs} // Pass in opts to use UndecoratedStorage
 	if err := store.CompleteWithOptions(options); err != nil {

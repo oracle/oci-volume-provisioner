@@ -16,37 +16,50 @@
 
 # A set of helpers for starting/running etcd for tests
 
-ETCD_VERSION=${ETCD_VERSION:-3.0.17}
+ETCD_VERSION=${ETCD_VERSION:-3.1.12}
 ETCD_HOST=${ETCD_HOST:-127.0.0.1}
 ETCD_PORT=${ETCD_PORT:-2379}
 
 kube::etcd::validate() {
   # validate if in path
-  which etcd >/dev/null || {
+  command -v etcd >/dev/null || {
     kube::log::usage "etcd must be in your PATH"
     exit 1
   }
 
-  # validate it is not running
-  if pgrep -x etcd >/dev/null 2>&1; then
-    kube::log::usage "etcd appears to already be running on this machine (`pgrep -xl etcd`) (or its a zombie and you need to kill its parent)."
-    kube::log::usage "retry after you resolve this etcd error."
+  # validate etcd port is free
+  local port_check_command
+  if command -v ss &> /dev/null && ss -Version | grep 'iproute2' &> /dev/null; then
+    port_check_command="ss"
+  elif command -v netstat &>/dev/null; then
+    port_check_command="netstat"
+  else
+    kube::log::usage "unable to identify if etcd is bound to port ${ETCD_PORT}. unable to find ss or netstat utilities."
+    exit 1
+  fi
+  if ${port_check_command} -nat | grep "LISTEN" | grep "[\.:]${ETCD_PORT:?}" >/dev/null 2>&1; then
+    kube::log::usage "unable to start etcd as port ${ETCD_PORT} is in use. please stop the process listening on this port and retry."
+    kube::log::usage "`netstat -nat | grep "[\.:]${ETCD_PORT:?} .*LISTEN"`"
     exit 1
   fi
 
   # validate installed version is at least equal to minimum
   version=$(etcd --version | tail -n +1 | head -n 1 | cut -d " " -f 3)
-  if [[ "${version}" < "${ETCD_VERSION}" ]]; then
+  if [[ $(kube::etcd::version $ETCD_VERSION) -gt $(kube::etcd::version $version) ]]; then
    export PATH=$KUBE_ROOT/third_party/etcd:$PATH
    hash etcd
    echo $PATH
    version=$(etcd --version | head -n 1 | cut -d " " -f 3)
-   if [[ "${version}" < "${ETCD_VERSION}" ]]; then
+   if [[ $(kube::etcd::version $ETCD_VERSION) -gt $(kube::etcd::version $version) ]]; then
     kube::log::usage "etcd version ${ETCD_VERSION} or greater required."
     kube::log::info "You can use 'hack/install-etcd.sh' to install a copy in third_party/."
     exit 1
    fi
   fi
+}
+
+kube::etcd::version() {
+  printf '%s\n' "${@}" | awk -F . '{ printf("%d%03d%03d\n", $1, $2, $3) }'
 }
 
 kube::etcd::start() {
@@ -70,12 +83,16 @@ kube::etcd::start() {
 }
 
 kube::etcd::stop() {
-  kill "${ETCD_PID-}" >/dev/null 2>&1 || :
-  wait "${ETCD_PID-}" >/dev/null 2>&1 || :
+  if [[ -n "${ETCD_PID-}" ]]; then
+    kill "${ETCD_PID}" &>/dev/null || :
+    wait "${ETCD_PID}" &>/dev/null || :
+  fi
 }
 
 kube::etcd::clean_etcd_dir() {
-  rm -rf "${ETCD_DIR-}"
+  if [[ -n "${ETCD_DIR-}" ]]; then
+    rm -rf "${ETCD_DIR}"
+  fi
 }
 
 kube::etcd::cleanup() {
@@ -86,6 +103,9 @@ kube::etcd::cleanup() {
 kube::etcd::install() {
   (
     cd "${KUBE_ROOT}/third_party"
+    if [[ $(readlink etcd) == etcd-v${ETCD_VERSION}-* ]]; then
+      return  # already installed
+    fi
     if [[ $(uname) == "Darwin" ]]; then
       download_file="etcd-v${ETCD_VERSION}-darwin-amd64.zip"
       url="https://github.com/coreos/etcd/releases/download/v${ETCD_VERSION}/${download_file}"

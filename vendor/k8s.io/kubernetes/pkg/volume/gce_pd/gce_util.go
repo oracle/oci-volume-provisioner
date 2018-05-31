@@ -24,13 +24,16 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/kubernetes/pkg/api/v1"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/kubernetes/pkg/cloudprovider"
 	gcecloud "k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
-	"k8s.io/kubernetes/pkg/util/exec"
+	"k8s.io/kubernetes/pkg/features"
+	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 	"k8s.io/kubernetes/pkg/volume"
 	volumeutil "k8s.io/kubernetes/pkg/volume/util"
+	"k8s.io/utils/exec"
 )
 
 const (
@@ -40,9 +43,13 @@ const (
 	diskPartitionSuffix  = "-part"
 	diskSDPath           = "/dev/sd"
 	diskSDPattern        = "/dev/sd*"
-	maxChecks            = 60
 	maxRetries           = 10
 	checkSleepDuration   = time.Second
+	maxRegionalPDZones   = 2
+
+	// Replication type constants must be lower case.
+	replicationTypeNone       = "none"
+	replicationTypeRegionalPD = "regional-pd"
 )
 
 // These variables are modified only in unit tests and should be constant
@@ -70,64 +77,187 @@ func (util *GCEDiskUtil) DeleteVolume(d *gcePersistentDiskDeleter) error {
 }
 
 // CreateVolume creates a GCE PD.
-// Returns: volumeID, volumeSizeGB, labels, error
-func (gceutil *GCEDiskUtil) CreateVolume(c *gcePersistentDiskProvisioner) (string, int, map[string]string, error) {
+// Returns: gcePDName, volumeSizeGB, labels, fsType, error
+func (gceutil *GCEDiskUtil) CreateVolume(c *gcePersistentDiskProvisioner) (string, int, map[string]string, string, error) {
 	cloud, err := getCloudProvider(c.gcePersistentDisk.plugin.host.GetCloudProvider())
 	if err != nil {
-		return "", 0, nil, err
+		return "", 0, nil, "", err
 	}
 
-	name := volume.GenerateVolumeName(c.options.ClusterName, c.options.PVName, 63) // GCE PD name can have up to 63 characters
+	name := volumeutil.GenerateVolumeName(c.options.ClusterName, c.options.PVName, 63) // GCE PD name can have up to 63 characters
 	capacity := c.options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
-	requestBytes := capacity.Value()
-	// GCE works with gigabytes, convert to GiB with rounding up
-	requestGB := volume.RoundUpSize(requestBytes, 1024*1024*1024)
+	// GCE PDs are allocated in chunks of GBs (not GiBs)
+	requestGB := volumeutil.RoundUpToGB(capacity)
 
-	// Apply Parameters (case-insensitive). We leave validation of
-	// the values to the cloud provider.
+	// Apply Parameters.
+	// Values for parameter "replication-type" are canonicalized to lower case.
+	// Values for other parameters are case-insensitive, and we leave validation of these values
+	// to the cloud provider.
 	diskType := ""
-	zone := ""
+	configuredZone := ""
+	configuredZones := ""
+	zonePresent := false
+	zonesPresent := false
+	replicationType := replicationTypeNone
+	fstype := ""
 	for k, v := range c.options.Parameters {
 		switch strings.ToLower(k) {
 		case "type":
 			diskType = v
 		case "zone":
-			zone = v
+			zonePresent = true
+			configuredZone = v
+		case "zones":
+			zonesPresent = true
+			configuredZones = v
+		case "replication-type":
+			if !utilfeature.DefaultFeatureGate.Enabled(features.GCERegionalPersistentDisk) {
+				return "", 0, nil, "",
+					fmt.Errorf("the %q option for volume plugin %v is only supported with the %q Kubernetes feature gate enabled",
+						k, c.plugin.GetPluginName(), features.GCERegionalPersistentDisk)
+			}
+			replicationType = strings.ToLower(v)
+		case volume.VolumeParameterFSType:
+			fstype = v
 		default:
-			return "", 0, nil, fmt.Errorf("invalid option %q for volume plugin %s", k, c.plugin.GetPluginName())
+			return "", 0, nil, "", fmt.Errorf("invalid option %q for volume plugin %s", k, c.plugin.GetPluginName())
 		}
+	}
+
+	if zonePresent && zonesPresent {
+		return "", 0, nil, "", fmt.Errorf("the 'zone' and 'zones' StorageClass parameters must not be used at the same time")
+	}
+
+	if replicationType == replicationTypeRegionalPD && zonePresent {
+		// If a user accidentally types 'zone' instead of 'zones', we want to throw an error
+		// instead of assuming that 'zones' is empty and proceed by randomly selecting zones.
+		return "", 0, nil, "", fmt.Errorf("the '%s' replication type does not support the 'zone' parameter; use 'zones' instead", replicationTypeRegionalPD)
 	}
 
 	// TODO: implement PVC.Selector parsing
 	if c.options.PVC.Spec.Selector != nil {
-		return "", 0, nil, fmt.Errorf("claim.Spec.Selector is not supported for dynamic provisioning on GCE")
+		return "", 0, nil, "", fmt.Errorf("claim.Spec.Selector is not supported for dynamic provisioning on GCE")
 	}
 
-	if zone == "" {
-		// No zone specified, choose one randomly in the same region as the
-		// node is running.
-		zones, err := cloud.GetAllZones()
+	switch replicationType {
+	case replicationTypeRegionalPD:
+		err = createRegionalPD(
+			name,
+			c.options.PVC.Name,
+			diskType,
+			configuredZones,
+			requestGB,
+			c.options.CloudTags,
+			cloud)
 		if err != nil {
-			glog.V(2).Infof("error getting zone information from GCE: %v", err)
-			return "", 0, nil, err
+			glog.V(2).Infof("Error creating regional GCE PD volume: %v", err)
+			return "", 0, nil, "", err
 		}
-		zone = volume.ChooseZoneForVolume(zones, c.options.PVC.Name)
+
+		glog.V(2).Infof("Successfully created Regional GCE PD volume %s", name)
+
+	case replicationTypeNone:
+		var zones sets.String
+		if !zonePresent && !zonesPresent {
+			// 00 - neither "zone" or "zones" specified
+			// Pick a zone randomly selected from all active zones where
+			// Kubernetes cluster has a node.
+			zones, err = cloud.GetAllCurrentZones()
+			if err != nil {
+				glog.V(2).Infof("error getting zone information from GCE: %v", err)
+				return "", 0, nil, "", err
+			}
+		} else if !zonePresent && zonesPresent {
+			// 01 - "zones" specified
+			// Pick a zone randomly selected from specified set.
+			if zones, err = volumeutil.ZonesToSet(configuredZones); err != nil {
+				return "", 0, nil, "", err
+			}
+		} else if zonePresent && !zonesPresent {
+			// 10 - "zone" specified
+			// Use specified zone
+			if err := volumeutil.ValidateZone(configuredZone); err != nil {
+				return "", 0, nil, "", err
+			}
+			zones = make(sets.String)
+			zones.Insert(configuredZone)
+		}
+		zone := volumeutil.ChooseZoneForVolume(zones, c.options.PVC.Name)
+
+		if err := cloud.CreateDisk(
+			name,
+			diskType,
+			zone,
+			int64(requestGB),
+			*c.options.CloudTags); err != nil {
+			glog.V(2).Infof("Error creating single-zone GCE PD volume: %v", err)
+			return "", 0, nil, "", err
+		}
+
+		glog.V(2).Infof("Successfully created single-zone GCE PD volume %s", name)
+
+	default:
+		return "", 0, nil, "", fmt.Errorf("replication-type of '%s' is not supported", replicationType)
 	}
 
-	err = cloud.CreateDisk(name, diskType, zone, int64(requestGB), *c.options.CloudTags)
-	if err != nil {
-		glog.V(2).Infof("Error creating GCE PD volume: %v", err)
-		return "", 0, nil, err
-	}
-	glog.V(2).Infof("Successfully created GCE PD volume %s", name)
-
-	labels, err := cloud.GetAutoLabelsForPD(name, zone)
+	labels, err := cloud.GetAutoLabelsForPD(name, "" /* zone */)
 	if err != nil {
 		// We don't really want to leak the volume here...
 		glog.Errorf("error getting labels for volume %q: %v", name, err)
 	}
 
-	return name, int(requestGB), labels, nil
+	return name, int(requestGB), labels, fstype, nil
+}
+
+// Creates a Regional PD
+func createRegionalPD(
+	diskName string,
+	pvcName string,
+	diskType string,
+	zonesString string,
+	requestGB int64,
+	cloudTags *map[string]string,
+	cloud *gcecloud.GCECloud) error {
+
+	var replicaZones sets.String
+	var err error
+
+	if zonesString == "" {
+		// Consider all zones
+		replicaZones, err = cloud.GetAllCurrentZones()
+		if err != nil {
+			glog.V(2).Infof("error getting zone information from GCE: %v", err)
+			return err
+		}
+	} else {
+		replicaZones, err = volumeutil.ZonesToSet(zonesString)
+		if err != nil {
+			return err
+		}
+	}
+
+	zoneCount := replicaZones.Len()
+	var selectedReplicaZones sets.String
+	if zoneCount < maxRegionalPDZones {
+		return fmt.Errorf("cannot specify only %d zone(s) for Regional PDs.", zoneCount)
+	} else if zoneCount == maxRegionalPDZones {
+		selectedReplicaZones = replicaZones
+	} else {
+		// Must randomly select zones
+		selectedReplicaZones = volumeutil.ChooseZonesForVolume(
+			replicaZones, pvcName, maxRegionalPDZones)
+	}
+
+	if err = cloud.CreateRegionalDisk(
+		diskName,
+		diskType,
+		selectedReplicaZones,
+		int64(requestGB),
+		*cloudTags); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Returns the first path that exists, or empty string if none exist.
@@ -247,4 +377,14 @@ func udevadmChangeToDrive(drivePath string) error {
 		return fmt.Errorf("udevadmChangeToDrive: udevadm trigger failed for drive %q with %v.", drive, err)
 	}
 	return nil
+}
+
+// Checks whether the given GCE PD volume spec is associated with a regional PD.
+func isRegionalPD(spec *volume.Spec) bool {
+	if spec.PersistentVolume != nil {
+		zonesLabel := spec.PersistentVolume.Labels[kubeletapis.LabelZoneFailureDomain]
+		zones := strings.Split(zonesLabel, kubeletapis.LabelMultiZoneDelimiter)
+		return len(zones) > 1
+	}
+	return false
 }

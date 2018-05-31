@@ -31,17 +31,19 @@ import (
 	"k8s.io/kube-aggregator/pkg/apis/apiregistration"
 	informers "k8s.io/kube-aggregator/pkg/client/informers/internalversion/apiregistration/internalversion"
 	listers "k8s.io/kube-aggregator/pkg/client/listers/apiregistration/internalversion"
+	"k8s.io/kube-aggregator/pkg/controllers"
 )
 
 type APIHandlerManager interface {
-	AddAPIService(apiServer *apiregistration.APIService)
-	RemoveAPIService(apiServerName string)
+	AddAPIService(apiService *apiregistration.APIService) error
+	RemoveAPIService(apiServiceName string)
 }
 
 type APIServiceRegistrationController struct {
 	apiHandlerManager APIHandlerManager
 
-	apiServerLister listers.APIServiceLister
+	apiServiceLister listers.APIServiceLister
+	apiServiceSynced cache.InformerSynced
 
 	// To allow injection for testing.
 	syncFn func(key string) error
@@ -49,14 +51,15 @@ type APIServiceRegistrationController struct {
 	queue workqueue.RateLimitingInterface
 }
 
-func NewAPIServiceRegistrationController(apiServerInformer informers.APIServiceInformer, apiHandlerManager APIHandlerManager) *APIServiceRegistrationController {
+func NewAPIServiceRegistrationController(apiServiceInformer informers.APIServiceInformer, apiHandlerManager APIHandlerManager) *APIServiceRegistrationController {
 	c := &APIServiceRegistrationController{
 		apiHandlerManager: apiHandlerManager,
-		apiServerLister:   apiServerInformer.Lister(),
+		apiServiceLister:  apiServiceInformer.Lister(),
+		apiServiceSynced:  apiServiceInformer.Informer().HasSynced,
 		queue:             workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "APIServiceRegistrationController"),
 	}
 
-	apiServerInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	apiServiceInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    c.addAPIService,
 		UpdateFunc: c.updateAPIService,
 		DeleteFunc: c.deleteAPIService,
@@ -68,7 +71,7 @@ func NewAPIServiceRegistrationController(apiServerInformer informers.APIServiceI
 }
 
 func (c *APIServiceRegistrationController) sync(key string) error {
-	apiServer, err := c.apiServerLister.Get(key)
+	apiService, err := c.apiServiceLister.Get(key)
 	if apierrors.IsNotFound(err) {
 		c.apiHandlerManager.RemoveAPIService(key)
 		return nil
@@ -77,16 +80,19 @@ func (c *APIServiceRegistrationController) sync(key string) error {
 		return err
 	}
 
-	c.apiHandlerManager.AddAPIService(apiServer)
-	return nil
+	return c.apiHandlerManager.AddAPIService(apiService)
 }
 
 func (c *APIServiceRegistrationController) Run(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer c.queue.ShutDown()
-	defer glog.Infof("Shutting down APIServiceRegistrationController")
 
 	glog.Infof("Starting APIServiceRegistrationController")
+	defer glog.Infof("Shutting down APIServiceRegistrationController")
+
+	if !controllers.WaitForCacheSync("APIServiceRegistrationController", stopCh, c.apiServiceSynced) {
+		return
+	}
 
 	// only start one worker thread since its a slow moving API and the aggregation server adding bits
 	// aren't threadsafe

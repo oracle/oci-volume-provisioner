@@ -30,7 +30,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/hawkular/hawkular-client-go/metrics"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/api"
+	api "k8s.io/kubernetes/pkg/apis/core"
 
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -95,11 +95,7 @@ func (hs *hawkularSource) GetUsagePercentile(kind api.ResourceName, perc int64, 
 		m = append(m, metrics.Tenant(namespace))
 	}
 
-	p, err := metrics.ConvertToFloat64(perc)
-	if err != nil {
-		return 0, 0, err
-	}
-
+	p := float64(perc)
 	m = append(m, metrics.Filters(metrics.TagsFilter(q), metrics.BucketsFilter(1), metrics.StartTimeFilter(start), metrics.EndTimeFilter(end), metrics.PercentilesFilter([]float64{p})))
 
 	bp, err := hs.client.ReadBuckets(metrics.Counter, m...)

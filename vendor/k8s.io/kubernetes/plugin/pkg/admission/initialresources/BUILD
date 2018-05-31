@@ -1,7 +1,5 @@
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])
-
 load(
     "@io_bazel_rules_go//go:def.bzl",
     "go_library",
@@ -17,22 +15,22 @@ go_library(
         "hawkular.go",
         "influxdb.go",
     ],
-    tags = ["automanaged"],
+    importpath = "k8s.io/kubernetes/plugin/pkg/admission/initialresources",
     deps = [
-        "//pkg/api:go_default_library",
-        "//vendor:cloud.google.com/go/compute/metadata",
-        "//vendor:github.com/golang/glog",
-        "//vendor:github.com/hawkular/hawkular-client-go/metrics",
-        "//vendor:github.com/influxdata/influxdb/client",
-        "//vendor:golang.org/x/oauth2",
-        "//vendor:golang.org/x/oauth2/google",
-        "//vendor:google.golang.org/api/cloudmonitoring/v2beta2",
-        "//vendor:k8s.io/apimachinery/pkg/api/errors",
-        "//vendor:k8s.io/apimachinery/pkg/api/resource",
-        "//vendor:k8s.io/apimachinery/pkg/apis/meta/v1",
-        "//vendor:k8s.io/apiserver/pkg/admission",
-        "//vendor:k8s.io/client-go/rest",
-        "//vendor:k8s.io/client-go/tools/clientcmd",
+        "//pkg/apis/core:go_default_library",
+        "//vendor/cloud.google.com/go/compute/metadata:go_default_library",
+        "//vendor/github.com/golang/glog:go_default_library",
+        "//vendor/github.com/hawkular/hawkular-client-go/metrics:go_default_library",
+        "//vendor/github.com/influxdata/influxdb/client:go_default_library",
+        "//vendor/golang.org/x/oauth2:go_default_library",
+        "//vendor/golang.org/x/oauth2/google:go_default_library",
+        "//vendor/google.golang.org/api/cloudmonitoring/v2beta2:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/api/errors:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/api/resource:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
+        "//vendor/k8s.io/apiserver/pkg/admission:go_default_library",
+        "//vendor/k8s.io/client-go/rest:go_default_library",
+        "//vendor/k8s.io/client-go/tools/clientcmd:go_default_library",
     ],
 )
 
@@ -40,16 +38,21 @@ go_test(
     name = "go_default_test",
     srcs = [
         "admission_test.go",
+        "data_source_test.go",
+        "gcm_test.go",
         "hawkular_test.go",
+        "influxdb_test.go",
     ],
-    library = ":go_default_library",
-    tags = ["automanaged"],
+    embed = [":go_default_library"],
     deps = [
-        "//pkg/api:go_default_library",
-        "//vendor:github.com/stretchr/testify/require",
-        "//vendor:k8s.io/apimachinery/pkg/api/resource",
-        "//vendor:k8s.io/apimachinery/pkg/apis/meta/v1",
-        "//vendor:k8s.io/apiserver/pkg/admission",
+        "//pkg/apis/core:go_default_library",
+        "//vendor/github.com/stretchr/testify/require:go_default_library",
+        "//vendor/golang.org/x/oauth2:go_default_library",
+        "//vendor/golang.org/x/oauth2/google:go_default_library",
+        "//vendor/google.golang.org/api/cloudmonitoring/v2beta2:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/api/resource:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
+        "//vendor/k8s.io/apiserver/pkg/admission:go_default_library",
     ],
 )
 

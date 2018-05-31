@@ -20,9 +20,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/registry/generic"
 	genericregistry "k8s.io/apiserver/pkg/registry/generic/registry"
-	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/apis/extensions"
-	"k8s.io/kubernetes/pkg/registry/cachesize"
+	"k8s.io/kubernetes/pkg/printers"
+	printersinternal "k8s.io/kubernetes/pkg/printers/internalversion"
+	printerstorage "k8s.io/kubernetes/pkg/printers/storage"
 	"k8s.io/kubernetes/pkg/registry/extensions/podsecuritypolicy"
 )
 
@@ -34,22 +35,18 @@ type REST struct {
 // NewREST returns a RESTStorage object that will work against PodSecurityPolicy objects.
 func NewREST(optsGetter generic.RESTOptionsGetter) *REST {
 	store := &genericregistry.Store{
-		Copier:      api.Scheme,
-		NewFunc:     func() runtime.Object { return &extensions.PodSecurityPolicy{} },
-		NewListFunc: func() runtime.Object { return &extensions.PodSecurityPolicyList{} },
-		ObjectNameFunc: func(obj runtime.Object) (string, error) {
-			return obj.(*extensions.PodSecurityPolicy).Name, nil
-		},
-		PredicateFunc:     podsecuritypolicy.MatchPodSecurityPolicy,
-		QualifiedResource: extensions.Resource("podsecuritypolicies"),
-		WatchCacheSize:    cachesize.GetWatchCacheSizeByResource("podsecuritypolicies"),
+		NewFunc:                  func() runtime.Object { return &extensions.PodSecurityPolicy{} },
+		NewListFunc:              func() runtime.Object { return &extensions.PodSecurityPolicyList{} },
+		DefaultQualifiedResource: extensions.Resource("podsecuritypolicies"),
 
 		CreateStrategy:      podsecuritypolicy.Strategy,
 		UpdateStrategy:      podsecuritypolicy.Strategy,
 		DeleteStrategy:      podsecuritypolicy.Strategy,
 		ReturnDeletedObject: true,
+
+		TableConvertor: printerstorage.TableConvertor{TablePrinter: printers.NewTablePrinter().With(printersinternal.AddHandlers)},
 	}
-	options := &generic.StoreOptions{RESTOptions: optsGetter, AttrFunc: podsecuritypolicy.GetAttrs}
+	options := &generic.StoreOptions{RESTOptions: optsGetter}
 	if err := store.CompleteWithOptions(options); err != nil {
 		panic(err) // TODO: Propagate error up
 	}

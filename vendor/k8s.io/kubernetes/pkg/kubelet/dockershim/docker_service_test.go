@@ -18,19 +18,20 @@ package dockershim
 
 import (
 	"errors"
+	"math/rand"
 	"testing"
 	"time"
 
 	"github.com/blang/semver"
-	dockertypes "github.com/docker/engine-api/types"
+	dockertypes "github.com/docker/docker/api/types"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"k8s.io/client-go/util/clock"
-	runtimeapi "k8s.io/kubernetes/pkg/kubelet/api/v1alpha1/runtime"
+	"k8s.io/apimachinery/pkg/util/clock"
+	runtimeapi "k8s.io/kubernetes/pkg/kubelet/apis/cri/runtime/v1alpha2"
 	containertest "k8s.io/kubernetes/pkg/kubelet/container/testing"
-	"k8s.io/kubernetes/pkg/kubelet/dockertools"
+	"k8s.io/kubernetes/pkg/kubelet/dockershim/libdocker"
 	"k8s.io/kubernetes/pkg/kubelet/network"
 	nettest "k8s.io/kubernetes/pkg/kubelet/network/testing"
 	"k8s.io/kubernetes/pkg/kubelet/util/cache"
@@ -42,15 +43,20 @@ func newTestNetworkPlugin(t *testing.T) *nettest.MockNetworkPlugin {
 	return nettest.NewMockNetworkPlugin(ctrl)
 }
 
-func newTestDockerService() (*dockerService, *dockertools.FakeDockerClient, *clock.FakeClock) {
+func newTestDockerService() (*dockerService, *libdocker.FakeDockerClient, *clock.FakeClock) {
 	fakeClock := clock.NewFakeClock(time.Time{})
-	c := dockertools.NewFakeDockerClient().WithClock(fakeClock).WithVersion("1.11.2", "1.23")
+	c := libdocker.NewFakeDockerClient().WithClock(fakeClock).WithVersion("1.11.2", "1.23").WithRandSource(rand.NewSource(0))
 	pm := network.NewPluginManager(&network.NoopNetworkPlugin{})
-	return &dockerService{client: c, os: &containertest.FakeOS{}, network: pm,
-		legacyCleanup: legacyCleanupFlag{done: 1}, checkpointHandler: NewTestPersistentCheckpointHandler()}, c, fakeClock
+	return &dockerService{
+		client:            c,
+		os:                &containertest.FakeOS{},
+		network:           pm,
+		checkpointHandler: NewTestPersistentCheckpointHandler(),
+		networkReady:      make(map[string]bool),
+	}, c, fakeClock
 }
 
-func newTestDockerServiceWithVersionCache() (*dockerService, *dockertools.FakeDockerClient, *clock.FakeClock) {
+func newTestDockerServiceWithVersionCache() (*dockerService, *libdocker.FakeDockerClient, *clock.FakeClock) {
 	ds, c, fakeClock := newTestDockerService()
 	ds.versionCache = cache.NewObjectCache(
 		func() (interface{}, error) {
@@ -78,33 +84,33 @@ func TestStatus(t *testing.T) {
 	}
 
 	// Should report ready status if version returns no error.
-	status, err := ds.Status()
-	assert.NoError(t, err)
+	statusResp, err := ds.Status(getTestCTX(), &runtimeapi.StatusRequest{})
+	require.NoError(t, err)
 	assertStatus(map[string]bool{
 		runtimeapi.RuntimeReady: true,
 		runtimeapi.NetworkReady: true,
-	}, status)
+	}, statusResp.Status)
 
 	// Should not report ready status if version returns error.
 	fDocker.InjectError("version", errors.New("test error"))
-	status, err = ds.Status()
+	statusResp, err = ds.Status(getTestCTX(), &runtimeapi.StatusRequest{})
 	assert.NoError(t, err)
 	assertStatus(map[string]bool{
 		runtimeapi.RuntimeReady: false,
 		runtimeapi.NetworkReady: true,
-	}, status)
+	}, statusResp.Status)
 
 	// Should not report ready status is network plugin returns error.
 	mockPlugin := newTestNetworkPlugin(t)
 	ds.network = network.NewPluginManager(mockPlugin)
 	defer mockPlugin.Finish()
 	mockPlugin.EXPECT().Status().Return(errors.New("network error"))
-	status, err = ds.Status()
+	statusResp, err = ds.Status(getTestCTX(), &runtimeapi.StatusRequest{})
 	assert.NoError(t, err)
 	assertStatus(map[string]bool{
 		runtimeapi.RuntimeReady: true,
 		runtimeapi.NetworkReady: false,
-	}, status)
+	}, statusResp.Status)
 }
 
 func TestVersion(t *testing.T) {

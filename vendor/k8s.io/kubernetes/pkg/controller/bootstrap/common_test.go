@@ -21,11 +21,11 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/pkg/api"
-	"k8s.io/client-go/pkg/api/v1"
 	core "k8s.io/client-go/testing"
-	bootstrapapi "k8s.io/kubernetes/pkg/bootstrap/api"
+	bootstrapapi "k8s.io/client-go/tools/bootstrap/token/api"
+	"k8s.io/kubernetes/pkg/apis/core/helper"
 )
 
 func newTokenSecret(tokenID, tokenSecret string) *v1.Secret {
@@ -59,7 +59,7 @@ func verifyActions(t *testing.T, expected, actual []core.Action) {
 		}
 
 		e := expected[i]
-		if !api.Semantic.DeepEqual(e, a) {
+		if !helper.Semantic.DeepEqual(e, a) {
 			t.Errorf("Expected\n\t%s\ngot\n\t%s", spew.Sdump(e), spew.Sdump(a))
 			continue
 		}

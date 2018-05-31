@@ -25,21 +25,23 @@ package photon
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/golang/glog"
 	"github.com/vmware/photon-controller-go-sdk/photon"
 	"gopkg.in/gcfg.v1"
+	"k8s.io/api/core/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
-	"k8s.io/kubernetes/pkg/api/v1"
+	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	"k8s.io/kubernetes/pkg/cloudprovider"
+	"k8s.io/kubernetes/pkg/controller"
 )
 
 const (
@@ -49,7 +51,7 @@ const (
 	MAC_OUI_ESX  = "00:0c:29"
 )
 
-// overrideIP indicates if the hostname is overriden by IP address, such as when
+// overrideIP indicates if the hostname is overridden by IP address, such as when
 // running multi-node kubernetes using docker. In this case the user should set
 // overrideIP = true in cloud config file. Default value is false.
 var overrideIP bool = false
@@ -91,18 +93,18 @@ type PCConfig struct {
 type Disks interface {
 	// AttachDisk attaches given disk to given node. Current node
 	// is used when nodeName is empty string.
-	AttachDisk(pdID string, nodeName k8stypes.NodeName) error
+	AttachDisk(ctx context.Context, pdID string, nodeName k8stypes.NodeName) error
 
 	// DetachDisk detaches given disk to given node. Current node
 	// is used when nodeName is empty string.
-	DetachDisk(pdID string, nodeName k8stypes.NodeName) error
+	DetachDisk(ctx context.Context, pdID string, nodeName k8stypes.NodeName) error
 
 	// DiskIsAttached checks if a disk is attached to the given node.
-	DiskIsAttached(pdID string, nodeName k8stypes.NodeName) (bool, error)
+	DiskIsAttached(ctx context.Context, pdID string, nodeName k8stypes.NodeName) (bool, error)
 
 	// DisksAreAttached is a batch function to check if a list of disks are attached
 	// to the node with the specified NodeName.
-	DisksAreAttached(pdIDs []string, nodeName k8stypes.NodeName) (map[string]bool, error)
+	DisksAreAttached(ctx context.Context, pdIDs []string, nodeName k8stypes.NodeName) (map[string]bool, error)
 
 	// CreateDisk creates a new PD with given properties.
 	CreateDisk(volumeOptions *VolumeOptions) (pdID string, err error)
@@ -185,7 +187,7 @@ func getVMIDbyIP(pc *PCCloud, IPAddress string) (string, error) {
 		} else {
 			task, err = photonClient.Tasks.Wait(task.ID)
 			if err != nil {
-				glog.Warning("Photon Cloud Provider: Wait task for GetNetworks failed for vm.ID %s, error [%v]", vm.ID, err)
+				glog.Warningf("Photon Cloud Provider: Wait task for GetNetworks failed for vm.ID %s, error [%v]", vm.ID, err)
 			} else {
 				networkConnections := task.ResourceProperties.(map[string]interface{})
 				networks := networkConnections["networkConnections"].([]interface{})
@@ -256,7 +258,7 @@ func getPhotonClient(pc *PCCloud) (*photon.Client, error) {
 		glog.Errorf("Photon Cloud Provider: new client creation failed. Error[%v]", err)
 		return nil, err
 	}
-	glog.V(2).Info("Photon Cloud Provider: Status of the new photon controller client: %v", status)
+	glog.V(2).Infof("Photon Cloud Provider: Status of the new photon controller client: %v", status)
 
 	return pc.photonClient, nil
 }
@@ -266,18 +268,11 @@ func newPCCloud(cfg PCConfig) (*PCCloud, error) {
 	vmID := cfg.Global.VMID
 
 	// Get local hostname
-	cmd := exec.Command("bash", "-c", `echo $HOSTNAME`)
-	out, err := cmd.CombinedOutput()
+	hostname, err := os.Hostname()
 	if err != nil {
-		glog.Errorf("Photon Cloud Provider: get local hostname bash command failed. Error[%v]", err)
+		glog.Errorf("Photon Cloud Provider: get hostname failed. Error[%v]", err)
 		return nil, err
 	}
-	if len(out) == 0 {
-		glog.Errorf("unable to retrieve hostname for Instance ID")
-		return nil, fmt.Errorf("unable to retrieve hostname for Instance ID")
-	}
-	hostname := strings.TrimRight(string(out), "\n")
-
 	pc := PCCloud{
 		cfg:              &cfg,
 		localInstanceID:  vmID,
@@ -291,6 +286,9 @@ func newPCCloud(cfg PCConfig) (*PCCloud, error) {
 	return &pc, nil
 }
 
+// Initialize passes a Kubernetes clientBuilder interface to the cloud provider
+func (pc *PCCloud) Initialize(clientBuilder controller.ControllerClientBuilder) {}
+
 // Instances returns an implementation of Instances for Photon Controller.
 func (pc *PCCloud) Instances() (cloudprovider.Instances, bool) {
 	return pc, true
@@ -302,7 +300,7 @@ func (pc *PCCloud) List(filter string) ([]k8stypes.NodeName, error) {
 }
 
 // NodeAddresses is an implementation of Instances.NodeAddresses.
-func (pc *PCCloud) NodeAddresses(nodeName k8stypes.NodeName) ([]v1.NodeAddress, error) {
+func (pc *PCCloud) NodeAddresses(ctx context.Context, nodeName k8stypes.NodeName) ([]v1.NodeAddress, error) {
 	nodeAddrs := []v1.NodeAddress{}
 	name := string(nodeName)
 
@@ -324,14 +322,14 @@ func (pc *PCCloud) NodeAddresses(nodeName k8stypes.NodeName) ([]v1.NodeAddress, 
 							// Filter external IP by MAC address OUIs from vCenter and from ESX
 							if strings.HasPrefix(i.HardwareAddr.String(), MAC_OUI_VC) ||
 								strings.HasPrefix(i.HardwareAddr.String(), MAC_OUI_ESX) {
-								v1.AddToNodeAddresses(&nodeAddrs,
+								v1helper.AddToNodeAddresses(&nodeAddrs,
 									v1.NodeAddress{
 										Type:    v1.NodeExternalIP,
 										Address: ipnet.IP.String(),
 									},
 								)
 							} else {
-								v1.AddToNodeAddresses(&nodeAddrs,
+								v1helper.AddToNodeAddresses(&nodeAddrs,
 									v1.NodeAddress{
 										Type:    v1.NodeInternalIP,
 										Address: ipnet.IP.String(),
@@ -394,14 +392,14 @@ func (pc *PCCloud) NodeAddresses(nodeName k8stypes.NodeName) ([]v1.NodeAddress, 
 						if ipAddr != "-" {
 							if strings.HasPrefix(macAddr, MAC_OUI_VC) ||
 								strings.HasPrefix(macAddr, MAC_OUI_ESX) {
-								v1.AddToNodeAddresses(&nodeAddrs,
+								v1helper.AddToNodeAddresses(&nodeAddrs,
 									v1.NodeAddress{
 										Type:    v1.NodeExternalIP,
 										Address: ipAddr,
 									},
 								)
 							} else {
-								v1.AddToNodeAddresses(&nodeAddrs,
+								v1helper.AddToNodeAddresses(&nodeAddrs,
 									v1.NodeAddress{
 										Type:    v1.NodeInternalIP,
 										Address: ipAddr,
@@ -420,11 +418,18 @@ func (pc *PCCloud) NodeAddresses(nodeName k8stypes.NodeName) ([]v1.NodeAddress, 
 	return nodeAddrs, fmt.Errorf("Failed to find the node %s from Photon Controller endpoint", name)
 }
 
-func (pc *PCCloud) AddSSHKeyToAllInstances(user string, keyData []byte) error {
-	return errors.New("unimplemented")
+// NodeAddressesByProviderID returns the node addresses of an instances with the specified unique providerID
+// This method will not be called from the node that is requesting this ID. i.e. metadata service
+// and other local methods cannot be used here
+func (pc *PCCloud) NodeAddressesByProviderID(ctx context.Context, providerID string) ([]v1.NodeAddress, error) {
+	return []v1.NodeAddress{}, cloudprovider.NotImplemented
 }
 
-func (pc *PCCloud) CurrentNodeName(hostname string) (k8stypes.NodeName, error) {
+func (pc *PCCloud) AddSSHKeyToAllInstances(ctx context.Context, user string, keyData []byte) error {
+	return cloudprovider.NotImplemented
+}
+
+func (pc *PCCloud) CurrentNodeName(ctx context.Context, hostname string) (k8stypes.NodeName, error) {
 	pc.localK8sHostname = hostname
 	return k8stypes.NodeName(hostname), nil
 }
@@ -450,7 +455,7 @@ func getInstanceID(pc *PCCloud, name string) (string, error) {
 }
 
 // ExternalID returns the cloud provider ID of the specified instance (deprecated).
-func (pc *PCCloud) ExternalID(nodeName k8stypes.NodeName) (string, error) {
+func (pc *PCCloud) ExternalID(ctx context.Context, nodeName k8stypes.NodeName) (string, error) {
 	name := string(nodeName)
 	if name == pc.localK8sHostname {
 		return pc.localInstanceID, nil
@@ -466,8 +471,14 @@ func (pc *PCCloud) ExternalID(nodeName k8stypes.NodeName) (string, error) {
 	}
 }
 
+// InstanceExistsByProviderID returns true if the instance with the given provider id still exists and is running.
+// If false is returned with no error, the instance will be immediately deleted by the cloud controller manager.
+func (pc *PCCloud) InstanceExistsByProviderID(ctx context.Context, providerID string) (bool, error) {
+	return false, cloudprovider.NotImplemented
+}
+
 // InstanceID returns the cloud provider ID of the specified instance.
-func (pc *PCCloud) InstanceID(nodeName k8stypes.NodeName) (string, error) {
+func (pc *PCCloud) InstanceID(ctx context.Context, nodeName k8stypes.NodeName) (string, error) {
 	name := string(nodeName)
 	if name == pc.localK8sHostname {
 		return pc.localInstanceID, nil
@@ -483,7 +494,14 @@ func (pc *PCCloud) InstanceID(nodeName k8stypes.NodeName) (string, error) {
 	}
 }
 
-func (pc *PCCloud) InstanceType(nodeName k8stypes.NodeName) (string, error) {
+// InstanceTypeByProviderID returns the cloudprovider instance type of the node with the specified unique providerID
+// This method will not be called from the node that is requesting this ID. i.e. metadata service
+// and other local methods cannot be used here
+func (pc *PCCloud) InstanceTypeByProviderID(ctx context.Context, providerID string) (string, error) {
+	return "", cloudprovider.NotImplemented
+}
+
+func (pc *PCCloud) InstanceType(ctx context.Context, nodeName k8stypes.NodeName) (string, error) {
 	return "", nil
 }
 
@@ -506,8 +524,22 @@ func (pc *PCCloud) Zones() (cloudprovider.Zones, bool) {
 	return pc, true
 }
 
-func (pc *PCCloud) GetZone() (cloudprovider.Zone, error) {
+func (pc *PCCloud) GetZone(ctx context.Context) (cloudprovider.Zone, error) {
 	return pc.Zone, nil
+}
+
+// GetZoneByProviderID implements Zones.GetZoneByProviderID
+// This is particularly useful in external cloud providers where the kubelet
+// does not initialize node data.
+func (pc *PCCloud) GetZoneByProviderID(ctx context.Context, providerID string) (cloudprovider.Zone, error) {
+	return cloudprovider.Zone{}, errors.New("GetZoneByProviderID not implemented")
+}
+
+// GetZoneByNodeName implements Zones.GetZoneByNodeName
+// This is particularly useful in external cloud providers where the kubelet
+// does not initialize node data.
+func (pc *PCCloud) GetZoneByNodeName(ctx context.Context, nodeName k8stypes.NodeName) (cloudprovider.Zone, error) {
+	return cloudprovider.Zone{}, errors.New("GetZoneByNodeName not imeplemented")
 }
 
 // Routes returns a false since the interface is not supported for photon controller.
@@ -515,13 +547,13 @@ func (pc *PCCloud) Routes() (cloudprovider.Routes, bool) {
 	return nil, false
 }
 
-// ScrubDNS filters DNS settings for pods.
-func (pc *PCCloud) ScrubDNS(nameservers, searches []string) (nsOut, srchOut []string) {
-	return nameservers, searches
+// HasClusterID returns true if the cluster has a clusterID
+func (pc *PCCloud) HasClusterID() bool {
+	return true
 }
 
 // Attaches given virtual disk volume to the compute running kubelet.
-func (pc *PCCloud) AttachDisk(pdID string, nodeName k8stypes.NodeName) error {
+func (pc *PCCloud) AttachDisk(ctx context.Context, pdID string, nodeName k8stypes.NodeName) error {
 	photonClient, err := getPhotonClient(pc)
 	if err != nil {
 		glog.Errorf("Photon Cloud Provider: Failed to get photon client for AttachDisk, error: [%v]", err)
@@ -532,7 +564,7 @@ func (pc *PCCloud) AttachDisk(pdID string, nodeName k8stypes.NodeName) error {
 		DiskID: pdID,
 	}
 
-	vmID, err := pc.InstanceID(nodeName)
+	vmID, err := pc.InstanceID(ctx, nodeName)
 	if err != nil {
 		glog.Errorf("Photon Cloud Provider: pc.InstanceID failed for AttachDisk. Error[%v]", err)
 		return err
@@ -554,7 +586,7 @@ func (pc *PCCloud) AttachDisk(pdID string, nodeName k8stypes.NodeName) error {
 }
 
 // Detaches given virtual disk volume from the compute running kubelet.
-func (pc *PCCloud) DetachDisk(pdID string, nodeName k8stypes.NodeName) error {
+func (pc *PCCloud) DetachDisk(ctx context.Context, pdID string, nodeName k8stypes.NodeName) error {
 	photonClient, err := getPhotonClient(pc)
 	if err != nil {
 		glog.Errorf("Photon Cloud Provider: Failed to get photon client for DetachDisk, error: [%v]", err)
@@ -565,7 +597,7 @@ func (pc *PCCloud) DetachDisk(pdID string, nodeName k8stypes.NodeName) error {
 		DiskID: pdID,
 	}
 
-	vmID, err := pc.InstanceID(nodeName)
+	vmID, err := pc.InstanceID(ctx, nodeName)
 	if err != nil {
 		glog.Errorf("Photon Cloud Provider: pc.InstanceID failed for DetachDisk. Error[%v]", err)
 		return err
@@ -587,7 +619,7 @@ func (pc *PCCloud) DetachDisk(pdID string, nodeName k8stypes.NodeName) error {
 }
 
 // DiskIsAttached returns if disk is attached to the VM using controllers supported by the plugin.
-func (pc *PCCloud) DiskIsAttached(pdID string, nodeName k8stypes.NodeName) (bool, error) {
+func (pc *PCCloud) DiskIsAttached(ctx context.Context, pdID string, nodeName k8stypes.NodeName) (bool, error) {
 	photonClient, err := getPhotonClient(pc)
 	if err != nil {
 		glog.Errorf("Photon Cloud Provider: Failed to get photon client for DiskIsAttached, error: [%v]", err)
@@ -600,14 +632,18 @@ func (pc *PCCloud) DiskIsAttached(pdID string, nodeName k8stypes.NodeName) (bool
 		return false, err
 	}
 
-	vmID, err := pc.InstanceID(nodeName)
+	vmID, err := pc.InstanceID(ctx, nodeName)
+	if err == cloudprovider.InstanceNotFound {
+		glog.Infof("Instance %q does not exist, disk %s will be detached automatically.", nodeName, pdID)
+		return false, nil
+	}
 	if err != nil {
 		glog.Errorf("Photon Cloud Provider: pc.InstanceID failed for DiskIsAttached. Error[%v]", err)
 		return false, err
 	}
 
 	for _, vm := range disk.VMs {
-		if strings.Compare(vm, vmID) == 0 {
+		if vm == vmID {
 			return true, nil
 		}
 	}
@@ -616,7 +652,7 @@ func (pc *PCCloud) DiskIsAttached(pdID string, nodeName k8stypes.NodeName) (bool
 }
 
 // DisksAreAttached returns if disks are attached to the VM using controllers supported by the plugin.
-func (pc *PCCloud) DisksAreAttached(pdIDs []string, nodeName k8stypes.NodeName) (map[string]bool, error) {
+func (pc *PCCloud) DisksAreAttached(ctx context.Context, pdIDs []string, nodeName k8stypes.NodeName) (map[string]bool, error) {
 	attached := make(map[string]bool)
 	photonClient, err := getPhotonClient(pc)
 	if err != nil {
@@ -628,7 +664,12 @@ func (pc *PCCloud) DisksAreAttached(pdIDs []string, nodeName k8stypes.NodeName) 
 		attached[pdID] = false
 	}
 
-	vmID, err := pc.InstanceID(nodeName)
+	vmID, err := pc.InstanceID(ctx, nodeName)
+	if err == cloudprovider.InstanceNotFound {
+		glog.Infof("Instance %q does not exist, its disks will be detached automatically.", nodeName)
+		// make all the disks as detached.
+		return attached, nil
+	}
 	if err != nil {
 		glog.Errorf("Photon Cloud Provider: pc.InstanceID failed for DiskIsAttached. Error[%v]", err)
 		return attached, err

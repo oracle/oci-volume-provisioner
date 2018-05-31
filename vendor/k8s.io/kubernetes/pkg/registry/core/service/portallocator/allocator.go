@@ -21,7 +21,7 @@ import (
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/util/net"
-	"k8s.io/kubernetes/pkg/api"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/registry/core/service/allocator"
 
 	"github.com/golang/glog"
@@ -34,6 +34,9 @@ type Interface interface {
 	AllocateNext() (int, error)
 	Release(int) error
 	ForEach(func(int))
+
+	// For testing
+	Has(int) bool
 }
 
 var (
@@ -71,7 +74,7 @@ func NewPortAllocatorCustom(pr net.PortRange, allocatorFactory allocator.Allocat
 	return a
 }
 
-// Helper that wraps NewAllocatorCIDRRange, for creating a range backed by an in-memory store.
+// Helper that wraps NewPortAllocatorCustom, for creating a range backed by an in-memory store.
 func NewPortAllocator(pr net.PortRange) *PortAllocator {
 	return NewPortAllocatorCustom(pr, func(max int, rangeSpec string) allocator.Interface {
 		return allocator.NewAllocationMap(max, rangeSpec)

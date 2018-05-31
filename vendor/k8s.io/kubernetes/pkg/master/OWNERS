@@ -18,7 +18,6 @@ reviewers:
 - mikedanese
 - liggitt
 - nikhiljindal
-- bprashanth
 - gmarek
 - erictune
 - davidopp
@@ -31,12 +30,12 @@ reviewers:
 - justinsb
 - roberthbailey
 - ncdc
-- timstclair
+- tallclair
 - mwielgus
 - timothysc
 - soltysh
 - piosz
 - madhusudancs
 - hongchaodeng
-- krousey
 - jszczepkowski
+- enj
