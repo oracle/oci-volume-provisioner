@@ -11,6 +11,7 @@ load(
 go_library(
     name = "go_default_library",
     srcs = [
+        "consistentread.go",
         "io.go",
         "writer.go",
     ],
@@ -18,8 +19,8 @@ go_library(
     deps = [
         "//pkg/api:go_default_library",
         "//pkg/api/v1:go_default_library",
-        "//vendor:github.com/golang/glog",
-        "//vendor:k8s.io/apimachinery/pkg/runtime",
+        "//vendor/github.com/golang/glog:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/runtime:go_default_library",
     ],
 )
 
@@ -31,10 +32,10 @@ go_test(
         "//pkg/api:go_default_library",
         "//pkg/util/io:go_default_library",
         "//pkg/volume:go_default_library",
-        "//vendor:github.com/pborman/uuid",
-        "//vendor:k8s.io/apimachinery/pkg/api/equality",
-        "//vendor:k8s.io/apimachinery/pkg/runtime",
-        "//vendor:k8s.io/client-go/util/testing",
+        "//vendor/github.com/pborman/uuid:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/api/equality:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/runtime:go_default_library",
+        "//vendor/k8s.io/client-go/util/testing:go_default_library",
     ],
 )
 

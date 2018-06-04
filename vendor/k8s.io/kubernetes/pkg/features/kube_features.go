@@ -25,8 +25,8 @@ const (
 	// Every feature gate should add method here following this template:
 	//
 	// // owner: @username
-	// // alpha: v1.4
-	// MyFeature() bool
+	// // alpha: v1.X
+	// MyFeature utilfeature.Feature = "MyFeature"
 
 	// owner: @timstclair
 	// beta: v1.4
@@ -88,6 +88,54 @@ const (
 	// Changes the logic behind evicting Pods from not ready Nodes
 	// to take advantage of NoExecute Taints and Tolerations.
 	TaintBasedEvictions utilfeature.Feature = "TaintBasedEvictions"
+
+	// owner: @jcbsmpsn
+	// alpha: v1.7
+	//
+	// Gets a server certificate for the kubelet from the Certificate Signing
+	// Request API instead of generating one self signed and auto rotates the
+	// certificate as expiration approaches.
+	RotateKubeletServerCertificate utilfeature.Feature = "RotateKubeletServerCertificate"
+
+	// owner: @jcbsmpsn
+	// alpha: v1.7
+	//
+	// Automatically renews the client certificate used for communicating with
+	// the API server as the certificate approaches expiration.
+	RotateKubeletClientCertificate utilfeature.Feature = "RotateKubeletClientCertificate"
+
+	// owner: @msau
+	// alpha: v1.7
+	//
+	// A new volume type that supports local disks on a node.
+	PersistentLocalVolumes utilfeature.Feature = "PersistentLocalVolumes"
+
+	// owner: @jinxu
+	// alpha: v1.7
+	//
+	// New local storage types to support local storage capacity isolation
+	LocalStorageCapacityIsolation utilfeature.Feature = "LocalStorageCapacityIsolation"
+
+	// owner @brendandburns
+	// deprecated: v1.10
+	//
+	// Enable the service proxy to contact external IP addresses. Note this feature is present
+	// only for backward compatability, it will be removed in the 1.11 release.
+	ServiceProxyAllowExternalIPs utilfeature.Feature = "ServiceProxyAllowExternalIPs"
+
+	// owner: @joelsmith
+	// deprecated: v1.10
+	//
+	// Mount secret, configMap, downwardAPI and projected volumes ReadOnly. Note: this feature
+	// gate is present only for backward compatability, it will be removed in the 1.11 release.
+	ReadOnlyAPIDataVolumes utilfeature.Feature = "ReadOnlyAPIDataVolumes"
+
+	// owner: @saad-ali
+	// ga
+	//
+	// Allow mounting a subpath of a volume in a container
+	// Do not remove this feature gate even though it's GA
+	VolumeSubpath utilfeature.Feature = "VolumeSubpath"
 )
 
 func init() {
@@ -98,7 +146,7 @@ func init() {
 // To add a new feature, define a key for it above and add it here. The features will be
 // available throughout Kubernetes binaries.
 var defaultKubernetesFeatureGates = map[utilfeature.Feature]utilfeature.FeatureSpec{
-	ExternalTrafficLocalOnly:                    {Default: true, PreRelease: utilfeature.Beta},
+	ExternalTrafficLocalOnly:                    {Default: true, PreRelease: utilfeature.GA},
 	AppArmor:                                    {Default: true, PreRelease: utilfeature.Beta},
 	DynamicKubeletConfig:                        {Default: false, PreRelease: utilfeature.Alpha},
 	DynamicVolumeProvisioning:                   {Default: true, PreRelease: utilfeature.Alpha},
@@ -107,8 +155,18 @@ var defaultKubernetesFeatureGates = map[utilfeature.Feature]utilfeature.FeatureS
 	AffinityInAnnotations:                       {Default: false, PreRelease: utilfeature.Alpha},
 	Accelerators:                                {Default: false, PreRelease: utilfeature.Alpha},
 	TaintBasedEvictions:                         {Default: false, PreRelease: utilfeature.Alpha},
+	RotateKubeletServerCertificate:              {Default: false, PreRelease: utilfeature.Alpha},
+	RotateKubeletClientCertificate:              {Default: false, PreRelease: utilfeature.Alpha},
+	PersistentLocalVolumes:                      {Default: false, PreRelease: utilfeature.Alpha},
+	LocalStorageCapacityIsolation:               {Default: false, PreRelease: utilfeature.Alpha},
+	VolumeSubpath:                               {Default: true, PreRelease: utilfeature.GA},
 
 	// inherited features from generic apiserver, relisted here to get a conflict if it is changed
 	// unintentionally on either side:
-	StreamingProxyRedirects: {Default: true, PreRelease: utilfeature.Beta},
+	StreamingProxyRedirects:          {Default: true, PreRelease: utilfeature.Beta},
+	genericfeatures.AdvancedAuditing: {Default: false, PreRelease: utilfeature.Alpha},
+
+	// features that enable backwards compatability but are scheduled to be removed
+	ServiceProxyAllowExternalIPs: {Default: false, PreRelease: utilfeature.Deprecated},
+	ReadOnlyAPIDataVolumes:       {Default: true, PreRelease: utilfeature.Deprecated},
 }
