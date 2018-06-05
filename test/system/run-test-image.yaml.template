@@ -34,5 +34,5 @@ spec:
   serviceAccountName: oci-volume-provisioner-system-test-{{TEST_ID}}
   containers:
   - name: volume-provisioner-system-test-{{TEST_ID}}
-    image: wcr.io/{{DOCKER_REGISTRY_USERNAME}}/oci-volume-provisioner-test:{{VERSION}}
+    image: iad.ocir.io/{{DOCKER_REGISTRY_USERNAME}}/oci-volume-provisioner-test:{{VERSION}}
   restartPolicy: Never

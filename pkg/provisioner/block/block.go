@@ -37,6 +37,7 @@ import (
 
 const (
 	ociVolumeID            = "ociVolumeID"
+	ociVolumeBackupID      = "volume.beta.kubernetes.io/oci-volume-source"
 	volumePrefixEnvVarName = "OCI_VOLUME_NAME_PREFIX"
 	fsType                 = "fsType"
 )
@@ -87,15 +88,22 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 
 	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, *ad.Name, block.client.CompartmentOCID())
 
+	volumeDetails := core.CreateVolumeDetails{
+		AvailabilityDomain: availabilityDomain.Name,
+		CompartmentId:      common.String(block.client.CompartmentOCID()),
+		DisplayName:        common.String(fmt.Sprintf("%s%s", os.Getenv(volumePrefixEnvVarName), options.PVC.Name)),
+		SizeInMBs:          common.Int(volSizeMB),
+	}
+
+	if value, ok := options.PVC.Annotations[ociVolumeBackupID]; ok {
+		glog.Infof("Creating volume from backup ID %s", value)
+		volumeDetails.SourceDetails = &core.VolumeSourceFromVolumeBackupDetails{Id: &value}
+	}
+
 	ctx, cancel := context.WithTimeout(block.client.Context(), block.client.Timeout())
 	defer cancel()
 	newVolume, err := block.client.BlockStorage().CreateVolume(ctx, core.CreateVolumeRequest{
-		CreateVolumeDetails: core.CreateVolumeDetails{
-			AvailabilityDomain: ad.Name,
-			CompartmentId:      common.String(block.client.CompartmentOCID()),
-			DisplayName:        common.String(fmt.Sprintf("%s%s", os.Getenv(volumePrefixEnvVarName), options.PVC.Name)),
-			SizeInMBs:          common.Int(volSizeMB),
-		},
+    CreateVolumeDetails: volumeDetails,
 	})
 	if err != nil {
 		return nil, err

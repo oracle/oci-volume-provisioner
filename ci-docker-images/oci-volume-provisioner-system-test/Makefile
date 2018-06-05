@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-DOCKER_REGISTRY ?= wcr.io
+DOCKER_REGISTRY ?= iad.ocir.io
 DOCKER_IMAGE_NAME ?= oci-volume-provisioner-system-test
 DOCKER_IMAGE_TAG ?= 1.0.2
 

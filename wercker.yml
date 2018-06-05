@@ -52,6 +52,14 @@ push:
         echo "Pushing version ${VERSION}"
 
     - script:
+        name: Ensure version is unique
+        code: |
+          if curl -s https://api.github.com/repos/oracle/oci-volume-provisioner/git/refs/tags | grep "tags/$VERSION"; then
+            echo "Tag $VERSION already exists. Doing nothing."
+            exit 1
+          fi
+
+    - script:
       name: prepare
       code: |
         cp ./dist/oci-volume-provisioner /oci-volume-provisioner
@@ -63,14 +71,44 @@ push:
         yum install -y openssl ca-certificates && yum clean all
 
     - internal/docker-push:
-      repository: wcr.io/oracle/oci-volume-provisioner
+      repository: iad.ocir.io/oracle/oci-volume-provisioner
       tag: $VERSION
       entrypoint: /oci-volume-provisioner
       user: 65534 # nobody
+      registry: https://iad.ocir.io/v2
+      username: $OCIRUSERNAME
+      password: $OCIRPASSWORD
+
+    - internal/docker-push:
+      repository: lhr.ocir.io/oracle/oci-volume-provisioner
+      tag: $VERSION
+      entrypoint: /oci-volume-provisioner
+      user: 65534 # nobody
+      registry: https://lhr.ocir.io/v2
+      username: $OCIRUSERNAME
+      password: $OCIRPASSWORD
+
+    - internal/docker-push:
+      repository: phx.ocir.io/oracle/oci-volume-provisioner
+      tag: $VERSION
+      entrypoint: /oci-volume-provisioner
+      user: 65534 # nobody
+      registry: https://phx.ocir.io/v2
+      username: $OCIRUSERNAME
+      password: $OCIRPASSWORD
+
+    - internal/docker-push:
+      repository: fra.ocir.io/oracle/oci-volume-provisioner
+      tag: $VERSION
+      entrypoint: /oci-volume-provisioner
+      user: 65534 # nobody
+      registry: https://fra.ocir.io/v2
+      username: $OCIRUSERNAME
+      password: $OCIRPASSWORD
 
 system-test:
   box:
-    id: wcr.io/oracle/oci-volume-provisioner-system-test:1.0.2
+    id: iad.ocir.io/oracle/oci-volume-provisioner-system-test:1.0.2
   steps:
     - script:
       name: set ENV vars
@@ -86,10 +124,13 @@ system-test:
         cp -R ./test /test
 
     - internal/docker-push:
-      repository: wcr.io/oracle/oci-volume-provisioner-test
+      repository: iad.ocir.io/oracle/oci-volume-provisioner-test
       tag: $VERSION
       working-dir: /test/system
       entrypoint: ./runner.py
+      registry: https://iad.ocir.io/v2
+      username: $OCIRUSERNAME
+      password: $OCIRPASSWORD
 
     - script:
         name: test
@@ -99,7 +140,7 @@ system-test:
 
 validate-test-image:
   box:
-    id: wcr.io/oracle/oci-volume-provisioner-system-test:1.0.2
+    id: iad.ocir.io/oracle/oci-volume-provisioner-system-test:1.0.2
   steps:
     - script:
       name: set ENV vars
@@ -122,6 +163,14 @@ release:
         code: |
           export VERSION=$(cat dist/VERSION.txt)
           echo "${VERSION}"
+
+    - script:
+        name: Ensure version is unique
+        code: |
+          if curl -s https://api.github.com/repos/oracle/oci-volume-provisioner/git/refs/tags | grep "tags/$VERSION"; then
+            echo "Tag $VERSION already exists. Doing nothing."
+            exit 1
+          fi
 
     - github-create-release:
       token: $GITHUB_TOKEN

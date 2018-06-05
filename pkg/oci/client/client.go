@@ -31,6 +31,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/oracle/oci-go-sdk/common"
+	"github.com/oracle/oci-go-sdk/common/auth"
 	"github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-go-sdk/identity"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
@@ -46,10 +47,21 @@ type provisionerClient struct {
 	metadata     *instancemeta.InstanceMetadata
 }
 
+// BlockStorage specifies the subset of the OCI core API utilised by the provisioner.
+type BlockStorage interface {
+	CreateVolume(ctx context.Context, request core.CreateVolumeRequest) (response core.CreateVolumeResponse, err error)
+	DeleteVolume(ctx context.Context, request core.DeleteVolumeRequest) (response core.DeleteVolumeResponse, err error)
+}
+
+// Identity specifies the subset of the OCI identity API utilised by the provisioner.
+type Identity interface {
+	ListAvailabilityDomains(ctx context.Context, request identity.ListAvailabilityDomainsRequest) (response identity.ListAvailabilityDomainsResponse, err error)
+}
+
 // ProvisionerClient is passed to all sub clients to provision a volume
 type ProvisionerClient interface {
-	BlockStorage() *core.BlockstorageClient
-	Identity() *identity.IdentityClient
+	BlockStorage() BlockStorage
+	Identity() Identity
 	Context() context.Context
 	Timeout() time.Duration
 	CompartmentOCID() string
@@ -57,11 +69,11 @@ type ProvisionerClient interface {
 	Region() string
 }
 
-func (p *provisionerClient) BlockStorage() *core.BlockstorageClient {
+func (p *provisionerClient) BlockStorage() BlockStorage {
 	return p.blockStorage
 }
 
-func (p *provisionerClient) Identity() *identity.IdentityClient {
+func (p *provisionerClient) Identity() Identity {
 	return p.identity
 }
 
@@ -142,6 +154,15 @@ func newConfigurationProvider(cfg *Config) (common.ConfigurationProvider, error)
 		if err != nil {
 			return nil, errors.Wrap(err, "invalid client config")
 		}
+		if cfg.Auth.UseInstancePrincipals {
+			glog.V(2).Info("Using instance principals configuration provider")
+			cp, err := auth.InstancePrincipalConfigurationProvider()
+			if err != nil {
+				return nil, errors.Wrap(err, "InstancePrincipalConfigurationProvider")
+			}
+			return cp, nil
+		}
+		glog.V(2).Info("Using raw configuration provider")
 		conf = common.NewRawConfigurationProvider(
 			cfg.Auth.TenancyOCID,
 			cfg.Auth.UserOCID,

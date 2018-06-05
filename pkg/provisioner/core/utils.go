@@ -33,7 +33,7 @@ import (
 )
 
 func (p *OCIProvisioner) findADByName(name string) (*identity.AvailabilityDomain, error) {
-	request := identity.ListAvailabilityDomainsRequest{CompartmentId: common.String(p.client.TenancyOCID())}
+	request := identity.ListAvailabilityDomainsRequest{CompartmentId: common.String(p.client.CompartmentOCID())}
 	ctx, cancel := context.WithTimeout(p.client.Context(), p.client.Timeout())
 	defer cancel()
 	response, err := p.client.Identity().ListAvailabilityDomains(ctx, request)
@@ -46,7 +46,7 @@ func (p *OCIProvisioner) findADByName(name string) (*identity.AvailabilityDomain
 			return &ad, nil
 		}
 	}
-	return nil, fmt.Errorf("error looking up availability domain '%s'", name)
+	return nil, fmt.Errorf("error looking up availability domain '%s':%v", name, response.Items)
 }
 
 // chooseAvailabilityDomain selects the availability zone using the ZoneFailureDomain labels

@@ -24,10 +24,11 @@ else
 endif
 DIR := dist
 BIN := oci-volume-provisioner
-REGISTRY ?= wcr.io
+REGISTRY ?= iad.ocir.io
+DOCKER_REGISTRY_TENANCY ?= oracle
 DOCKER_REGISTRY_USERNAME ?= oracle
-IMAGE ?= $(REGISTRY)/$(DOCKER_REGISTRY_USERNAME)/$(BIN)
-TEST_IMAGE ?= $(REGISTRY)/$(DOCKER_REGISTRY_USERNAME)/$(BIN)-test
+IMAGE ?= $(REGISTRY)/$(DOCKER_REGISTRY_TENANCY)/$(BIN)
+TEST_IMAGE ?= $(REGISTRY)/$(DOCKER_REGISTRY_TENANCY)/$(BIN)-test
 
 GOOS ?= linux
 GOARCH ?= amd64
@@ -112,3 +113,9 @@ clean:
 .PHONY: version
 version:
 	@echo ${VERSION}
+
+.PHONY: run-dev
+run-dev: build
+	NODE_NAME=localhost ./dist/oci-volume-provisioner \
+		--kubeconfig=${KUBECONFIG} \
+		-v=4
