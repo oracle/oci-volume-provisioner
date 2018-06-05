@@ -2,6 +2,7 @@ FROM iad.ocir.io/oracle/oci-volume-provisioner-system-test:1.0.0
 
 COPY dist /dist
 COPY manifests /manifests
+COPY examples /examples
 COPY test /test
 
 WORKDIR /test/system
