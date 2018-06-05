@@ -103,7 +103,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 	ctx, cancel := context.WithTimeout(block.client.Context(), block.client.Timeout())
 	defer cancel()
 	newVolume, err := block.client.BlockStorage().CreateVolume(ctx, core.CreateVolumeRequest{
-    CreateVolumeDetails: volumeDetails,
+		CreateVolumeDetails: volumeDetails,
 	})
 	if err != nil {
 		return nil, err
