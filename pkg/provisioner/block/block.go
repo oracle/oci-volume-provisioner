@@ -44,15 +44,17 @@ const (
 
 // blockProvisioner is the internal provisioner for OCI block volumes
 type blockProvisioner struct {
-	client client.ProvisionerClient
+	client   client.ProvisionerClient
+	metadata instancemeta.Interface
 }
 
 var _ plugin.ProvisionerPlugin = &blockProvisioner{}
 
 // NewBlockProvisioner creates a new instance of the block storage provisioner
-func NewBlockProvisioner(client client.ProvisionerClient) plugin.ProvisionerPlugin {
+func NewBlockProvisioner(client client.ProvisionerClient, metadata instancemeta.Interface) plugin.ProvisionerPlugin {
 	return &blockProvisioner{
-		client: client,
+		client:   client,
+		metadata: metadata,
 	}
 }
 
@@ -112,7 +114,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 	//volumeName := mapVolumeIDToName(*newVolume.Id)
 	filesystemType := resolveFSType(options)
 
-	metadata, err := instancemeta.New().Get()
+	metadata, err := block.metadata.Get()
 	if err != nil {
 		return nil, err
 	}

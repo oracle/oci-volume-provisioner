@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
+	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/block"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/plugin"
 )
@@ -77,7 +78,7 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1
 		glog.Fatalf("Unable to create volume provisioner client: %v", err)
 	}
 
-	blockProvisioner := block.NewBlockProvisioner(client)
+	blockProvisioner := block.NewBlockProvisioner(client, instancemeta.New())
 
 	return &OCIProvisioner{
 		client:           client,

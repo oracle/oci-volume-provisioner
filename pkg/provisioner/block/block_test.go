@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
+	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/oracle/oci-go-sdk/common"
@@ -117,7 +118,12 @@ func TestCreateVolumeFromBackup(t *testing.T) {
 			},
 		}}
 	ad := identity.AvailabilityDomain{Name: common.String("dummyAdName"), CompartmentId: common.String("dummyCompartmentId")}
-	block := blockProvisioner{client: NewClientProvisioner(nil)}
+	block := blockProvisioner{
+		client: NewClientProvisioner(nil),
+		metadata: instancemeta.NewMock(&instancemeta.InstanceMetadata{
+			CompartmentOCID: "",
+			Region:          "phx",
+		})}
 	provisionedVolume, err := block.Provision(options, &ad)
 	if err != nil {
 		t.Fatalf("Failed to provision volume from block storage: %v", err)
