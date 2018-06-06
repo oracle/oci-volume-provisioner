@@ -32,7 +32,7 @@ import (
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/plugin"
 
-	"github.com/oracle/oci-flexvolume-driver/pkg/oci/instancemeta"
+	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 )
 
 const (
@@ -89,7 +89,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, *ad.Name, block.client.CompartmentOCID())
 
 	volumeDetails := core.CreateVolumeDetails{
-		AvailabilityDomain: availabilityDomain.Name,
+		AvailabilityDomain: ad.Name,
 		CompartmentId:      common.String(block.client.CompartmentOCID()),
 		DisplayName:        common.String(fmt.Sprintf("%s%s", os.Getenv(volumePrefixEnvVarName), options.PVC.Name)),
 		SizeInMBs:          common.Int(volSizeMB),
