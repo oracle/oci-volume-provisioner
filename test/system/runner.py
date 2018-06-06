@@ -288,9 +288,9 @@ def _volume_exists(compartment_id, volume, state, backup=False):
     '''Verify whether the volume is available or not'''
     client = oci.core.blockstorage_client.BlockstorageClient(_oci_config())
     if backup:
-        volumes= client.list_volume_backups(compartment_id)
+        volumes= oci.pagination.list_call_get_all_results(client.list_volume_backups, compartment_id)
     else:
-        volumes = client.list_volumes(compartment_id)
+        volumes = oci.pagination.list_call_get_all_results(client.list_volumes, compartment_id)
     _log("Getting status for volume %s" % volume)
     for vol in _get_json_doc(str(volumes.data)):
         if vol['id'].endswith(volume) and vol['lifecycle_state'] == state:
