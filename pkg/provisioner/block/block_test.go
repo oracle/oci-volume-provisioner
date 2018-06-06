@@ -97,6 +97,10 @@ func (p *mockProvisionerClient) TenancyOCID() string {
 	return "ocid1.tenancy.oc1..aaaaaaaatyn7scrtwtqedvgrxgr2xunzeo6uanvyhzxqblctwkrpisvke4kq"
 }
 
+func (p *mockProvisionerClient) Region() string {
+	return "us-phoenix-1"
+}
+
 // NewClientProvisioner creates an OCI client from the given configuration.
 func NewClientProvisioner(pcData client.ProvisionerClient) client.ProvisionerClient {
 	return &mockProvisionerClient{}
