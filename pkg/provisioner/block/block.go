@@ -32,7 +32,7 @@ import (
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/plugin"
 
-	"github.com/oracle/oci-flexvolume-driver/pkg/oci/instancemeta"
+	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 )
 
 const (
