@@ -66,6 +66,7 @@ type ProvisionerClient interface {
 	Timeout() time.Duration
 	CompartmentOCID() string
 	TenancyOCID() string
+	Region() string
 }
 
 func (p *provisionerClient) BlockStorage() BlockStorage {
@@ -100,6 +101,10 @@ func (p *provisionerClient) CompartmentOCID() (compartmentOCID string) {
 
 func (p *provisionerClient) TenancyOCID() string {
 	return p.cfg.Auth.TenancyOCID
+}
+
+func (p *provisionerClient) Region() string {
+	return p.cfg.Auth.Region
 }
 
 // FromConfig creates an OCI client from the given configuration.

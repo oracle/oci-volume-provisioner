@@ -31,6 +31,8 @@ import (
 	"github.com/oracle/oci-go-sdk/identity"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/plugin"
+
+	"github.com/oracle/oci-flexvolume-driver/pkg/oci/instancemeta"
 )
 
 const (
@@ -71,13 +73,10 @@ func roundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
 }
 
 // Provision creates an OCI block volume acording to the spec
-func (block *blockProvisioner) Provision(options controller.VolumeOptions,
-	availabilityDomain *identity.AvailabilityDomain) (*v1.PersistentVolume, error) {
+func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *identity.AvailabilityDomain) (*v1.PersistentVolume, error) {
 	for _, accessMode := range options.PVC.Spec.AccessModes {
 		if accessMode != v1.ReadWriteOnce {
-			return nil, fmt.Errorf("invalid access mode %v specified. Only %v is supported",
-				accessMode,
-				v1.ReadWriteOnce)
+			return nil, fmt.Errorf("invalid access mode %q specified (only %q is supported)", accessMode, v1.ReadWriteOnce)
 		}
 	}
 
@@ -87,10 +86,10 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions,
 	glog.Infof("Volume size (bytes): %v", volSizeBytes)
 	volSizeMB := int(roundUpSize(volSizeBytes, 1024*1024))
 
-	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, *availabilityDomain.Name, block.client.CompartmentOCID())
+	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, *ad.Name, block.client.CompartmentOCID())
 
 	volumeDetails := core.CreateVolumeDetails{
-		AvailabilityDomain: availabilityDomain.Name,
+		AvailabilityDomain: ad.Name,
 		CompartmentId:      common.String(block.client.CompartmentOCID()),
 		DisplayName:        common.String(fmt.Sprintf("%s%s", os.Getenv(volumePrefixEnvVarName), options.PVC.Name)),
 		SizeInMBs:          common.Int(volSizeMB),
@@ -113,13 +112,21 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions,
 	//volumeName := mapVolumeIDToName(*newVolume.Id)
 	filesystemType := resolveFSType(options)
 
+	metadata, err := instancemeta.New().Get()
+	if err != nil {
+		return nil, err
+	}
+
 	pv := &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: *newVolume.Id,
 			Annotations: map[string]string{
 				ociVolumeID: *newVolume.Id,
 			},
-			Labels: map[string]string{},
+			Labels: map[string]string{
+				plugin.LabelZoneRegion:        metadata.Region,
+				plugin.LabelZoneFailureDomain: *ad.Name,
+			},
 		},
 		Spec: v1.PersistentVolumeSpec{
 			PersistentVolumeReclaimPolicy: options.PersistentVolumeReclaimPolicy,
