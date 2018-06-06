@@ -1,0 +1,14 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: demooci-82b242e3
+spec:
+  storageClassName: "oci"
+  selector:
+    matchLabels:
+      oci-availability-domain: "US-ASHBURN-AD-3"
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi

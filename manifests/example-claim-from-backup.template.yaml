@@ -1,0 +1,16 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: demooci-from-backup-82b242e3
+  annotations:
+    volumeBackupId: ocid1.volumebackup.oc1.iad.abuwcljtqpk7tupf7acekmjvyyepmfajbkqxoarcha36ypajzgxif5qusria
+spec:
+  storageClassName: "oci"
+  selector:
+    matchLabels:
+      oci-availability-domain: "US-ASHBURN-AD-2"
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
