@@ -114,9 +114,13 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 	//volumeName := mapVolumeIDToName(*newVolume.Id)
 	filesystemType := resolveFSType(options)
 
-	metadata, err := block.metadata.Get()
-	if err != nil {
-		return nil, err
+	region, ok := os.LookupEnv("OCI_VOLUME_PROVISIONER_REGION")
+	if !ok {
+		metadata, err := block.metadata.Get()
+		if err != nil {
+			return nil, err
+		}
+		region = metadata.Region
 	}
 
 	pv := &v1.PersistentVolume{
@@ -126,7 +130,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 				ociVolumeID: *newVolume.Id,
 			},
 			Labels: map[string]string{
-				plugin.LabelZoneRegion:        metadata.Region,
+				plugin.LabelZoneRegion:        region,
 				plugin.LabelZoneFailureDomain: *ad.Name,
 			},
 		},

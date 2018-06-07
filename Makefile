@@ -116,6 +116,6 @@ version:
 
 .PHONY: run-dev
 run-dev: build
-	NODE_NAME=localhost ./dist/oci-volume-provisioner \
+	NODE_NAME=localhost OCI_VOLUME_PROVISIONER_REGION=iad ./dist/oci-volume-provisioner \
 		--kubeconfig=${KUBECONFIG} \
 		-v=4
