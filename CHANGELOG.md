@@ -1,16 +1,5 @@
 # CHANGELOG
 
-## 0.7.0
-
-- Add failure domain labels to created PVs [#101]
-
-## 0.6.0
-
-## 0.5.0
-
-## 0.4.0
-
-## 0.3.0
 
 ## 0.2.0
 
