@@ -30,6 +30,8 @@ DOCKER_REGISTRY_USERNAME ?= oracle
 IMAGE ?= $(REGISTRY)/$(DOCKER_REGISTRY_TENANCY)/$(BIN)
 TEST_IMAGE ?= $(REGISTRY)/$(DOCKER_REGISTRY_TENANCY)/$(BIN)-test
 
+OCI_SHORT_REGION ?= iad
+
 GOOS ?= linux
 GOARCH ?= amd64
 SRC_DIRS := cmd pkg # directories which hold app source (not vendored)
@@ -116,6 +118,6 @@ version:
 
 .PHONY: run-dev
 run-dev: build
-	NODE_NAME=localhost OCI_VOLUME_PROVISIONER_REGION=iad ./dist/oci-volume-provisioner \
+	NODE_NAME=localhost OCI_VOLUME_PROVISIONER_REGION=$(OCI_SHORT_REGION) ./dist/oci-volume-provisioner \
 		--kubeconfig=${KUBECONFIG} \
 		-v=4

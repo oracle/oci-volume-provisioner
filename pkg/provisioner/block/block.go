@@ -114,7 +114,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 	//volumeName := mapVolumeIDToName(*newVolume.Id)
 	filesystemType := resolveFSType(options)
 
-	region, ok := os.LookupEnv("OCI_VOLUME_PROVISIONER_REGION")
+	region, ok := os.LookupEnv("OCI_SHORT_REGION")
 	if !ok {
 		metadata, err := block.metadata.Get()
 		if err != nil {
