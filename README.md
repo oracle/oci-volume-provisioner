@@ -45,6 +45,16 @@ kubectl create secret generic oci-volume-provisioner \
     --from-file=config.yaml=config.yaml
 ```
 
+### OCI Permissions
+
+Please ensure that the credentials used in the secret have the following privileges in the OCI API by creating a [policy](https://docs.us-phoenix-1.oraclecloud.com/Content/Identity/Concepts/policysyntax.htm) tied to a group or user.
+
+```
+Allow group <name> to manage volumes in compartment <compartment>
+Allow group <name> to manage file-systems in compartment <compartment>
+```
+
+
 ## Deploy the OCI Volume Provisioner
 
 First select the release to deploy. These are listed here. (https://github.com/oracle/oci-volume-provisioner/releases/latest)
