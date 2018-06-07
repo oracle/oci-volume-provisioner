@@ -1,16 +1,5 @@
 # CHANGELOG
 
-## 0.7.0
-
-- Append hyphen to volume name prefix [#107]
-
-## 0.6.0
-
-## 0.5.0
-
-## 0.4.0
-
-## 0.3.0
 
 ## 0.2.0
 
