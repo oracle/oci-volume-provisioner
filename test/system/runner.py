@@ -688,24 +688,24 @@ def _main():
     if not args['no_test']:
         _log("Running system test: Simple", as_banner=True)
         _test_create_volume(compartment_id,
-                            _create_yaml("../../manifests/example-claim.template", test_id, _get_region()),
+                            _create_yaml("../../examples/example-claim.template", test_id, _get_region()),
                             "demooci-" + test_id, args['check_oci'])
 
         _log("Running system test: Ext3 file system", as_banner=True)
         _test_create_volume(compartment_id,
-                            _create_yaml("../../manifests/example-claim-ext3.template", test_id, None),
+                            _create_yaml("../../examples/example-claim-ext3.template", test_id, None),
                             "demooci-ext3-" + test_id, args['check_oci'])
 
         _log("Running system test: No AD specified", as_banner=True)
         _test_create_volume(compartment_id,
-                            _create_yaml("../../manifests/example-claim-no-AD.template", test_id, None),
+                            _create_yaml("../../examples/example-claim-no-AD.template", test_id, None),
                             "demooci-no-ad-" + test_id, args['check_oci'])
         _log("Running system test: Create volume from backup", as_banner=True)
 
         if args['check_oci']: 
             terraform_env = _get_terraform_env()
             _backup_ocid, _availability_domain = _setup_create_volume_from_backup(terraform_env, test_id)
-            _claim_target = _create_yaml("../../manifests/example-claim-from-backup.template", test_id, 
+            _claim_target = _create_yaml("../../examples/example-claim-from-backup.template", test_id, 
                                         region=_availability_domain.split(':')[1], backup_id=_backup_ocid)
             _test_create_volume(compartment_id, _claim_target,
                                 "demooci-from-backup-" + test_id, args['check_oci'],

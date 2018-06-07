@@ -40,6 +40,7 @@ copy:
         cp -a dist ${WERCKER_OUTPUT_DIR}
         cp -a test ${WERCKER_OUTPUT_DIR}
         cp -a manifests ${WERCKER_OUTPUT_DIR}
+        cp -a examples ${WERCKER_OUTPUT_DIR}
 
 push:
   box:
@@ -121,6 +122,7 @@ system-test:
       code: |
         cp -R ./dist /dist
         cp -R ./manifests /manifests
+        cp -R ./examples /examples
         cp -R ./test /test
 
     - internal/docker-push:
