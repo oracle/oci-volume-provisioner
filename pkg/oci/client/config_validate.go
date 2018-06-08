@@ -18,41 +18,41 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
-func validateAuthConfig(c AuthConfig, fldPath *field.Path) field.ErrorList {
+func validateAuthConfig(c Config, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
 	if c.UseInstancePrincipals {
-		if c.Region != "" {
+		if c.Auth.Region != "" {
 			allErrs = append(allErrs, field.Forbidden(fldPath.Child("region"), "cannot be used when useInstancePrincipals is enabled"))
 		}
-		if c.TenancyOCID != "" {
+		if c.Auth.TenancyOCID != "" {
 			allErrs = append(allErrs, field.Forbidden(fldPath.Child("tenancy"), "cannot be used when useInstancePrincipals is enabled"))
 		}
-		if c.UserOCID != "" {
+		if c.Auth.UserOCID != "" {
 			allErrs = append(allErrs, field.Forbidden(fldPath.Child("user"), "cannot be used when useInstancePrincipals is enabled"))
 		}
-		if c.PrivateKey != "" {
+		if c.Auth.PrivateKey != "" {
 			allErrs = append(allErrs, field.Forbidden(fldPath.Child("key"), "cannot be used when useInstancePrincipals is enabled"))
 		}
-		if c.Fingerprint != "" {
+		if c.Auth.Fingerprint != "" {
 			allErrs = append(allErrs, field.Forbidden(fldPath.Child("fingerprint"), "cannot be used when useInstancePrincipals is enabled"))
 		}
 		return allErrs
 	}
 
-	if c.Region == "" {
+	if c.Auth.Region == "" {
 		allErrs = append(allErrs, field.Required(fldPath.Child("region"), ""))
 	}
-	if c.TenancyOCID == "" {
+	if c.Auth.TenancyOCID == "" {
 		allErrs = append(allErrs, field.Required(fldPath.Child("tenancy"), ""))
 	}
-	if c.UserOCID == "" {
+	if c.Auth.UserOCID == "" {
 		allErrs = append(allErrs, field.Required(fldPath.Child("user"), ""))
 	}
-	if c.PrivateKey == "" {
+	if c.Auth.PrivateKey == "" {
 		allErrs = append(allErrs, field.Required(fldPath.Child("key"), ""))
 	}
-	if c.Fingerprint == "" {
+	if c.Auth.Fingerprint == "" {
 		allErrs = append(allErrs, field.Required(fldPath.Child("fingerprint"), ""))
 	}
 	return allErrs
@@ -61,6 +61,6 @@ func validateAuthConfig(c AuthConfig, fldPath *field.Path) field.ErrorList {
 // ValidateConfig validates the OCI Volume Provisioner config file.
 func ValidateConfig(c *Config) field.ErrorList {
 	allErrs := field.ErrorList{}
-	allErrs = append(allErrs, validateAuthConfig(c.Auth, field.NewPath("auth"))...)
+	allErrs = append(allErrs, validateAuthConfig(*c, field.NewPath("auth"))...)
 	return allErrs
 }
