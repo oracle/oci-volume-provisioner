@@ -56,6 +56,8 @@ func main() {
 	syscall.Umask(0)
 
 	kubeconfig := flag.String("kubeconfig", "", "Path to Kubeconfig file with authorization and master location information.")
+	volumeRoundingEnabled := flag.Bool("rounding-enabled", true, "When enabled volumes will be rounded up if less than 'minVolumeSizeMB'")
+	minVolumeSizeMB := flag.Int("min-size", 51200, "The minimum size for a block volume. By default OCI only supports block volumes > 50GB")
 	master := flag.String("master", "", "The address of the Kubernetes API server (overrides any value in kubeconfig).")
 	flag.Parse()
 	flag.Set("logtostderr", "true")
@@ -92,7 +94,7 @@ func main() {
 
 	// Create the provisioner: it implements the Provisioner interface expected by
 	// the controller
-	ociProvisioner := core.NewOCIProvisioner(clientset, sharedInformerFactory.Core().V1().Nodes(), nodeName)
+	ociProvisioner := core.NewOCIProvisioner(clientset, sharedInformerFactory.Core().V1().Nodes(), nodeName, *volumeRoundingEnabled, *minVolumeSizeMB)
 
 	// Start the provision controller which will dynamically provision oci
 	// PVs

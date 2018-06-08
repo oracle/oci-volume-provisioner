@@ -56,7 +56,7 @@ type OCIProvisioner struct {
 }
 
 // NewOCIProvisioner creates a new OCI provisioner.
-func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1.NodeInformer, nodeName string) *OCIProvisioner {
+func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1.NodeInformer, nodeName string, volumeRoundingEnabled bool, minVolumeSizeMB int) *OCIProvisioner {
 	configPath, ok := os.LookupEnv("CONFIG_YAML_FILENAME")
 	if !ok {
 		configPath = configFilePath
@@ -78,7 +78,7 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1
 		glog.Fatalf("Unable to create volume provisioner client: %v", err)
 	}
 
-	blockProvisioner := block.NewBlockProvisioner(client, instancemeta.New())
+	blockProvisioner := block.NewBlockProvisioner(client, instancemeta.New(), volumeRoundingEnabled, minVolumeSizeMB)
 
 	return &OCIProvisioner{
 		client:           client,

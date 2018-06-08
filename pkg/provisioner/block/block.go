@@ -24,6 +24,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/pkg/api/v1"
 
@@ -45,17 +46,20 @@ const (
 
 // blockProvisioner is the internal provisioner for OCI block volumes
 type blockProvisioner struct {
-	client   client.ProvisionerClient
-	metadata instancemeta.Interface
+	client                client.ProvisionerClient
+	metadata              instancemeta.Interface
+	volumeRoundingEnabled bool
+	minVolumeSizeMB       int
 }
 
 var _ plugin.ProvisionerPlugin = &blockProvisioner{}
 
-// NewBlockProvisioner creates a new instance of the block storage provisioner
-func NewBlockProvisioner(client client.ProvisionerClient, metadata instancemeta.Interface) plugin.ProvisionerPlugin {
+func NewBlockProvisioner(client client.ProvisionerClient, metadata instancemeta.Interface, volumeRoundingEnabled bool, minVolumeSizeMB int) plugin.ProvisionerPlugin {
 	return &blockProvisioner{
-		client:   client,
-		metadata: metadata,
+		client:                client,
+		metadata:              metadata,
+		volumeRoundingEnabled: volumeRoundingEnabled,
+		minVolumeSizeMB:       minVolumeSizeMB,
 	}
 }
 
@@ -75,19 +79,33 @@ func roundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
 	return (volumeSizeBytes + allocationUnitBytes - 1) / allocationUnitBytes
 }
 
-// Provision creates an OCI block volume acording to the spec
+// Provision creates an OCI block volume
 func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *identity.AvailabilityDomain) (*v1.PersistentVolume, error) {
 	for _, accessMode := range options.PVC.Spec.AccessModes {
 		if accessMode != v1.ReadWriteOnce {
-			return nil, fmt.Errorf("invalid access mode %q specified (only %q is supported)", accessMode, v1.ReadWriteOnce)
+			return nil, fmt.Errorf("invalid access mode %v specified. Only %v is supported", accessMode, v1.ReadWriteOnce)
 		}
 	}
 
-	// Calculate the size
-	volSize := options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
-	volSizeBytes := volSize.Value()
-	glog.Infof("Volume size (bytes): %v", volSizeBytes)
-	volSizeMB := int(roundUpSize(volSizeBytes, 1024*1024))
+	// Calculate the volume size
+	capacity, ok := options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
+	if !ok {
+		return nil, fmt.Errorf("could not determine volume size for PVC")
+	}
+
+	volSizeMB := int(roundUpSize(capacity.Value(), 1024*1024))
+	glog.Infof("Volume size: %dMB", volSizeMB)
+
+	if block.volumeRoundingEnabled && volSizeMB < block.minVolumeSizeMB {
+		glog.Warningf("PVC requested storage less than %dMi. Rounding up to ensure volume creation", block.minVolumeSizeMB)
+		newVolumeSize, err := resource.ParseQuantity(fmt.Sprintf("%dMi", block.minVolumeSizeMB))
+		if err != nil {
+			return nil, err
+		}
+
+		volSizeMB = block.minVolumeSizeMB
+		capacity = newVolumeSize
+	}
 
 	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, *ad.Name, block.client.CompartmentOCID())
 
@@ -117,7 +135,6 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 		return nil, err
 	}
 
-	//volumeName := mapVolumeIDToName(*newVolume.Id)
 	filesystemType := resolveFSType(options)
 
 	region, ok := os.LookupEnv("OCI_SHORT_REGION")
@@ -144,7 +161,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 			PersistentVolumeReclaimPolicy: options.PersistentVolumeReclaimPolicy,
 			AccessModes:                   options.PVC.Spec.AccessModes,
 			Capacity: v1.ResourceList{
-				v1.ResourceName(v1.ResourceStorage): options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)],
+				v1.ResourceName(v1.ResourceStorage): capacity,
 			},
 			PersistentVolumeSource: v1.PersistentVolumeSource{
 				FlexVolume: &v1.FlexVolumeSource{
