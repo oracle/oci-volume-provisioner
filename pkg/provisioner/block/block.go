@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
@@ -150,6 +151,13 @@ func (block *blockProvisioner) Delete(volume *v1.PersistentVolume) error {
 	request := core.DeleteVolumeRequest{VolumeId: common.String(volID)}
 	ctx, cancel := context.WithTimeout(block.client.Context(), block.client.Timeout())
 	defer cancel()
-	_, err := block.client.BlockStorage().DeleteVolume(ctx, request)
+
+	response, err := block.client.BlockStorage().DeleteVolume(ctx, request)
+	// If the volume does not exists (perhaps a user deleted it) then stop retrying the delete
+	// Note that we cannot differentiate between a volume that no longer exists and an authentication failure.
+	if response.RawResponse != nil && response.RawResponse.StatusCode == http.StatusNotFound {
+		return nil
+	}
+
 	return err
 }
