@@ -117,7 +117,7 @@ version:
 	@echo ${VERSION}
 
 .PHONY: run-dev
-run-dev: build
-	NODE_NAME=localhost OCI_VOLUME_PROVISIONER_REGION=$(OCI_SHORT_REGION) ./dist/oci-volume-provisioner \
+run-dev:
+	NODE_NAME=$(shell hostname) OCI_VOLUME_PROVISIONER_REGION=$(OCI_SHORT_REGION) go run cmd/main.go \
 		--kubeconfig=${KUBECONFIG} \
 		-v=4

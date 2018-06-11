@@ -129,7 +129,7 @@ func FromConfig(cfg *Config) (ProvisionerClient, error) {
 
 	metadata, err := instancemeta.New().Get()
 	if err != nil {
-		glog.Warning("Unable to retrieve instance metadata: %v", err)
+		glog.Warningf("Unable to retrieve instance metadata: %s", err)
 	}
 
 	return &provisionerClient{
