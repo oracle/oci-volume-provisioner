@@ -23,6 +23,7 @@ import (
 	"github.com/golang/glog"
 
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	informersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -56,7 +57,7 @@ type OCIProvisioner struct {
 }
 
 // NewOCIProvisioner creates a new OCI provisioner.
-func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1.NodeInformer, nodeName string, volumeRoundingEnabled bool, minVolumeSizeMB int) *OCIProvisioner {
+func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1.NodeInformer, nodeName string, volumeRoundingEnabled bool, minVolumeSize resource.Quantity) *OCIProvisioner {
 	configPath, ok := os.LookupEnv("CONFIG_YAML_FILENAME")
 	if !ok {
 		configPath = configFilePath
@@ -78,7 +79,7 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1
 		glog.Fatalf("Unable to create volume provisioner client: %v", err)
 	}
 
-	blockProvisioner := block.NewBlockProvisioner(client, instancemeta.New(), volumeRoundingEnabled, minVolumeSizeMB)
+	blockProvisioner := block.NewBlockProvisioner(client, instancemeta.New(), volumeRoundingEnabled, minVolumeSize)
 
 	return &OCIProvisioner{
 		client:           client,

@@ -16,6 +16,7 @@ package block
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -142,40 +143,41 @@ func TestCreateVolumeFromBackup(t *testing.T) {
 }
 
 func TestVolumeRoundingLogic(t *testing.T) {
-
 	var volumeRoundingTests = []struct {
 		requestedStorage string
 		enabled          bool
-		minVolumeSizeMB  int
+		minVolumeSize    resource.Quantity
 		expected         string
 	}{
-		{"20Gi", true, 51200, "50Gi"},
-		{"30Gi", true, 25600, "30Gi"},
-		{"20Gi", false, 51200, "20Gi"},
+		{"20Gi", true, resource.MustParse("50Gi"), "50Gi"},
+		{"30Gi", true, resource.MustParse("25Gi"), "30Gi"},
+		{"50Gi", true, resource.MustParse("50Gi"), "50Gi"},
+		{"20Gi", false, resource.MustParse("50Gi"), "20Gi"},
 	}
-	for _, tt := range volumeRoundingTests {
-		volumeOptions := controller.VolumeOptions{
-			PVC: createPVC(tt.requestedStorage),
-		}
+	for i, tt := range volumeRoundingTests {
+		t.Run(fmt.Sprintf("test-%d", i), func(t *testing.T) {
+			volumeOptions := controller.VolumeOptions{
+				PVC: createPVC(tt.requestedStorage),
+			}
+			metadata := instancemeta.NewMock(&instancemeta.InstanceMetadata{
+				CompartmentOCID: "",
+				Region:          "phx",
+			})
+			block := NewBlockProvisioner(NewClientProvisioner(nil), metadata, tt.enabled, tt.minVolumeSize)
+			provisionedVolume, err := block.Provision(volumeOptions, &defaultAD)
+			if err != nil {
+				t.Fatalf("Expected no error but got %s", err)
+			}
 
-		metadata := instancemeta.NewMock(&instancemeta.InstanceMetadata{
-			CompartmentOCID: "",
-			Region:          "phx",
+			expectedCapacity := resource.MustParse(tt.expected)
+			actualCapacity := provisionedVolume.Spec.Capacity[v1.ResourceName(v1.ResourceStorage)]
+
+			actual := actualCapacity.String()
+			expected := expectedCapacity.String()
+			if actual != expected {
+				t.Fatalf("Expected volume to be %s but got %s", expected, actual)
+			}
 		})
-		block := NewBlockProvisioner(NewClientProvisioner(nil), metadata, tt.enabled, tt.minVolumeSizeMB)
-		provisionedVolume, err := block.Provision(volumeOptions, &defaultAD)
-		if err != nil {
-			t.Fatalf("Expected no error but got %s", err)
-		}
-
-		expectedCapacity := resource.MustParse(tt.expected)
-		actualCapacity := provisionedVolume.Spec.Capacity[v1.ResourceName(v1.ResourceStorage)]
-
-		actual := actualCapacity.String()
-		expected := expectedCapacity.String()
-		if actual != expected {
-			t.Fatalf("Expected volume to be %s but got %s", expected, actual)
-		}
 	}
 }
 

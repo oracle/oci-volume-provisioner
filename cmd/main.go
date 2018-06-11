@@ -29,6 +29,8 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
@@ -57,7 +59,7 @@ func main() {
 
 	kubeconfig := flag.String("kubeconfig", "", "Path to Kubeconfig file with authorization and master location information.")
 	volumeRoundingEnabled := flag.Bool("rounding-enabled", true, "When enabled volumes will be rounded up if less than 'minVolumeSizeMB'")
-	minVolumeSizeMB := flag.Int("min-size", 51200, "The minimum size for a block volume. By default OCI only supports block volumes > 50GB")
+	minVolumeSize := flag.String("min-volume-size", "50Gi", "The minimum size for a block volume. By default OCI only supports block volumes > 50GB")
 	master := flag.String("master", "", "The address of the Kubernetes API server (overrides any value in kubeconfig).")
 	flag.Parse()
 	flag.Set("logtostderr", "true")
@@ -92,9 +94,14 @@ func main() {
 
 	sharedInformerFactory := informers.NewSharedInformerFactory(clientset, informerResyncPeriod(minResyncPeriod)())
 
+	volumeSizeLowerBound, err := resource.ParseQuantity(*minVolumeSize)
+	if err != nil {
+		glog.Fatalf("Cannot parse volume size %s", *minVolumeSize)
+	}
+
 	// Create the provisioner: it implements the Provisioner interface expected by
 	// the controller
-	ociProvisioner := core.NewOCIProvisioner(clientset, sharedInformerFactory.Core().V1().Nodes(), nodeName, *volumeRoundingEnabled, *minVolumeSizeMB)
+	ociProvisioner := core.NewOCIProvisioner(clientset, sharedInformerFactory.Core().V1().Nodes(), nodeName, *volumeRoundingEnabled, volumeSizeLowerBound)
 
 	// Start the provision controller which will dynamically provision oci
 	// PVs

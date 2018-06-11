@@ -49,18 +49,18 @@ type blockProvisioner struct {
 	client                client.ProvisionerClient
 	metadata              instancemeta.Interface
 	volumeRoundingEnabled bool
-	minVolumeSizeMB       int
+	minVolumeSize         resource.Quantity
 }
 
 var _ plugin.ProvisionerPlugin = &blockProvisioner{}
 
 // NewBlockProvisioner creates a new instance of the block storage provisioner
-func NewBlockProvisioner(client client.ProvisionerClient, metadata instancemeta.Interface, volumeRoundingEnabled bool, minVolumeSizeMB int) plugin.ProvisionerPlugin {
+func NewBlockProvisioner(client client.ProvisionerClient, metadata instancemeta.Interface, volumeRoundingEnabled bool, minVolumeSize resource.Quantity) plugin.ProvisionerPlugin {
 	return &blockProvisioner{
 		client:                client,
 		metadata:              metadata,
 		volumeRoundingEnabled: volumeRoundingEnabled,
-		minVolumeSizeMB:       minVolumeSizeMB,
+		minVolumeSize:         minVolumeSize,
 	}
 }
 
@@ -97,15 +97,11 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 	volSizeMB := int(roundUpSize(capacity.Value(), 1024*1024))
 	glog.Infof("Volume size: %dMB", volSizeMB)
 
-	if block.volumeRoundingEnabled && volSizeMB < block.minVolumeSizeMB {
-		glog.Warningf("PVC requested storage less than %dMi. Rounding up to ensure volume creation", block.minVolumeSizeMB)
-		newVolumeSize, err := resource.ParseQuantity(fmt.Sprintf("%dMi", block.minVolumeSizeMB))
-		if err != nil {
-			return nil, err
-		}
+	if block.volumeRoundingEnabled && block.minVolumeSize.Cmp(capacity) == 1 {
+		glog.Warningf("PVC requested storage less than %s. Rounding up to ensure volume creation", block.minVolumeSize.String())
 
-		volSizeMB = block.minVolumeSizeMB
-		capacity = newVolumeSize
+		volSizeMB = int(roundUpSize(block.minVolumeSize.Value(), 1024*1024))
+		capacity = block.minVolumeSize
 	}
 
 	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, *ad.Name, block.client.CompartmentOCID())
