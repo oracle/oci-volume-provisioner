@@ -54,6 +54,7 @@ type blockProvisioner struct {
 
 var _ plugin.ProvisionerPlugin = &blockProvisioner{}
 
+// NewBlockProvisioner creates a new instance of the block storage provisioner
 func NewBlockProvisioner(client client.ProvisionerClient, metadata instancemeta.Interface, volumeRoundingEnabled bool, minVolumeSizeMB int) plugin.ProvisionerPlugin {
 	return &blockProvisioner{
 		client:                client,
