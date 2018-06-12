@@ -42,6 +42,11 @@ const (
 	ociAvailabilityDomain  = "ociAvailabilityDomain"
 	ociCompartment         = "ociCompartment"
 	configFilePath         = "/etc/oci/config.yaml"
+	typeParameter          = "type"
+	fsTypeParameter        = "fsType"
+	blockStorageType       = "blockStorage"
+	defaultType            = blockStorageType
+	defaultFsType          = "ext4"
 )
 
 // OCIProvisioner is a dynamic volume provisioner that satisfies
@@ -87,8 +92,7 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1
 		nodeLister:       nodeInformer.Lister(),
 		nodeListerSynced: nodeInformer.Informer().HasSynced,
 		storageClassProvisioners: map[string]plugin.ProvisionerPlugin{
-			"oci":      blockProvisioner,
-			"oci-ext3": blockProvisioner,
+			defaultType: blockProvisioner,
 		},
 	}
 }
@@ -109,6 +113,18 @@ func mapAvailabilityDomainToFailureDomain(AD string) string {
 	return parts[len(parts)-1]
 }
 
+func resolveStorageType(options controller.VolumeOptions) string {
+	return getStorageTypeWithDefault(options.Parameters[typeParameter])
+}
+
+func getStorageTypeWithDefault(sType string) string {
+	t := defaultType
+	if sType != "" {
+		t = sType
+	}
+	return t
+}
+
 // Provision creates a storage asset and returns a PV object representing it.
 func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.PersistentVolume, error) {
 	availabilityDomainName, availabilityDomain, err := p.chooseAvailabilityDomain(options.PVC)
@@ -116,9 +132,10 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 		return nil, err
 	}
 
-	provisioner, ok := p.storageClassProvisioners[*options.PVC.Spec.StorageClassName]
+	storageType := resolveStorageType(options)
+	provisioner, ok := p.storageClassProvisioners[storageType]
 	if !ok {
-		return nil, fmt.Errorf("Storage class '%s' not supported", *options.PVC.Spec.StorageClassName)
+		return nil, fmt.Errorf("Storage type '%s' not supported", storageType)
 	}
 
 	persistentVolume, err := provisioner.Provision(options, availabilityDomain)
@@ -142,9 +159,15 @@ func (p *OCIProvisioner) Delete(volume *v1.PersistentVolume) error {
 		return &controller.IgnoredError{Reason: "identity annotation on PV does not match ours"}
 	}
 
-	provisioner, ok := p.storageClassProvisioners[volume.Spec.StorageClassName]
+	storageClass, err := p.kubeClient.Storage().StorageClasses().Get(volume.Spec.StorageClassName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("Could not find storage class '%q'", volume.Spec.StorageClassName)
+	}
+
+	storageType := getStorageTypeWithDefault(storageClass.Parameters[typeParameter])
+	provisioner, ok := p.storageClassProvisioners[storageType]
 	if !ok {
-		return fmt.Errorf("Storage class '%s' not supported", volume.Spec.StorageClassName)
+		return fmt.Errorf("Could not find a provisioner for storageType '%s'", storageType)
 	}
 
 	return provisioner.Delete(volume)

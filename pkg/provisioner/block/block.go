@@ -41,7 +41,16 @@ const (
 	ociVolumeID            = "ociVolumeID"
 	ociVolumeBackupID      = "volume.beta.kubernetes.io/oci-volume-source"
 	volumePrefixEnvVarName = "OCI_VOLUME_NAME_PREFIX"
-	fsType                 = "fsType"
+
+	typeParameter    = "type"
+	fsTypeParameter  = "fsType"
+	blockStorageType = "blockStorage"
+	defaultType      = blockStorageType
+	defaultFsType    = "ext4"
+)
+
+var (
+	validFsTypes = [2]string{"ext3", "ext4"}
 )
 
 // blockProvisioner is the internal provisioner for OCI block volumes
@@ -68,12 +77,33 @@ func mapVolumeIDToName(volumeID string) string {
 	return strings.Split(volumeID, ".")[4]
 }
 
-func resolveFSType(options controller.VolumeOptions) string {
-	fs := "ext4" // default to ext4
-	if fsType, ok := options.Parameters[fsType]; ok {
+func resolveStorageType(options controller.VolumeOptions) string {
+	t := defaultType
+	if sType, ok := options.Parameters[typeParameter]; ok {
+		t = sType
+	}
+	return t
+}
+
+func resolveFSType(options controller.VolumeOptions) (string, error) {
+	fs := defaultFsType
+	if fsType, ok := options.Parameters[fsTypeParameter]; ok {
 		fs = fsType
 	}
-	return fs
+	err := validateFSType(fs)
+	if err != nil {
+		return "", err
+	}
+	return fs, nil
+}
+
+func validateFSType(fsType string) error {
+	for _, f := range validFsTypes {
+		if f == fsType {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid fsType value '%s'", fsType)
 }
 
 func roundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
@@ -132,7 +162,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 		return nil, err
 	}
 
-	filesystemType := resolveFSType(options)
+	storageType := resolveStorageType(options)
 
 	region, ok := os.LookupEnv("OCI_SHORT_REGION")
 	if !ok {
@@ -162,11 +192,20 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 			},
 			PersistentVolumeSource: v1.PersistentVolumeSource{
 				FlexVolume: &v1.FlexVolumeSource{
-					Driver: plugin.OCIProvisionerName,
-					FSType: filesystemType,
+					Driver:  plugin.OCIProvisionerName,
+					Options: map[string]string{typeParameter: storageType},
 				},
 			},
 		},
+	}
+
+	// FsType only concerns blockStorage volumes
+	if pv.Spec.PersistentVolumeSource.FlexVolume.Options[typeParameter] == "blockStorage" {
+		filesystemType, err := resolveFSType(options)
+		if err != nil {
+			return nil, err
+		}
+		pv.Spec.PersistentVolumeSource.FlexVolume.FSType = filesystemType
 	}
 
 	return pv, nil

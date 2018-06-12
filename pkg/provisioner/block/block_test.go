@@ -37,10 +37,25 @@ var (
 	defaultAD      = identity.AvailabilityDomain{Name: common.String("PHX-AD-1"), CompartmentId: common.String("ocid1.compartment.oc1")}
 )
 
+func TestValidateFsType(t *testing.T) {
+	err := validateFSType("ext3")
+	if err != nil {
+		t.Fatalf("Unexpected validation error for fsType: '%s'", "ext3")
+	}
+	err = validateFSType("ext4")
+	if err != nil {
+		t.Fatalf("Unexpected validation error for fsType: '%s'", "ext4")
+	}
+	err = validateFSType("abc3")
+	if err == nil {
+		t.Fatalf("Unexpected validation pass for fsType: '%s'", "abc3")
+	}
+}
+
 func TestResolveFSTypeWhenNotConfigured(t *testing.T) {
 	options := controller.VolumeOptions{Parameters: make(map[string]string)}
 	// test default fsType of 'ext4' is always returned.
-	fst := resolveFSType(options)
+	fst, _ := resolveFSType(options)
 	if fst != "ext4" {
 		t.Fatalf("Unexpected filesystem type: '%s'.", fst)
 	}
@@ -48,8 +63,9 @@ func TestResolveFSTypeWhenNotConfigured(t *testing.T) {
 
 func TestResolveFSTypeWhenConfigured(t *testing.T) {
 	// test default fsType of 'ext3' is always returned when configured.
-	options := controller.VolumeOptions{Parameters: map[string]string{fsType: "ext3"}}
-	fst := resolveFSType(options)
+	parameters := map[string]string{"fsType": "ext3"}
+	options := controller.VolumeOptions{Parameters: parameters}
+	fst, _ := resolveFSType(options)
 	if fst != "ext3" {
 		t.Fatalf("Unexpected filesystem type: '%s'.", fst)
 	}
