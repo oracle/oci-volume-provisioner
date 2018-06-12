@@ -118,6 +118,6 @@ version:
 
 .PHONY: run-dev
 run-dev:
-	NODE_NAME=$(shell hostname) OCI_VOLUME_PROVISIONER_REGION=$(OCI_SHORT_REGION) go run cmd/main.go \
+	NODE_NAME=$(shell hostname) OCI_SHORT_REGION=$(OCI_SHORT_REGION) go run cmd/main.go \
 		--kubeconfig=${KUBECONFIG} \
 		-v=4
