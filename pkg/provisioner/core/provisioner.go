@@ -16,7 +16,6 @@ package core
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"strings"
 
@@ -52,8 +51,7 @@ type OCIProvisioner struct {
 	kubeClient       kubernetes.Interface
 	nodeLister       listersv1.NodeLister
 	nodeListerSynced cache.InformerSynced
-
-	storageClassProvisioners map[string]plugin.ProvisionerPlugin
+	provisioner      plugin.ProvisionerPlugin
 }
 
 // NewOCIProvisioner creates a new OCI provisioner.
@@ -86,10 +84,7 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1
 		kubeClient:       kubeClient,
 		nodeLister:       nodeInformer.Lister(),
 		nodeListerSynced: nodeInformer.Informer().HasSynced,
-		storageClassProvisioners: map[string]plugin.ProvisionerPlugin{
-			"oci":      blockProvisioner,
-			"oci-ext3": blockProvisioner,
-		},
+		provisioner:      blockProvisioner,
 	}
 }
 
@@ -116,12 +111,7 @@ func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.Persis
 		return nil, err
 	}
 
-	provisioner, ok := p.storageClassProvisioners[*options.PVC.Spec.StorageClassName]
-	if !ok {
-		return nil, fmt.Errorf("Storage class '%s' not supported", *options.PVC.Spec.StorageClassName)
-	}
-
-	persistentVolume, err := provisioner.Provision(options, availabilityDomain)
+	persistentVolume, err := p.provisioner.Provision(options, availabilityDomain)
 	if err == nil {
 		persistentVolume.ObjectMeta.Annotations[ociProvisionerIdentity] = ociProvisionerIdentity
 		persistentVolume.ObjectMeta.Annotations[ociAvailabilityDomain] = availabilityDomainName
@@ -142,12 +132,7 @@ func (p *OCIProvisioner) Delete(volume *v1.PersistentVolume) error {
 		return &controller.IgnoredError{Reason: "identity annotation on PV does not match ours"}
 	}
 
-	provisioner, ok := p.storageClassProvisioners[volume.Spec.StorageClassName]
-	if !ok {
-		return fmt.Errorf("Storage class '%s' not supported", volume.Spec.StorageClassName)
-	}
-
-	return provisioner.Delete(volume)
+	return p.provisioner.Delete(volume)
 }
 
 // Ready waits unitl the the nodeLister has been synced.
