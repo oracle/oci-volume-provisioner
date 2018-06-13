@@ -33,6 +33,7 @@ import (
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/common/auth"
 	"github.com/oracle/oci-go-sdk/core"
+	"github.com/oracle/oci-go-sdk/filestorage"
 	"github.com/oracle/oci-go-sdk/identity"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 )
@@ -42,6 +43,7 @@ type provisionerClient struct {
 	cfg          *Config
 	blockStorage *core.BlockstorageClient
 	identity     *identity.IdentityClient
+	fileStorage  *filestorage.FileStorageClient
 	context      context.Context
 	timeout      time.Duration
 	metadata     *instancemeta.InstanceMetadata
@@ -58,10 +60,17 @@ type Identity interface {
 	ListAvailabilityDomains(ctx context.Context, request identity.ListAvailabilityDomainsRequest) (response identity.ListAvailabilityDomainsResponse, err error)
 }
 
+// FileStorage specifies the subset of the OCI core API utilised by the provisioner.
+type FileStorage interface {
+	CreateFileSystem(ctx context.Context, request filestorage.CreateFileSystemRequest) (response filestorage.CreateFileSystemResponse, err error)
+	DeleteFileSystem(ctx context.Context, request filestorage.DeleteFileSystemRequest) (response filestorage.DeleteFileSystemResponse, err error)
+}
+
 // ProvisionerClient is passed to all sub clients to provision a volume
 type ProvisionerClient interface {
 	BlockStorage() BlockStorage
 	Identity() Identity
+	FileStorage() FileStorage
 	Context() context.Context
 	Timeout() time.Duration
 	CompartmentOCID() string
@@ -74,6 +83,10 @@ func (p *provisionerClient) BlockStorage() BlockStorage {
 
 func (p *provisionerClient) Identity() Identity {
 	return p.identity
+}
+
+func (p *provisionerClient) FileStorage() FileStorage {
+	return p.fileStorage
 }
 
 func (p *provisionerClient) Context() context.Context {
@@ -118,6 +131,11 @@ func FromConfig(cfg *Config) (ProvisionerClient, error) {
 		return nil, err
 	}
 
+	fileStorage, err := filestorage.NewFileStorageClientWithConfigurationProvider(config)
+	if err != nil {
+		return nil, err
+	}
+
 	identity, err := identity.NewIdentityClientWithConfigurationProvider(config)
 	if err != nil {
 		return nil, err
@@ -136,6 +154,7 @@ func FromConfig(cfg *Config) (ProvisionerClient, error) {
 		cfg:          cfg,
 		blockStorage: &blockStorage,
 		identity:     &identity,
+		fileStorage:  &fileStorage,
 		timeout:      3 * time.Minute,
 		context:      context.Background(),
 		metadata:     metadata,

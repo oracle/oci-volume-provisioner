@@ -15,17 +15,14 @@
 package block
 
 import (
-	"context"
 	"fmt"
 	"testing"
-	"time"
 
-	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
+	"github.com/oracle/oci-volume-provisioner/pkg/helpers"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/oracle/oci-go-sdk/common"
-	"github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-go-sdk/identity"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,6 +32,7 @@ import (
 var (
 	volumeBackupID = "dummyVolumeBackupId"
 	defaultAD      = identity.AvailabilityDomain{Name: common.String("PHX-AD-1"), CompartmentId: common.String("ocid1.compartment.oc1")}
+	fileSystemID   = "dummyFileSystemId"
 )
 
 func TestResolveFSTypeWhenNotConfigured(t *testing.T) {
@@ -55,57 +53,6 @@ func TestResolveFSTypeWhenConfigured(t *testing.T) {
 	}
 }
 
-type mockBlockStorageClient struct {
-}
-
-func (c *mockBlockStorageClient) CreateVolume(ctx context.Context, request core.CreateVolumeRequest) (response core.CreateVolumeResponse, err error) {
-	return core.CreateVolumeResponse{Volume: core.Volume{Id: common.String(volumeBackupID)}}, nil
-}
-
-func (c *mockBlockStorageClient) DeleteVolume(ctx context.Context, request core.DeleteVolumeRequest) (response core.DeleteVolumeResponse, err error) {
-	return core.DeleteVolumeResponse{}, nil
-}
-
-type mockIdentityClient struct {
-	common.BaseClient
-}
-
-func (client mockIdentityClient) ListAvailabilityDomains(ctx context.Context, request identity.ListAvailabilityDomainsRequest) (response identity.ListAvailabilityDomainsResponse, err error) {
-	return
-}
-
-type mockProvisionerClient struct {
-}
-
-func (p *mockProvisionerClient) BlockStorage() client.BlockStorage {
-	return &mockBlockStorageClient{}
-}
-
-func (p *mockProvisionerClient) Identity() client.Identity {
-	return &mockIdentityClient{}
-}
-
-func (p *mockProvisionerClient) Context() context.Context {
-	return context.Background()
-}
-
-func (p *mockProvisionerClient) Timeout() time.Duration {
-	return 30 * time.Second
-}
-
-func (p *mockProvisionerClient) CompartmentOCID() (compartmentOCID string) {
-	return ""
-}
-
-func (p *mockProvisionerClient) TenancyOCID() string {
-	return "ocid1.tenancy.oc1..aaaaaaaatyn7scrtwtqedvgrxgr2xunzeo6uanvyhzxqblctwkrpisvke4kq"
-}
-
-// NewClientProvisioner creates an OCI client from the given configuration.
-func NewClientProvisioner(pcData client.ProvisionerClient) client.ProvisionerClient {
-	return &mockProvisionerClient{}
-}
-
 func TestCreateVolumeFromBackup(t *testing.T) {
 	// test creating a volume from an existing backup
 	options := controller.VolumeOptions{
@@ -113,7 +60,7 @@ func TestCreateVolumeFromBackup(t *testing.T) {
 		PVC: &v1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					ociVolumeBackupID: volumeBackupID,
+					ociVolumeBackupID: helpers.VolumeBackupID,
 				},
 			},
 			Spec: v1.PersistentVolumeClaimSpec{
@@ -127,7 +74,7 @@ func TestCreateVolumeFromBackup(t *testing.T) {
 		}}
 
 	block := blockProvisioner{
-		client: NewClientProvisioner(nil),
+		client: helpers.NewClientProvisioner(nil),
 		metadata: instancemeta.NewMock(&instancemeta.InstanceMetadata{
 			CompartmentOCID: "",
 			Region:          "phx",
@@ -136,8 +83,8 @@ func TestCreateVolumeFromBackup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to provision volume from block storage: %v", err)
 	}
-	if provisionedVolume.Annotations[ociVolumeID] != volumeBackupID {
-		t.Fatalf("Failed to assign the id of the blockID: %s, assigned %s instead", volumeBackupID,
+	if provisionedVolume.Annotations[ociVolumeID] != helpers.VolumeBackupID {
+		t.Fatalf("Failed to assign the id of the blockID: %s, assigned %s instead", helpers.VolumeBackupID,
 			provisionedVolume.Annotations[ociVolumeID])
 	}
 }
@@ -163,7 +110,7 @@ func TestVolumeRoundingLogic(t *testing.T) {
 				CompartmentOCID: "",
 				Region:          "phx",
 			})
-			block := NewBlockProvisioner(NewClientProvisioner(nil), metadata, tt.enabled, tt.minVolumeSize)
+			block := NewBlockProvisioner(helpers.NewClientProvisioner(nil), metadata, tt.enabled, tt.minVolumeSize)
 			provisionedVolume, err := block.Provision(volumeOptions, &defaultAD)
 			if err != nil {
 				t.Fatalf("Expected no error but got %s", err)
