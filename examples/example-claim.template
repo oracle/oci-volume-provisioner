@@ -6,7 +6,7 @@ spec:
   storageClassName: "oci"
   selector:
     matchLabels:
-      oci-availability-domain: "{{REGION}}"
+      failure-domain.beta.kubernetes.io/zone: "{{REGION}}"
   accessModes:
     - ReadWriteOnce
   resources:
