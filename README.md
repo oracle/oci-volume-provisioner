@@ -119,7 +119,7 @@ spec:
   storageClassName: "oci"
   selector:
     matchLabels:
-      oci-availability-domain: "PHX-AD-1"
+      failure-domain.beta.kubernetes.io/zone: "PHX-AD-1"
   accessModes:
     - ReadWriteOnce
   resources:
