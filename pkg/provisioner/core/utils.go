@@ -50,7 +50,7 @@ func (p *OCIProvisioner) findADByName(name string) (*identity.AvailabilityDomain
 }
 
 // chooseAvailabilityDomain selects the availability zone using the ZoneFailureDomain labels
-// on the nodes. This only works if the nodes have been labeled by either the CCM or someother method.
+// on the nodes. This only works if the nodes have been labeled by either the CCM or some other method.
 func (p *OCIProvisioner) chooseAvailabilityDomain(pvc *v1.PersistentVolumeClaim) (string, *identity.AvailabilityDomain, error) {
 	var (
 		availabilityDomainName string
