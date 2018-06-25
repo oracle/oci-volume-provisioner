@@ -14,7 +14,7 @@ rules:
     verbs: ["create", "delete"]
   - apiGroups: [""]
     resources: ["secret"]
-    verbs: ["delete"]
+    verbs: ["create", "delete"]
   - apiGroups: [""]
     resources: ["storageclass"]
     verbs: ["create", "delete"]
