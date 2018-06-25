@@ -41,6 +41,6 @@
   name = "k8s.io/kubernetes"
 
 [[constraint]]
-  version = "v1.0.0"
+  version = "v1.6.0"
   name = "github.com/oracle/oci-go-sdk"
   
