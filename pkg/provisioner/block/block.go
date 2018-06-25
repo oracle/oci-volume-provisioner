@@ -42,6 +42,7 @@ const (
 	ociVolumeBackupID      = "volume.beta.kubernetes.io/oci-volume-source"
 	volumePrefixEnvVarName = "OCI_VOLUME_NAME_PREFIX"
 	fsType                 = "fsType"
+	bvProvisionerName      = "oracle/oci-bvs"
 )
 
 // blockProvisioner is the internal provisioner for OCI block volumes
@@ -162,7 +163,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 			},
 			PersistentVolumeSource: v1.PersistentVolumeSource{
 				FlexVolume: &v1.FlexVolumeSource{
-					Driver: plugin.OCIProvisionerName,
+					Driver: bvProvisionerName,
 					FSType: filesystemType,
 				},
 			},
