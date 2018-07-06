@@ -17,6 +17,8 @@ package block
 import (
 	"context"
 	"fmt"
+	"os"
+	"reflect"
 	"testing"
 	"time"
 
@@ -178,6 +180,102 @@ func TestVolumeRoundingLogic(t *testing.T) {
 				t.Fatalf("Expected volume to be %s but got %s", expected, actual)
 			}
 		})
+	}
+}
+
+func TestGetTags(t *testing.T) {
+	testCases := map[string]struct {
+		setup                func()
+		annotations          map[string]string
+		expectedDefinedTags  map[string]map[string]interface{}
+		expectedFreeformTags map[string]string
+	}{
+		"no default or annotation tags": {
+			setup: func() {
+				os.Setenv(defaultTagsEnvVar, "")
+			},
+			annotations:          map[string]string{},
+			expectedDefinedTags:  map[string]map[string]interface{}{},
+			expectedFreeformTags: map[string]string{},
+		},
+		"valid tags only default": {
+			setup: func() {
+				os.Setenv(defaultTagsEnvVar, "defaultnamespace.default=test,default=test")
+			},
+			annotations: map[string]string{},
+			expectedDefinedTags: map[string]map[string]interface{}{
+				"defaultnamespace": map[string]interface{}{
+					"default": "test",
+				},
+			},
+			expectedFreeformTags: map[string]string{
+				"default": "test",
+			},
+		},
+		"valid tags with default": {
+			setup: func() {
+				os.Setenv(defaultTagsEnvVar, "namespace1.default=test,default=test")
+			},
+			annotations: map[string]string{
+				ociTagAnnotation: "namespace1.test=foo,namespace2.test=bar,bar=baz,namespace1.test2=bar,foo=bar",
+			},
+			expectedDefinedTags: map[string]map[string]interface{}{
+				"namespace1": map[string]interface{}{
+					"test":    "foo",
+					"test2":   "bar",
+					"default": "test",
+				},
+				"namespace2": map[string]interface{}{
+					"test": "bar",
+				},
+			},
+			expectedFreeformTags: map[string]string{
+				"bar":     "baz",
+				"foo":     "bar",
+				"default": "test",
+			},
+		},
+		"override defaults with annotation": {
+			setup: func() {
+				os.Setenv(defaultTagsEnvVar, "namespace1.default=test,default=test")
+			},
+			annotations: map[string]string{
+				ociTagAnnotation: "namespace1.default=foo,default=bar",
+			},
+			expectedDefinedTags: map[string]map[string]interface{}{
+				"namespace1": map[string]interface{}{
+					"default": "foo",
+				},
+			},
+			expectedFreeformTags: map[string]string{
+				"default": "bar",
+			},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				os.Setenv(defaultTagsEnvVar, "")
+			}()
+
+			if tc.setup != nil {
+				tc.setup()
+			}
+
+			defined, freeform, err := getTags(tc.annotations)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if !reflect.DeepEqual(defined, tc.expectedDefinedTags) {
+				t.Errorf("defined tags not equal: got %v ; wanted %v", defined, tc.expectedDefinedTags)
+			}
+			if !reflect.DeepEqual(freeform, tc.expectedFreeformTags) {
+				t.Errorf("freeform tags not equal: got %v ; wanted %v", freeform, tc.expectedFreeformTags)
+			}
+		})
+
 	}
 }
 

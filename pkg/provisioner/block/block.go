@@ -38,8 +38,11 @@ import (
 )
 
 const (
-	ociVolumeID            = "ociVolumeID"
-	ociVolumeBackupID      = "volume.beta.kubernetes.io/oci-volume-source"
+	ociVolumeID       = "ociVolumeID"
+	ociVolumeBackupID = "volume.beta.kubernetes.io/oci-volume-source"
+	ociTagAnnotation  = "oraclecloud.com/additional-tags"
+
+	defaultTagsEnvVar      = "OCI_DEFAULT_TAGS"
 	volumePrefixEnvVarName = "OCI_VOLUME_NAME_PREFIX"
 	fsType                 = "fsType"
 )
@@ -113,6 +116,14 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 		SizeInMBs:          common.Int(volSizeMB),
 	}
 
+	definedTags, freeformTags, err := getTags(options.PVC.Annotations)
+	if err != nil {
+		return nil, err
+	}
+
+	volumeDetails.DefinedTags = definedTags
+	volumeDetails.FreeformTags = freeformTags
+
 	if value, ok := options.PVC.Annotations[ociVolumeBackupID]; ok {
 		glog.Infof("Creating volume from backup ID %s", value)
 		volumeDetails.SourceDetails = &core.VolumeSourceFromVolumeBackupDetails{Id: &value}
@@ -170,6 +181,72 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 	}
 
 	return pv, nil
+}
+
+func getTags(annotations map[string]string) (defined map[string]map[string]interface{}, freeform map[string]string, err error) {
+	defaultDefinedTags, defaultFreeformTags, err := parseTags(os.Getenv(defaultTagsEnvVar))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	definedTags, freeformTags, err := parseTags(annotations[ociTagAnnotation])
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// merge annotation tags with default tags
+	for namespace, tags := range definedTags {
+		if _, ok := defaultDefinedTags[namespace]; !ok {
+			defaultDefinedTags[namespace] = map[string]interface{}{}
+		}
+
+		for tag, value := range tags {
+			defaultDefinedTags[namespace][tag] = value
+		}
+	}
+
+	for tag, value := range freeformTags {
+		defaultFreeformTags[tag] = value
+	}
+
+	return defaultDefinedTags, defaultFreeformTags, nil
+}
+
+func parseTags(tagStr string) (defined map[string]map[string]interface{}, freeform map[string]string, err error) {
+
+	defined = map[string]map[string]interface{}{}
+	freeform = map[string]string{}
+
+	if tagStr == "" {
+		return
+	}
+
+	for _, tag := range strings.Split(tagStr, ",") {
+		parts := strings.Split(tag, "=")
+		if len(parts) != 2 {
+			return nil, nil, fmt.Errorf("tag format must follow (<namespace>.)<tagkey>=<value>: %q", tag)
+		}
+
+		key, value := parts[0], parts[1]
+
+		keyParts := strings.Split(key, ".")
+		if len(keyParts) == 1 {
+			freeform[key] = value
+		} else if len(keyParts) == 2 {
+			namespace, key := keyParts[0], keyParts[1]
+			namespaceTags, ok := defined[namespace]
+			if !ok {
+				namespaceTags = map[string]interface{}{}
+				defined[namespace] = namespaceTags
+			}
+
+			namespaceTags[key] = value
+		} else {
+			return nil, nil, fmt.Errorf("tag format must follow (<namespace>.)<tagkey>=<value>: %q", tag)
+		}
+	}
+
+	return
 }
 
 // Delete destroys a OCI volume created by Provision
