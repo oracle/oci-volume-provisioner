@@ -2,7 +2,10 @@ kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: oci-volume-provisioner-system-test-{{TEST_ID}}
-rules:
+rules:  
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["list"]
   - apiGroups: [""]
     resources: ["persistentvolumeclaim"]
     verbs: ["get", "delete"]
