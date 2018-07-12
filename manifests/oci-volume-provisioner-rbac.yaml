@@ -9,7 +9,7 @@ rules:
     verbs: ["get", "list", "watch", "create", "delete"]
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
-    verbs: ["get", "list", "watch", "update"]
+    verbs: ["get", "list", "watch", "update", "create"]
   - apiGroups: ["storage.k8s.io"]
     resources: ["storageclasses"]
     verbs: ["get", "list", "watch"]
@@ -27,7 +27,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: oci-volume-provisioner
-    namespace: kube-system 
+    namespace: kube-system
 roleRef:
   kind: ClusterRole
   name: oci-provisioner-runner
