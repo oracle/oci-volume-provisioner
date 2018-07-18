@@ -29,6 +29,8 @@ import uuid
 import oci
 import yaml
 
+
+MNT_TARGET_OCID = "MNT_TARGET_OCID"
 DEBUG_FILE = "runner.log"
 TERRAFORM_CLUSTER = "terraform/cluster"
 TERRAFORM_DIR = "terraform"
@@ -109,7 +111,6 @@ def _destroy_key_files(check_oci):
     if check_oci:
         os.remove(TMP_OCI_API_KEY_FILE)
 
-
 def _get_kubeconfig():
     return os.environ['KUBECONFIG'] if "KUBECONFIG" in os.environ else TMP_KUBECONFIG
 
@@ -121,6 +122,30 @@ def _get_oci_config_file():
 def _get_oci_api_key_file():
     return TMP_OCI_API_KEY_FILE
 
+def _create_fss_storage_config(infile, outfile, test):
+    '''Based on the storage config template file and the mount arget OCID info, generate
+    a valid storage config yaml to use for creating an OCI Export
+    @param infile: File to use as template
+    @type infile: C{Str}
+    @param outfile: Outfile to storage class config file to
+    @type outfile: C{Str}'''
+    _log("Creating fss storage claim configuration file")
+    _mntTargetOCID = os.environ[MNT_TARGET_OCID]
+    if not _mntTargetOCID:
+        _log("No mount target OCID provided")
+    with open(infile, "r") as sources:
+        lines = sources.readlines()
+    with open(outfile + "." + test_id, "w") as sources:
+        for line in lines:
+            patched_line = line
+            if volume_name is not None:
+                patched_line = re.sub('{{VOLUME_NAME}}', volume_name, patched_line)
+            patched_line = re.sub('{{TEST_ID}}', test_id, patched_line)
+            if availability_domain:
+                availability_domain = availability_domain.replace(':', '-') # yaml config does not allow ':'
+                patched_line = re.sub('{{AVAILABILITY_DOMAIN}}', availability_domain, patched_line)
+            sources.write(patched_line)
+    return outfile + "." + test_id
 
 def _banner(as_banner, bold):
     if as_banner:
@@ -734,6 +759,7 @@ def _main():
 
     success = True
 
+    _create_fss_storage_config()
     if args['setup']:
         # Cleanup in case any existing state exists in the cluster
         _cleanup(display_errors=False)

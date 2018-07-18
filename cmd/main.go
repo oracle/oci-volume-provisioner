@@ -36,13 +36,15 @@ import (
 const (
 	resyncPeriod              = 15 * time.Second
 	minResyncPeriod           = 12 * time.Hour
-	provisionerName           = "oracle.com/oci"
+	provisionerNameBlock      = "oracle.com/oci"
+	provisionerNameFss        = "oracle.com/oci-fss"
 	exponentialBackOffOnError = false
 	failedRetryThreshold      = 5
 	leasePeriod               = controller.DefaultLeaseDuration
 	retryPeriod               = controller.DefaultRetryPeriod
 	renewDeadline             = controller.DefaultRenewDeadline
 	termLimit                 = controller.DefaultTermLimit
+	provisionerTypeArg        = "provisionerType"
 )
 
 // informerResyncPeriod computes the time interval a shared informer waits
@@ -92,6 +94,14 @@ func main() {
 		glog.Fatal("env variable NODE_NAME must be set so that this provisioner can identify itself")
 	}
 
+	// Decides what type of provider to deploy, either block or fss
+	provisionerType := os.Getenv("PROVISIONER_TYPE")
+	if provisionerType == "" {
+		provisionerType = provisionerNameBlock
+	}
+
+	glog.Infof("Starting volume provisioner in %s mode", provisionerType)
+
 	sharedInformerFactory := informers.NewSharedInformerFactory(clientset, informerResyncPeriod(minResyncPeriod)())
 
 	volumeSizeLowerBound, err := resource.ParseQuantity(*minVolumeSize)
@@ -107,7 +117,7 @@ func main() {
 	// PVs
 	pc := controller.NewProvisionController(
 		clientset,
-		provisionerName,
+		provisionerType,
 		ociProvisioner,
 		serverVersion.GitVersion,
 		controller.ResyncPeriod(resyncPeriod),

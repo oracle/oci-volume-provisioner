@@ -36,6 +36,8 @@ const (
 	ociVolumeID            = "ociVolumeID"
 	volumePrefixEnvVarName = "OCI_VOLUME_NAME_PREFIX"
 	fsType                 = "fsType"
+	subnetID               = "subnetId"
+	mntTargetID            = "mntTargetId"
 )
 
 // filesystemProvisioner is the internal provisioner for OCI filesystem volumes
@@ -53,6 +55,18 @@ func NewFilesystemProvisioner(client client.ProvisionerClient) plugin.Provisione
 	}
 }
 
+// getMountTargetFromID retrieves mountTarget from given mountTargetID
+func getMountTargetFromID(ctx context.Context, mountTargetID string, fileStorageClient client.FileStorage) *filestorage.MountTarget {
+	responseMnt, err := fileStorageClient.GetMountTarget(ctx, filestorage.GetMountTargetRequest{
+		MountTargetId: common.String(mountTargetID),
+	})
+	if err != nil {
+		glog.Errorf("Failed to retrieve mount point: %s", err)
+		return nil
+	}
+	return &responseMnt.MountTarget
+}
+
 func (filesystem *filesystemProvisioner) Provision(
 	options controller.VolumeOptions,
 	availabilityDomain *identity.AvailabilityDomain) (*v1.PersistentVolume, error) {
@@ -60,7 +74,8 @@ func (filesystem *filesystemProvisioner) Provision(
 	ctx, cancel := context.WithTimeout(filesystem.client.Context(), filesystem.client.Timeout())
 	defer cancel()
 
-	response, err := filesystem.client.FileStorage().CreateFileSystem(ctx, filestorage.CreateFileSystemRequest{
+	fileStorageClient := filesystem.client.FileStorage()
+	response, err := fileStorageClient.CreateFileSystem(ctx, filestorage.CreateFileSystemRequest{
 		CreateFileSystemDetails: filestorage.CreateFileSystemDetails{
 			AvailabilityDomain: availabilityDomain.Name,
 			CompartmentId:      common.String(filesystem.client.CompartmentOCID()),
@@ -68,10 +83,46 @@ func (filesystem *filesystemProvisioner) Provision(
 		},
 	})
 	if err != nil {
-		glog.Errorf("Failed to create a volume:%#v, %s", options, err)
+		glog.Errorf("Failed to create a file system storage:%#v, %s", options, err)
 		return nil, err
 	}
 
+	mntTargetResp := filestorage.MountTarget{}
+	if options.Parameters[mntTargetID] == "" {
+		// Mount target not created, create a new one
+		responseMnt, err := fileStorageClient.CreateMountTarget(ctx, filestorage.CreateMountTargetRequest{
+			CreateMountTargetDetails: filestorage.CreateMountTargetDetails{
+				AvailabilityDomain: availabilityDomain.Name,
+				SubnetId:           common.String(options.Parameters[subnetID]),
+				CompartmentId:      common.String(filesystem.client.CompartmentOCID()),
+				DisplayName:        common.String(fmt.Sprintf("%s%s", os.Getenv(volumePrefixEnvVarName), "mnt")),
+			},
+		})
+		if err != nil {
+			glog.Errorf("Failed to create a mount point:%#v, %s", options, err)
+			return nil, err
+		}
+		mntTargetResp = responseMnt.MountTarget
+	} else {
+		// Mount target already specified in the configuration file, find it in the list of mount targets
+		mntTargetResp = *getMountTargetFromID(ctx, options.Parameters[mntTargetID], fileStorageClient)
+	}
+
+	glog.Infof("Creating export set")
+	_, err = fileStorageClient.CreateExport(ctx, filestorage.CreateExportRequest{
+		CreateExportDetails: filestorage.CreateExportDetails{
+			ExportSetId:  mntTargetResp.ExportSetId,
+			FileSystemId: response.FileSystem.Id,
+			Path:         common.String("/"),
+		},
+	})
+
+	if err != nil {
+		glog.Errorf("Failed to create export:%s", err)
+		return nil, err
+	}
+
+	glog.Infof("Creating persistent volume")
 	return &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: *response.FileSystem.Id,
@@ -88,9 +139,10 @@ func (filesystem *filesystemProvisioner) Provision(
 				v1.ResourceName(v1.ResourceStorage): options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)],
 			},
 			PersistentVolumeSource: v1.PersistentVolumeSource{
-				FlexVolume: &v1.FlexVolumeSource{
-					Driver: plugin.OCIProvisionerName,
-					FSType: "NFSv3",
+				NFS: &v1.NFSVolumeSource{
+					Server:   *mntTargetResp.SubnetId,
+					Path:     "/",
+					ReadOnly: false,
 				},
 			},
 		},

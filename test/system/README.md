@@ -18,6 +18,10 @@ files. Alternatively, OCICONFIG_VAR/KUBECONFIG_VAR must contain the content
 of the required files (base64 encoded). If both are set, the former will 
 take precedence.
 
+* $MNT_TARGET_OCID
+
+Mount target ocid used to attach file systems to for the oci-fss provisioner type
+
 We can then run the system test as follows:
 
 ```
