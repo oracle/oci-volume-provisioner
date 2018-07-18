@@ -79,7 +79,6 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1
 	}
 
 	blockProvisioner := block.NewBlockProvisioner(client, instancemeta.New(), volumeRoundingEnabled, minVolumeSize)
-
 	return &OCIProvisioner{
 		client:           client,
 		kubeClient:       kubeClient,
