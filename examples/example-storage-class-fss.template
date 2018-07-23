@@ -4,4 +4,4 @@ metadata:
   name: oci-fss
 provisioner: oracle.com/oci-fss
 parameters:
-  subnetId: {{MOUNT_TARGET_OCID}}
+  subnetId: {{MNT_TARGET_OCID}}

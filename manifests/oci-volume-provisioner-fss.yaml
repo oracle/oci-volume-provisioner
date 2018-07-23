@@ -1,18 +1,18 @@
 apiVersion: apps/v1beta1
 kind: Deployment
 metadata:
-  name: oci-volume-provisioner
+  name: oci-volume-provisioner-fss
   namespace: kube-system
 spec:
   replicas: 1
   template:
     metadata:
       labels:
-        app: oci-volume-provisioner
+        app: oci-volume-provisioner-fss
     spec:
-      serviceAccountName: oci-volume-provisioner
+      serviceAccountName: oci-volume-provisioner-fss
       containers:
-        - name: oci-volume-provisioner
+        - name: oci-volume-provisioner-fss
           image: @IMAGE@:@VERSION@
           env:
             - name: NODE_NAME
@@ -20,7 +20,7 @@ spec:
                 fieldRef:
                   fieldPath: spec.nodeName
             - name: PROVISIONER_TYPE
-              value: oracle.com/oci
+              value: oracle.com/oci-fss
           volumeMounts:
             - name: config
               mountPath: /etc/oci/
@@ -28,4 +28,4 @@ spec:
       volumes:
         - name: config
           secret:
-            secretName: oci-volume-provisioner
+            secretName: oci-volume-provisioner-fss

@@ -448,7 +448,7 @@ def _create_yaml(template, test_id, region=None, backup_id=None, mount_target_oc
             if backup_id is not None:
                 patched_line = re.sub('{{BACKUP_ID}}', backup_id, patched_line)
             if mount_target_ocid is not None:
-                patched_line = re.sub('{{MOUNT_TARGET_OCID}}', backup_id, patched_line)
+                patched_line = re.sub('{{MNT_TARGET_OCID}}', mount_target_ocid, patched_line)
             sources.write(patched_line)
     return yaml_file
 
