@@ -74,6 +74,11 @@ func (c *MockFileStorageClient) GetMountTarget(ctx context.Context, request file
 	return filestorage.GetMountTargetResponse{}, nil
 }
 
+// ListMountTargets mocks the FileStorage ListMountTargets implementation
+func (c *MockFileStorageClient) ListMountTargets(ctx context.Context, request filestorage.ListMountTargetsRequest) (response filestorage.ListMountTargetsResponse, err error) {
+	return filestorage.ListMountTargetsResponse{}, nil
+}
+
 // MockIdentityClient mocks identity client structure
 type MockIdentityClient struct {
 	common.BaseClient

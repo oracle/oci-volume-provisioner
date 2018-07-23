@@ -89,6 +89,11 @@ func (filesystem *filesystemProvisioner) Provision(
 
 	mntTargetResp := filestorage.MountTarget{}
 	if options.Parameters[mntTargetID] == "" {
+		// Check if there there already is a mount target in the existing compartment
+		responseListMnt, err := fileStorageClient.ListMountTargets(ctx, filestorage.ListMountTargetsRequest{
+			AvailabilityDomain: availabilityDomain.Name,
+			CompartmentId:      common.String(filesystem.client.CompartmentOCID()),
+		})
 		// Mount target not created, create a new one
 		responseMnt, err := fileStorageClient.CreateMountTarget(ctx, filestorage.CreateMountTargetRequest{
 			CreateMountTargetDetails: filestorage.CreateMountTargetDetails{
