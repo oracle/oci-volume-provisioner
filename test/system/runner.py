@@ -680,11 +680,12 @@ def _main():
 
     success = True
     _storageClassFile = _create_yaml("../../examples/example-storage-class-fss.template", test_id, 
-                                     mount_target_ocid=os.environ.get(MNT_TARGET_OCID))
+                                     mount_target_ocid=os.environ.get(MNT_TARGET_OCID, ""))
 
     _k8sResources = [_storageClassFile, "../../dist/persistent-volume-claim-fss.yaml"
-                     "../../dist/storage-class.yaml", "../../dist/storage-class-exc3.yaml",
+                     "../../dist/storage-class.yaml", "../../dist/storage-class-ext3.yaml",
                      "../../dist/oci-volume-provisioner-rbac.yaml",
+                     "../../dist/oci-volume-provisioner-fss.yaml",
                      "../../dist/oci-volume-provisioner.yaml"]
     if args['setup']:
         # Cleanup in case any existing state exists in the cluster
