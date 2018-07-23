@@ -1,0 +1,18 @@
+kind: Pod
+apiVersion: v1
+metadata:
+  name: ocidemo-fss
+spec:
+  volumes:
+    - name: nginx
+      persistentVolumeClaim:
+        claimName: fss-pvc
+  containers:
+    - name: task-pv-container
+      image: nginx
+      ports:
+        - containerPort: 80
+          name: "http-server"
+      volumeMounts:
+      - mountPath: "/usr/share/nginx/html"
+        name: task-pv-storage

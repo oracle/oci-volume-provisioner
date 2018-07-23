@@ -20,7 +20,9 @@ take precedence.
 
 * $MNT_TARGET_OCID
 
-Mount target ocid used to attach file systems to for the oci-fss provisioner type
+Mount target ocid used to attach file systems to for the oci-fss provisioner type.
+If not mount target ocid is specified, the volume provisioner will randomly select one
+from the existing ones. If no mount targets exist, a new one will be created.
 
 We can then run the system test as follows:
 
