@@ -18,7 +18,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"os"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
@@ -95,23 +97,31 @@ func (filesystem *filesystemProvisioner) Provision(
 			AvailabilityDomain: availabilityDomain.Name,
 			CompartmentId:      common.String(filesystem.client.CompartmentOCID()),
 		})
-		if len(responseListMnt.Items) != 0 {
-			glog.Infof("Found mount targets to use")
-		}
-		// Mount target not created, create a new one
-		responseMnt, err := fileStorageClient.CreateMountTarget(ctx, filestorage.CreateMountTargetRequest{
-			CreateMountTargetDetails: filestorage.CreateMountTargetDetails{
-				AvailabilityDomain: availabilityDomain.Name,
-				SubnetId:           common.String(options.Parameters[subnetID]),
-				CompartmentId:      common.String(filesystem.client.CompartmentOCID()),
-				DisplayName:        common.String(fmt.Sprintf("%s%s", os.Getenv(volumePrefixEnvVarName), "mnt")),
-			},
-		})
 		if err != nil {
-			glog.Errorf("Failed to create a mount point:%#v, %s", options, err)
+			glog.Errorf("Failed to list mount targets:%#v, %s", options, err)
 			return nil, err
 		}
-		mntTargetResp = responseMnt.MountTarget
+		if len(responseListMnt.Items) != 0 {
+			glog.Infof("Found mount targets to use")
+			rand.Seed(time.Now().Unix())
+			mntTargetSummary := responseListMnt.Items[rand.Int()%len(responseListMnt.Items)]
+			mntTargetResp = *getMountTargetFromID(ctx, *mntTargetSummary.Id, fileStorageClient)
+		} else {
+			// Mount target not created, create a new one
+			responseMnt, err := fileStorageClient.CreateMountTarget(ctx, filestorage.CreateMountTargetRequest{
+				CreateMountTargetDetails: filestorage.CreateMountTargetDetails{
+					AvailabilityDomain: availabilityDomain.Name,
+					SubnetId:           common.String(options.Parameters[subnetID]),
+					CompartmentId:      common.String(filesystem.client.CompartmentOCID()),
+					DisplayName:        common.String(fmt.Sprintf("%s%s", os.Getenv(volumePrefixEnvVarName), "mnt")),
+				},
+			})
+			if err != nil {
+				glog.Errorf("Failed to create a mount target:%#v, %s", options, err)
+				return nil, err
+			}
+			mntTargetResp = responseMnt.MountTarget
+		}
 	} else {
 		// Mount target already specified in the configuration file, find it in the list of mount targets
 		mntTargetResp = *getMountTargetFromID(ctx, options.Parameters[mntTargetID], fileStorageClient)
