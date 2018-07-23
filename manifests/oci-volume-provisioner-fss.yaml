@@ -8,11 +8,11 @@ spec:
   template:
     metadata:
       labels:
-        app: oci-volume-provisioner-fss
+        app: oci-volume-provisioner
     spec:
-      serviceAccountName: oci-volume-provisioner-fss
+      serviceAccountName: oci-volume-provisioner
       containers:
-        - name: oci-volume-provisioner-fss
+        - name: oci-volume-provisioner
           image: @IMAGE@:@VERSION@
           env:
             - name: NODE_NAME
@@ -28,4 +28,4 @@ spec:
       volumes:
         - name: config
           secret:
-            secretName: oci-volume-provisioner-fss
+            secretName: oci-volume-provisioner

@@ -684,7 +684,7 @@ def _main():
     _storageClassFile = _create_yaml("../../examples/example-storage-class-fss.template", test_id, 
                                      mount_target_ocid=os.environ.get(MNT_TARGET_OCID))
 
-    _k8sResources = [_storageClassFile, "../../dist/persistent-volume-claim-fss.yaml",
+    _k8sResources = [_storageClassFile,
                      "../../dist/storage-class.yaml", "../../dist/storage-class-ext3.yaml",
                      "../../dist/oci-volume-provisioner-rbac.yaml",
                      "../../dist/oci-volume-provisioner-fss.yaml",
