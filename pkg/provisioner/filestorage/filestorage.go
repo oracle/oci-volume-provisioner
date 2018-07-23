@@ -121,7 +121,10 @@ func (filesystem *filesystemProvisioner) Provision(
 		glog.Errorf("Failed to create export:%s", err)
 		return nil, err
 	}
-
+	mntTargetSubnetIDPtr := ""
+	if mntTargetResp.SubnetId != nil {
+		mntTargetSubnetIDPtr = *mntTargetResp.SubnetId
+	}
 	glog.Infof("Creating persistent volume")
 	return &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
@@ -140,7 +143,7 @@ func (filesystem *filesystemProvisioner) Provision(
 			},
 			PersistentVolumeSource: v1.PersistentVolumeSource{
 				NFS: &v1.NFSVolumeSource{
-					Server:   *mntTargetResp.SubnetId,
+					Server:   mntTargetSubnetIDPtr,
 					Path:     "/",
 					ReadOnly: false,
 				},
