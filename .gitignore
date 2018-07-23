@@ -5,3 +5,4 @@ env.sh
 *.log
 test/system/venv/
 test/system/run-test-image.yaml*
+examples/*.yaml
