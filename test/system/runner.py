@@ -449,6 +449,8 @@ def _create_yaml(template, test_id, region=None, backup_id=None, mount_target_oc
                 patched_line = re.sub('{{BACKUP_ID}}', backup_id, patched_line)
             if mount_target_ocid is not None:
                 patched_line = re.sub('{{MNT_TARGET_OCID}}', mount_target_ocid, patched_line)
+            else:
+                patched_line = ""
             sources.write(patched_line)
     return yaml_file
 
@@ -680,9 +682,9 @@ def _main():
 
     success = True
     _storageClassFile = _create_yaml("../../examples/example-storage-class-fss.template", test_id, 
-                                     mount_target_ocid=os.environ.get(MNT_TARGET_OCID, ""))
+                                     mount_target_ocid=os.environ.get(MNT_TARGET_OCID))
 
-    _k8sResources = [_storageClassFile, "../../dist/persistent-volume-claim-fss.yaml"
+    _k8sResources = [_storageClassFile, "../../dist/persistent-volume-claim-fss.yaml",
                      "../../dist/storage-class.yaml", "../../dist/storage-class-ext3.yaml",
                      "../../dist/oci-volume-provisioner-rbac.yaml",
                      "../../dist/oci-volume-provisioner-fss.yaml",
