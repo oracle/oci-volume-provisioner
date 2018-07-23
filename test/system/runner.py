@@ -121,31 +121,6 @@ def _get_oci_config_file():
 def _get_oci_api_key_file():
     return TMP_OCI_API_KEY_FILE
 
-def _create_fss_storage_config(infile, outfile, test):
-    '''Based on the storage config template file and the mount arget OCID info, generate
-    a valid storage config yaml to use for creating an OCI Export
-    @param infile: File to use as template
-    @type infile: C{Str}
-    @param outfile: Outfile to storage class config file to
-    @type outfile: C{Str}'''
-    _log("Creating fss storage claim configuration file")
-    _mntTargetOCID = os.environ[MNT_TARGET_OCID]
-    if not _mntTargetOCID:
-        _log("No mount target OCID provided")
-    with open(infile, "r") as sources:
-        lines = sources.readlines()
-    with open(outfile + "." + test_id, "w") as sources:
-        for line in lines:
-            patched_line = line
-            if volume_name is not None:
-                patched_line = re.sub('{{VOLUME_NAME}}', volume_name, patched_line)
-            patched_line = re.sub('{{TEST_ID}}', test_id, patched_line)
-            if availability_domain:
-                availability_domain = availability_domain.replace(':', '-') # yaml config does not allow ':'
-                patched_line = re.sub('{{AVAILABILITY_DOMAIN}}', availability_domain, patched_line)
-            sources.write(patched_line)
-    return outfile + "." + test_id
-
 def _banner(as_banner, bold):
     if as_banner:
         if bold:
@@ -436,20 +411,9 @@ def _handle_args():
     return args
 
 
-def _cleanup(exit_on_error=False, display_errors=True):
-    _kubectl("delete -f ../../dist/oci-volume-provisioner.yaml",
-             exit_on_error, display_errors)
-    _kubectl("delete -f ../../dist/oci-volume-provisioner-rbac.yaml",
-             exit_on_error, display_errors)
-    _kubectl("delete -f ../../dist/storage-class.yaml",
-             exit_on_error, display_errors)
-    _kubectl("delete -f ../../dist/storage-class-fss.yaml",
-             exit_on_error, display_errors)
-    _kubectl("delete -f ../../dist/storage-class-ext3.yaml",
-             exit_on_error, display_errors)
-    _kubectl("-n kube-system delete secret oci-volume-provisioner",
-             exit_on_error, display_errors)
-
+def _cleanup(k8sResources=[], exit_on_error=False, display_errors=True):
+    for _res in k8sResources: 
+        _kubectl("delete -f " + _res, exit_on_error, display_errors)
 
 def _get_region():
     nodes_json = _kubectl("get nodes -o json", log_stdout=False)
@@ -460,7 +424,7 @@ def _get_region():
     _finish_with_exit_code(1)
 
 
-def _create_yaml(template, test_id, region=None, backup_id=None):
+def _create_yaml(template, test_id, region=None, backup_id=None, mount_target_ocid=None):
     '''Generate yaml based on the given template and fill in additional details
     @param template: Name of file to use as template
     @type template: C{Str}
@@ -483,9 +447,10 @@ def _create_yaml(template, test_id, region=None, backup_id=None):
                 patched_line = re.sub('{{REGION}}', region, patched_line)
             if backup_id is not None:
                 patched_line = re.sub('{{BACKUP_ID}}', backup_id, patched_line)
+            if mount_target_ocid is not None:
+                patched_line = re.sub('{{MOUNT_TARGET_OCID}}', backup_id, patched_line)
             sources.write(patched_line)
     return yaml_file
-
 
 def _test_create_volume(compartment_id, claim_target, claim_volume_name, check_oci, test_id=None, 
                         availability_domain=None, verify_func=None, storageType=BLOCK_STORAGE):
@@ -714,20 +679,22 @@ def _main():
     test_id = str(uuid.uuid4())[:8]
 
     success = True
+    _storageClassFile = _create_yaml("../../examples/example-storage-class-fss.template", test_id, 
+                                     mount_target_ocid=os.environ.get(MNT_TARGET_OCID))
 
-    _create_fss_storage_config()
+    _k8sResources = [_storageClassFile, "../../dist/persistent-volume-claim-fss.yaml"
+                     "../../dist/storage-class.yaml", "../../dist/storage-class-exc3.yaml",
+                     "../../dist/oci-volume-provisioner-rbac.yaml",
+                     "../../dist/oci-volume-provisioner.yaml"]
     if args['setup']:
         # Cleanup in case any existing state exists in the cluster
-        _cleanup(display_errors=False)
+        _cleanup(k8sResources=_k8sResources, display_errors=False)
         _log("Setting up the volume provisioner", as_banner=True)
         _kubectl("-n kube-system create secret generic oci-volume-provisioner " + \
                  "--from-file=config.yaml=" + _get_oci_config_file(),
                  exit_on_error=False)
-        _kubectl("create -f ../../dist/storage-class.yaml", exit_on_error=False)
-        _kubectl("create -f ../../dist/storage-class-ext3.yaml", exit_on_error=False)
-        _kubectl("create -f ../../dist/storage-class-fss.yaml", exit_on_error=False)
-        _kubectl("create -f ../../dist/oci-volume-provisioner-rbac.yaml", exit_on_error=False)
-        _kubectl("create -f ../../dist/oci-volume-provisioner.yaml", exit_on_error=False)
+        for _res in _k8sResources:
+            _kubectl("create -f " + _res, exit_on_error=False)
         pod_name, _, _ = _wait_for_pod_status("Running", test_id, POD_VOLUME)
         compartment_id = _get_compartment_id(pod_name)
     else:
@@ -736,7 +703,7 @@ def _main():
     if args['teardown']:
         def _teardown_atexit():
             _log("Tearing down the volume provisioner", as_banner=True)
-            _cleanup()
+            _cleanup(k8sResources=_k8sResources)
         atexit.register(_teardown_atexit)
 
     if not args['no_test']:
