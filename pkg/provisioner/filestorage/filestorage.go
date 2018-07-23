@@ -18,7 +18,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"os"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
@@ -89,20 +91,37 @@ func (filesystem *filesystemProvisioner) Provision(
 
 	mntTargetResp := filestorage.MountTarget{}
 	if options.Parameters[mntTargetID] == "" {
-		// Mount target not created, create a new one
-		responseMnt, err := fileStorageClient.CreateMountTarget(ctx, filestorage.CreateMountTargetRequest{
-			CreateMountTargetDetails: filestorage.CreateMountTargetDetails{
-				AvailabilityDomain: availabilityDomain.Name,
-				SubnetId:           common.String(options.Parameters[subnetID]),
-				CompartmentId:      common.String(filesystem.client.CompartmentOCID()),
-				DisplayName:        common.String(fmt.Sprintf("%s%s", os.Getenv(volumePrefixEnvVarName), "mnt")),
-			},
+		// Check if there there already is a mount target in the existing compartment
+		glog.Infof("Looking up existing mount targets")
+		responseListMnt, err := fileStorageClient.ListMountTargets(ctx, filestorage.ListMountTargetsRequest{
+			AvailabilityDomain: availabilityDomain.Name,
+			CompartmentId:      common.String(filesystem.client.CompartmentOCID()),
 		})
 		if err != nil {
-			glog.Errorf("Failed to create a mount point:%#v, %s", options, err)
+			glog.Errorf("Failed to list mount targets:%#v, %s", options, err)
 			return nil, err
 		}
-		mntTargetResp = responseMnt.MountTarget
+		if len(responseListMnt.Items) != 0 {
+			glog.Infof("Found mount targets to use")
+			rand.Seed(time.Now().Unix())
+			mntTargetSummary := responseListMnt.Items[rand.Int()%len(responseListMnt.Items)]
+			mntTargetResp = *getMountTargetFromID(ctx, *mntTargetSummary.Id, fileStorageClient)
+		} else {
+			// Mount target not created, create a new one
+			responseMnt, err := fileStorageClient.CreateMountTarget(ctx, filestorage.CreateMountTargetRequest{
+				CreateMountTargetDetails: filestorage.CreateMountTargetDetails{
+					AvailabilityDomain: availabilityDomain.Name,
+					SubnetId:           common.String(options.Parameters[subnetID]),
+					CompartmentId:      common.String(filesystem.client.CompartmentOCID()),
+					DisplayName:        common.String(fmt.Sprintf("%s%s", os.Getenv(volumePrefixEnvVarName), "mnt")),
+				},
+			})
+			if err != nil {
+				glog.Errorf("Failed to create a mount target:%#v, %s", options, err)
+				return nil, err
+			}
+			mntTargetResp = responseMnt.MountTarget
+		}
 	} else {
 		// Mount target already specified in the configuration file, find it in the list of mount targets
 		mntTargetResp = *getMountTargetFromID(ctx, options.Parameters[mntTargetID], fileStorageClient)
@@ -121,7 +140,10 @@ func (filesystem *filesystemProvisioner) Provision(
 		glog.Errorf("Failed to create export:%s", err)
 		return nil, err
 	}
-
+	mntTargetSubnetIDPtr := ""
+	if mntTargetResp.SubnetId != nil {
+		mntTargetSubnetIDPtr = *mntTargetResp.SubnetId
+	}
 	glog.Infof("Creating persistent volume")
 	return &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
@@ -140,7 +162,7 @@ func (filesystem *filesystemProvisioner) Provision(
 			},
 			PersistentVolumeSource: v1.PersistentVolumeSource{
 				NFS: &v1.NFSVolumeSource{
-					Server:   *mntTargetResp.SubnetId,
+					Server:   mntTargetSubnetIDPtr,
 					Path:     "/",
 					ReadOnly: false,
 				},

@@ -64,6 +64,26 @@ func (c *MockFileStorageClient) DeleteFileSystem(ctx context.Context, request fi
 	return filestorage.DeleteFileSystemResponse{}, nil
 }
 
+// CreateExport mocks the FileStorage CreateExport implementation
+func (c *MockFileStorageClient) CreateExport(ctx context.Context, request filestorage.CreateExportRequest) (response filestorage.CreateExportResponse, err error) {
+	return filestorage.CreateExportResponse{}, nil
+}
+
+// CreateMountTarget mocks the FileStorage CreateMountTarget implementation
+func (c *MockFileStorageClient) CreateMountTarget(ctx context.Context, request filestorage.CreateMountTargetRequest) (response filestorage.CreateMountTargetResponse, err error) {
+	return filestorage.CreateMountTargetResponse{}, nil
+}
+
+// GetMountTarget mocks the FileStorage GetMountTarget implementation
+func (c *MockFileStorageClient) GetMountTarget(ctx context.Context, request filestorage.GetMountTargetRequest) (response filestorage.GetMountTargetResponse, err error) {
+	return filestorage.GetMountTargetResponse{}, nil
+}
+
+// ListMountTargets mocks the FileStorage ListMountTargets implementation
+func (c *MockFileStorageClient) ListMountTargets(ctx context.Context, request filestorage.ListMountTargetsRequest) (response filestorage.ListMountTargetsResponse, err error) {
+	return filestorage.ListMountTargetsResponse{}, nil
+}
+
 // MockIdentityClient mocks identity client structure
 type MockIdentityClient struct {
 	common.BaseClient
