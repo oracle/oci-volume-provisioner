@@ -64,6 +64,11 @@ func (c *MockFileStorageClient) CreateExport(ctx context.Context, request filest
 	return filestorage.CreateExportResponse{}, nil
 }
 
+// DeleteExport mocks the FileStorage DeleteExport implementation
+func (c *MockFileStorageClient) DeleteExport(ctx context.Context, request filestorage.DeleteExportRequest) (response filestorage.DeleteExportResponse, err error) {
+	return filestorage.DeleteExportResponse{}, nil
+}
+
 // CreateMountTarget mocks the FileStorage CreateMountTarget implementation
 func (c *MockFileStorageClient) CreateMountTarget(ctx context.Context, request filestorage.CreateMountTargetRequest) (response filestorage.CreateMountTargetResponse, err error) {
 	return filestorage.CreateMountTargetResponse{}, nil

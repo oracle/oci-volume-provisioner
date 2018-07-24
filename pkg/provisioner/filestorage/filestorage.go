@@ -36,6 +36,7 @@ import (
 
 const (
 	ociVolumeID            = "ociVolumeID"
+	ociExportID            = "ociExportID"
 	volumePrefixEnvVarName = "OCI_VOLUME_NAME_PREFIX"
 	fsType                 = "fsType"
 	subnetID               = "subnetId"
@@ -128,7 +129,7 @@ func (filesystem *filesystemProvisioner) Provision(
 	}
 
 	glog.Infof("Creating export set")
-	_, err = fileStorageClient.CreateExport(ctx, filestorage.CreateExportRequest{
+	createExportResponse, err := fileStorageClient.CreateExport(ctx, filestorage.CreateExportRequest{
 		CreateExportDetails: filestorage.CreateExportDetails{
 			ExportSetId:  mntTargetResp.ExportSetId,
 			FileSystemId: response.FileSystem.Id,
@@ -150,6 +151,7 @@ func (filesystem *filesystemProvisioner) Provision(
 			Name: *response.FileSystem.Id,
 			Annotations: map[string]string{
 				ociVolumeID: *response.FileSystem.Id,
+				ociExportID: *createExportResponse.Id,
 			},
 			Labels: map[string]string{},
 		},
@@ -173,14 +175,27 @@ func (filesystem *filesystemProvisioner) Provision(
 
 // Delete destroys a OCI volume created by Provision
 func (filesystem *filesystemProvisioner) Delete(volume *v1.PersistentVolume) error {
+	exportID, ok := volume.Annotations[ociExportID]
+	if !ok {
+		return errors.New("Export ID annotation not found on PV")
+	}
 	filesystemID, ok := volume.Annotations[ociVolumeID]
 	if !ok {
-		return errors.New("filesystemid annotation not found on PV")
+		return errors.New("Filesystem ID annotation not found on PV")
 	}
-	glog.Infof("Deleting volume %v with filesystemID %v", volume, filesystemID)
 	ctx, cancel := context.WithTimeout(filesystem.client.Context(), filesystem.client.Timeout())
 	defer cancel()
-	_, err := filesystem.client.FileStorage().DeleteFileSystem(ctx,
+	glog.Infof("Deleting export for filesystemID %v", filesystemID)
+	_, err := filesystem.client.FileStorage().DeleteExport(ctx,
+		filestorage.DeleteExportRequest{
+			ExportId: &exportID,
+		})
+	if err != nil {
+		glog.Errorf("Failed to delete export:%s, %s", exportID, err)
+		return err
+	}
+	glog.Infof("Deleting volume %v with filesystemID %v", volume, filesystemID)
+	_, err = filesystem.client.FileStorage().DeleteFileSystem(ctx,
 		filestorage.DeleteFileSystemRequest{
 			FileSystemId: &filesystemID,
 		})
