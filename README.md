@@ -153,6 +153,29 @@ spec:
         name: nginx-storage
 ```
 
+### Create a block volume from a backup
+
+You can use annotations to create a volume from an existing backup. Simply use an annotation and reference the volume OCID.
+
+```yaml
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: block-volume-from-backup
+  annotations:
+    volume.beta.kubernetes.io/oci-volume-source: ocid...
+spec:
+  storageClassName: "oci"
+  selector:
+    matchLabels:
+      failure-domain.beta.kubernetes.io/zone: "PHX-AD-1"
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+```
+
 ## Misc
 
 You can add a prefix to volume display names by setting an `OCI_VOLUME_NAME_PREFIX` environment variable.
