@@ -25,6 +25,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/oracle/oci-go-sdk/common"
+	"github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-go-sdk/filestorage"
 	"github.com/oracle/oci-go-sdk/identity"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,6 +37,7 @@ import (
 
 const (
 	ociVolumeID            = "ociVolumeID"
+	ociExportID            = "ociExportID"
 	volumePrefixEnvVarName = "OCI_VOLUME_NAME_PREFIX"
 	fsType                 = "fsType"
 	subnetID               = "subnetId"
@@ -128,11 +130,11 @@ func (filesystem *filesystemProvisioner) Provision(
 	}
 
 	glog.Infof("Creating export set")
-	_, err = fileStorageClient.CreateExport(ctx, filestorage.CreateExportRequest{
+	createExportResponse, err := fileStorageClient.CreateExport(ctx, filestorage.CreateExportRequest{
 		CreateExportDetails: filestorage.CreateExportDetails{
 			ExportSetId:  mntTargetResp.ExportSetId,
 			FileSystemId: response.FileSystem.Id,
-			Path:         common.String("/"),
+			Path:         common.String("/" + *response.FileSystem.Id),
 		},
 	})
 
@@ -140,16 +142,30 @@ func (filesystem *filesystemProvisioner) Provision(
 		glog.Errorf("Failed to create export:%s", err)
 		return nil, err
 	}
-	mntTargetSubnetIDPtr := ""
-	if mntTargetResp.SubnetId != nil {
-		mntTargetSubnetIDPtr = *mntTargetResp.SubnetId
+	serverIP := ""
+	if len(mntTargetResp.PrivateIpIds) != 0 {
+		privateIPID := mntTargetResp.PrivateIpIds[rand.Int()%len(mntTargetResp.PrivateIpIds)]
+		virtualNetworkClient := filesystem.client.VirtualNetwork()
+		getPrivateIPResponse, err := virtualNetworkClient.GetPrivateIp(ctx, core.GetPrivateIpRequest{
+			PrivateIpId: common.String(privateIPID),
+		})
+		if err != nil {
+			glog.Errorf("Failed to retrieve IP address for mount target:%s", err)
+			return nil, err
+		}
+		serverIP = *getPrivateIPResponse.PrivateIp.IpAddress
+	} else {
+		glog.Errorf("Failed to find server IDs associated with the mount target to provision a persistent volume")
+		return nil, fmt.Errorf("Failed to find server IDs associated with the mount target")
 	}
-	glog.Infof("Creating persistent volume")
+
+	glog.Infof("Creating persistent volume on mount target with private IP address %s", serverIP)
 	return &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: *response.FileSystem.Id,
 			Annotations: map[string]string{
 				ociVolumeID: *response.FileSystem.Id,
+				ociExportID: *createExportResponse.Export.Id,
 			},
 			Labels: map[string]string{},
 		},
@@ -162,8 +178,9 @@ func (filesystem *filesystemProvisioner) Provision(
 			},
 			PersistentVolumeSource: v1.PersistentVolumeSource{
 				NFS: &v1.NFSVolumeSource{
-					Server:   mntTargetSubnetIDPtr,
-					Path:     "/",
+					// Randomnly select IP address associated with the mount target to use for attachment
+					Server:   serverIP,
+					Path:     *common.String("/" + *response.FileSystem.Id),
 					ReadOnly: false,
 				},
 			},
@@ -173,14 +190,27 @@ func (filesystem *filesystemProvisioner) Provision(
 
 // Delete destroys a OCI volume created by Provision
 func (filesystem *filesystemProvisioner) Delete(volume *v1.PersistentVolume) error {
+	exportID, ok := volume.Annotations[ociExportID]
+	if !ok {
+		return errors.New("Export ID annotation not found on PV")
+	}
 	filesystemID, ok := volume.Annotations[ociVolumeID]
 	if !ok {
-		return errors.New("filesystemid annotation not found on PV")
+		return errors.New("Filesystem ID annotation not found on PV")
 	}
-	glog.Infof("Deleting volume %v with filesystemID %v", volume, filesystemID)
 	ctx, cancel := context.WithTimeout(filesystem.client.Context(), filesystem.client.Timeout())
 	defer cancel()
-	_, err := filesystem.client.FileStorage().DeleteFileSystem(ctx,
+	glog.Infof("Deleting export for filesystemID %v", filesystemID)
+	_, err := filesystem.client.FileStorage().DeleteExport(ctx,
+		filestorage.DeleteExportRequest{
+			ExportId: &exportID,
+		})
+	if err != nil {
+		glog.Errorf("Failed to delete export:%s, %s", exportID, err)
+		return err
+	}
+	glog.Infof("Deleting volume %v with filesystemID %v", volume, filesystemID)
+	_, err = filesystem.client.FileStorage().DeleteFileSystem(ctx,
 		filestorage.DeleteFileSystemRequest{
 			FileSystemId: &filesystemID,
 		})

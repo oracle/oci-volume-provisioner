@@ -20,18 +20,14 @@ import datetime
 import json
 import os
 import re
-import select
-from shutil import copyfile
-import subprocess
 import sys
 import time
 import uuid
 import oci
 import yaml
-
+import utils
 
 MNT_TARGET_OCID = "MNT_TARGET_OCID"
-DEBUG_FILE = "runner.log"
 TERRAFORM_CLUSTER = "terraform/cluster"
 TERRAFORM_DIR = "terraform"
 # Variable name correspond to the ones found in the terraform config file
@@ -44,8 +40,6 @@ TMP_OCI_API_KEY_FILE = "/tmp/oci_api_key.pem"
 REGION = "us-ashburn-1"
 TIMEOUT = 600
 WRITE_REPORT=True
-REPORT_DIR_PATH="/tmp/results"
-REPORT_FILE="done"
 POD_CONTROLLER = "controller"
 POD_VOLUME = "volume"
 BLOCK_STORAGE = "block"
@@ -54,6 +48,7 @@ DEFAULT_AVAILABILITY_DOMAIN="NWuj:PHX-AD-2"
 LIFECYCLE_STATE_ON = {BLOCK_STORAGE: 'AVAILABLE',
                       FS_STORAGE: 'ACTIVE'}
 LIFECYCLE_STATE_OFF = {BLOCK_STORAGE: 'TERMINATED',
+<<<<<<< HEAD
                        FS_STORAGE:'DELETED'}
 
 # On exit return 0 for success or any other integer for a failure.
@@ -70,26 +65,29 @@ def _finish_with_exit_code(exit_code, write_report=True, report_dir_path=REPORT_
             _debug_file("\nTest Suite Failed\n")
         time.sleep(3)
         copyfile(DEBUG_FILE, report_dir_path + "/" + DEBUG_FILE)
-        with open(report_dir_path + "/" + report_file, "w+") as file: 
+        with open(report_dir_path + "/" + report_file, "w+") as file:
             file.write(str(report_dir_path + "/" + DEBUG_FILE))
     finish_canary_metrics()
-    sys.exit(exit_code)          
+    sys.exit(exit_code)
+=======
+                       FS_STORAGE:'DELETED'}
+>>>>>>> fcfa92b6... Retrieve pirvate ip for mount target and fixed system tests
 
 
 def _check_env(check_oci):
     if check_oci:
         if "OCICONFIG" not in os.environ and "OCICONFIG_VAR" not in os.environ:
-            _log("Error. Can't find either OCICONFIG or OCICONFIG_VAR in the environment.")
-            _finish_with_exit_code(1)
+            utils.log("Error. Can't find either OCICONFIG or OCICONFIG_VAR in the environment.")
+            utils.finish_with_exit_code(1)
 
 
 def _create_key_files(check_oci):
-    _log("Setting environment variables")
+    utils.log("Setting environment variables")
     if "OCICONFIG_VAR" in os.environ:
-        _run_command("echo \"$OCICONFIG_VAR\" | openssl enc -base64 -d -A > " + TMP_OCICONFIG, ".")
-        _run_command("chmod 600 " + TMP_OCICONFIG, ".")
+        utils.run_command("echo \"$OCICONFIG_VAR\" | openssl enc -base64 -d -A > " + TMP_OCICONFIG, ".")
+        utils.run_command("chmod 600 " + TMP_OCICONFIG, ".")
     if "KUBECONFIG_VAR" in os.environ:
-        _run_command("echo \"$KUBECONFIG_VAR\" | openssl enc -base64 -d -A > " + TMP_KUBECONFIG, ".")
+        utils.run_command("echo \"$KUBECONFIG_VAR\" | openssl enc -base64 -d -A > " + TMP_KUBECONFIG, ".")
 
     if check_oci:
         oci_config_file = _get_oci_config_file()
@@ -99,8 +97,8 @@ def _create_key_files(check_oci):
                 with open(TMP_OCI_API_KEY_FILE, 'w') as stream:
                     stream.write(cnf['auth']['key'])
             except yaml.YAMLError as err:
-                _log("Error. Failed to parse oci config file %s. Error: %s " % (oci_config_file, err))
-                _finish_with_exit_code(1)
+                utils.log("Error. Failed to parse oci config file %s. Error: %s " % (oci_config_file, err))
+                utils.finish_with_exit_code(1)
 
 
 def _destroy_key_files(check_oci):
@@ -122,72 +120,6 @@ def _get_oci_config_file():
 def _get_oci_api_key_file():
     return TMP_OCI_API_KEY_FILE
 
-def _banner(as_banner, bold):
-    if as_banner:
-        if bold:
-            print "********************************************************"
-        else:
-            print "--------------------------------------------------------"
-
-
-def _reset_debug_file():
-    if os.path.exists(DEBUG_FILE):
-        os.remove(DEBUG_FILE)
-
-
-def _debug_file(string):
-    with open(DEBUG_FILE, "a") as debug_file:
-        debug_file.write(string)
-
-
-def _log(string, as_banner=False, bold=False):
-    _banner(as_banner, bold)
-    print string
-    _banner(as_banner, bold)
-
-
-def _process_stream(stream, read_fds, global_buf, line_buf):
-    char = stream.read(1)
-    if char == '':
-        read_fds.remove(stream)
-    global_buf.append(char)
-    line_buf.append(char)
-    if char == '\n':
-        _debug_file(''.join(line_buf))
-        line_buf = []
-    return line_buf
-
-def _poll(stdout, stderr):
-    stdoutbuf = []
-    stdoutbuf_line = []
-    stderrbuf = []
-    stderrbuf_line = []
-    read_fds = [stdout, stderr]
-    x_fds = [stdout, stderr]
-    while read_fds:
-        rlist, _, _ = select.select(read_fds, [], x_fds)
-        if rlist:
-            for stream in rlist:
-                if stream == stdout:
-                    stdoutbuf_line = _process_stream(stream, read_fds, stdoutbuf, stdoutbuf_line)
-                if stream == stderr:
-                    stderrbuf_line = _process_stream(stream, read_fds, stderrbuf, stderrbuf_line)
-    return (''.join(stdoutbuf), ''.join(stderrbuf))
-
-def _run_command(cmd, cwd, display_errors=True):
-    _log(cwd + ": " + cmd)
-    process = subprocess.Popen(cmd,
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE,
-                               shell=True, cwd=cwd)
-    (stdout, stderr) = _poll(process.stdout, process.stderr)
-    returncode = process.wait()
-    if returncode != 0 and display_errors:
-        _log("    stdout: " + stdout)
-        _log("    stderr: " + stderr)
-        _log("    result: " + str(returncode))
-    return (stdout, stderr, returncode)
-
 def _get_timestamp(test_id):
     return test_id if test_id is not None else datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')
 
@@ -196,22 +128,22 @@ def _get_terraform_env():
     return "TF_VAR_test_id=" + timestamp
 
 def _terraform(action, cwd, terraform_env):
-    (stdout, _, returncode) = _run_command(terraform_env + " terraform " + action, cwd)
+    (stdout, _, returncode) = utils.run_command(terraform_env + " terraform " + action, cwd)
     if returncode != 0:
-        _log("Error running terraform")
+        utils.log("Error running terraform")
         sys.exit(1)
     return stdout
 
 def _kubectl(action, exit_on_error=True, display_errors=True, log_stdout=True):
     if "KUBECONFIG" not in os.environ and "KUBECONFIG_VAR" not in os.environ:
-        (stdout, _, returncode) = _run_command("kubectl " + action, ".", display_errors)
+        (stdout, _, returncode) = utils.run_command("kubectl " + action, ".", display_errors)
     else:
-        (stdout, _, returncode) = _run_command("KUBECONFIG=" + _get_kubeconfig() + " kubectl " + action, ".", display_errors)
+        (stdout, _, returncode) = utils.run_command("KUBECONFIG=" + _get_kubeconfig() + " kubectl " + action, ".", display_errors)
     if exit_on_error and returncode != 0:
-        _log("Error running kubectl")
-        _finish_with_exit_code(1)
+        utils.log("Error running kubectl")
+        utils.finish_with_exit_code(1)
     if log_stdout:
-        _log(stdout)
+        utils.log(stdout)
     return stdout
 
 def _get_pod_infos(test_id, pod_type):
@@ -220,7 +152,7 @@ def _get_pod_infos(test_id, pod_type):
     @type test_id: C{Str}
     @param pod_type: Pod type to search for
     @type pod_type: C{Str}
-    @return: Tuple containing the name of the resource, its status and the 
+    @return: Tuple containing the name of the resource, its status and the
     node it's running on
     @rtype: C{Tuple}'''
     _namespace = "-n kube-system" if pod_type == POD_VOLUME else ""
@@ -235,6 +167,11 @@ def _get_pod_infos(test_id, pod_type):
                 node = line_array[6]
                 infos.append((name, status, node))
             if re.match(r"nginx-controller-" + test_id + ".*", line) and pod_type == POD_CONTROLLER:
+                name = line_array[0]
+                status = line_array[2]
+                node = line_array[6]
+                infos.append((name, status, node))
+            if re.match(r"demooci-fss-pod-" + test_id + ".*", line) and pod_type == POD_CONTROLLER:
                 name = line_array[0]
                 status = line_array[2]
                 node = line_array[6]
@@ -256,7 +193,7 @@ def _get_volume_and_wait(volume_name):
     num_polls = 0
     volume = _get_volume(volume_name)
     while not volume:
-        _log("    waiting...")
+        utils.log("    waiting...")
         time.sleep(1)
         num_polls += 1
         if num_polls == TIMEOUT:
@@ -270,8 +207,13 @@ def _get_json_doc(response):
     try:
         doc = decoder.decode(response)
     except (ValueError, UnicodeError) as _:
+<<<<<<< HEAD
         _log('Invalid JSON in response: %s' % str(response))
-        _finish_with_exit_code(1)  
+        _finish_with_exit_code(1)
+=======
+        utils.log('Invalid JSON in response: %s' % str(response))
+        utils.finish_with_exit_code(1)
+>>>>>>> fcfa92b6... Retrieve pirvate ip for mount target and fixed system tests
     return doc
 
 
@@ -288,8 +230,8 @@ def _oci_config():
             config["region"] = cnf['auth']['region']
             return config
         except yaml.YAMLError:
-            _log("Error. Failed to parse oci config file " + oci_config_file)
-            _finish_with_exit_code(1)
+            utils.log("Error. Failed to parse oci config file " + oci_config_file)
+            utils.finish_with_exit_code(1)
 
 
 def _volume_exists(compartment_id, volume, state, backup=False, storageType=BLOCK_STORAGE, availability_domain=None):
@@ -299,18 +241,18 @@ def _volume_exists(compartment_id, volume, state, backup=False, storageType=BLOC
     @param availability_domain: Availability domain to look in for
     @type availability_domain: C{Str}'''
     if storageType == BLOCK_STORAGE:
-        _log("Retrieving block volumes")
+        utils.log("Retrieving block volumes")
         client = oci.core.blockstorage_client.BlockstorageClient(_oci_config())
         if backup:
             volumes= oci.pagination.list_call_get_all_results(client.list_volume_backups, compartment_id)
         else:
             volumes = oci.pagination.list_call_get_all_results(client.list_volumes, compartment_id)
     else:
-        _log("Retrieving file systems")
+        utils.log("Retrieving file systems")
         client = oci.file_storage.FileStorageClient(_oci_config())
         volumes = oci.pagination.list_call_get_all_results(client.list_file_systems, compartment_id,
                                                            availability_domain)
-    _log("Getting status for volume %s" % volume)
+    utils.log("Getting status for volume %s" % volume)
     for vol in _get_json_doc(str(volumes.data)):
         if vol['id'].endswith(volume) and vol['lifecycle_state'] == state:
             return True
@@ -325,10 +267,10 @@ def _create_backup(volume_ocid, test_id):
     @return: Tuple containing the backup id, compartment id and display name
     @rtype: C{Tuple}'''
     client = oci.core.blockstorage_client.BlockstorageClient(_oci_config())
-    _backup_details = oci.core.models.CreateVolumeBackupDetails(volume_id=volume_ocid, 
+    _backup_details = oci.core.models.CreateVolumeBackupDetails(volume_id=volume_ocid,
                                                                 display_name="backup_volume_system_test" + test_id)
     _response = client.create_volume_backup(_backup_details)
-    _log("Response for creating backup for volume %s: %s" % (volume_ocid, _response.data))
+    utils.log("Response for creating backup for volume %s: %s" % (volume_ocid, _response.data))
     _res = _get_json_doc(str(_response.data))
     return _res['id'], _res['compartment_id'], _res['display_name']
 
@@ -338,27 +280,27 @@ def _delete_backup(backup_ocid):
     @type backup_ocid: C{Str}'''
     client = oci.core.blockstorage_client.BlockstorageClient(_oci_config())
     _response = client.delete_volume_backup(backup_ocid)
-    _log("Response for deleting volume backup %s: %s" % (backup_ocid, _response.data))
+    utils.log("Response for deleting volume backup %s: %s" % (backup_ocid, _response.data))
 
 
 def _create_volume_from_backup(backup_ocid, test_id, availability_domain, compartment_id):
     client = oci.core.blockstorage_client.BlockstorageClient(_oci_config())
-    _volume_details = oci.core.models.CreateVolumeDetails(volume_backup_id=backup_ocid, 
+    _volume_details = oci.core.models.CreateVolumeDetails(volume_backup_id=backup_ocid,
                                                           display_name="restored_volume_system_test" + test_id,
                                                           availability_domain=availability_domain,
                                                           compartment_id=compartment_id)
     try:
         _response = client.create_volume(_volume_details)
-        _log("Response for creating volume from backup %s: %s %s" % (_response.data, _get_json_doc(str(_response.data))['id'], compartment_id))
+        utils.log("Response for creating volume from backup %s: %s %s" % (_response.data, _get_json_doc(str(_response.data))['id'], compartment_id))
         return _get_json_doc(str(_response.data))['id']
     except Exception as exc:
-        _log("Failed to create volume from backup %s" % exc)
+        utils.log("Failed to create volume from backup %s" % exc)
 
 def _wait_for_volume(compartment_id, volume, state, backup=False, storageType=BLOCK_STORAGE, availability_domain=None):
     num_polls = 0
-    while not _volume_exists(compartment_id, volume, state, backup, storageType=storageType, 
+    while not _volume_exists(compartment_id, volume, state, backup, storageType=storageType,
                              availability_domain=availability_domain):
-        _log("    waiting...")
+        utils.log("    waiting...")
         time.sleep(1)
         num_polls += 1
         if num_polls == TIMEOUT:
@@ -366,7 +308,7 @@ def _wait_for_volume(compartment_id, volume, state, backup=False, storageType=BL
     return True
 
 def _wait_for_volume_to_create(compartment_id, volume, backup=False, storageType=BLOCK_STORAGE, availability_domain=None):
-    return _wait_for_volume(compartment_id, volume, LIFECYCLE_STATE_ON[storageType], backup, storageType=storageType, 
+    return _wait_for_volume(compartment_id, volume, LIFECYCLE_STATE_ON[storageType], backup, storageType=storageType,
                             availability_domain=availability_domain)
 
 
@@ -406,14 +348,14 @@ def _handle_args():
     args = vars(parser.parse_args())
 
     if args['check_oci'] and not args['setup']:
-        _log("If --check-oci is specified, then --setup also needs to be set.")
-        _finish_with_exit_code(1)
+        utils.log("If --check-oci is specified, then --setup also needs to be set.")
+        utils.finish_with_exit_code(1)
 
     return args
 
 
 def _cleanup(k8sResources=[], exit_on_error=False, display_errors=True):
-    for _res in k8sResources: 
+    for _res in k8sResources:
         _kubectl("delete -f " + _res, exit_on_error, display_errors)
 
 def _get_region():
@@ -421,11 +363,11 @@ def _get_region():
     nodes = json.loads(nodes_json)
     for node in nodes['items']:
         return node['metadata']['labels']['failure-domain.beta.kubernetes.io/zone']
-    _log("Region lookup failed")
-    _finish_with_exit_code(1)
+    utils.log("Region lookup failed")
+    utils.finish_with_exit_code(1)
 
 
-def _create_yaml(template, test_id, region=None, backup_id=None, mount_target_ocid=None):
+def _create_yaml(template, test_id, region=None, backup_id=None, mount_target_ocid=None, volume_name=None, availability_domain=None):
     '''Generate yaml based on the given template and fill in additional details
     @param template: Name of file to use as template
     @type template: C{Str}
@@ -435,6 +377,12 @@ def _create_yaml(template, test_id, region=None, backup_id=None, mount_target_oc
     @type region: C{Str}
     @param backup_id: Backup id to create PVC from
     @type backup_id: C{Str}
+    @param mount_target_ocid: Mount target OCID to populate config with
+    @type mount_target_ocid: C{Str}
+    @param volume_name: Name used to create volume
+    @type volume_name: C{Str}
+    @param availability_domain: Availability domain (used for pvc)
+    @type availability_domain: C{Str}
     @return: Name of generated config file
     @rtype: C{Str}'''
     yaml_file = template + ".yaml"
@@ -444,10 +392,15 @@ def _create_yaml(template, test_id, region=None, backup_id=None, mount_target_oc
         for line in lines:
             patched_line = line
             patched_line = re.sub('{{TEST_ID}}', test_id, patched_line)
+            if volume_name is not None:
+                patched_line = re.sub('{{VOLUME_NAME}}', volume_name, patched_line)
             if region is not None:
                 patched_line = re.sub('{{REGION}}', region, patched_line)
             if backup_id is not None:
                 patched_line = re.sub('{{BACKUP_ID}}', backup_id, patched_line)
+            if availability_domain:
+                availability_domain = availability_domain.replace(':', '-') # yaml config does not allow ':'
+                patched_line = re.sub('{{AVAILABILITY_DOMAIN}}', availability_domain, patched_line)
             if mount_target_ocid is not None:
                 patched_line = re.sub('{{MNT_TARGET_OCID}}', mount_target_ocid, patched_line)
             elif "MNT_TARGET_OCID" in patched_line:
@@ -455,7 +408,7 @@ def _create_yaml(template, test_id, region=None, backup_id=None, mount_target_oc
             sources.write(patched_line)
     return yaml_file
 
-def _test_create_volume(compartment_id, claim_target, claim_volume_name, check_oci, test_id=None, 
+def _test_create_volume(compartment_id, claim_target, claim_volume_name, check_oci, test_id=None,
                         availability_domain=None, verify_func=None, storageType=BLOCK_STORAGE):
     '''Test making a volume claim from a configuration file
     @param backup_ocid: Verify whether the volume created from a backup contains backup info
@@ -463,11 +416,12 @@ def _test_create_volume(compartment_id, claim_target, claim_volume_name, check_o
     _kubectl("create -f " + claim_target, exit_on_error=False)
 
     volume = _get_volume_and_wait(claim_volume_name)
-    _log("Created volume with name: %s" % str(volume))
+    utils.log("Created volume with name: %s" % str(volume))
 
     if check_oci:
+<<<<<<< HEAD
         _log("Querying the OCI api to make sure a volume with this name exists...")
-        if not _wait_for_volume_to_create(compartment_id, volume, storageType=storageType, 
+        if not _wait_for_volume_to_create(compartment_id, volume, storageType=storageType,
                                           availability_domain=availability_domain):
             _log("Failed to find volume with name: " + volume)
             return False
@@ -475,20 +429,39 @@ def _test_create_volume(compartment_id, claim_target, claim_volume_name, check_o
 
     if verify_func:
         verify_func(test_id, availability_domain, volume)
-   
+
     _log("Delete the volume claim")
+=======
+        utils.log("Querying the OCI api to make sure a volume with this name exists...")
+        if not _wait_for_volume_to_create(compartment_id, volume, storageType=storageType,
+                                          availability_domain=availability_domain):
+            utils.log("Failed to find volume with name: " + volume)
+            utils.finish_with_exit_code(1)
+        utils.log("Volume: " + volume + " is present and available")
+
+    if verify_func:
+        verify_func(test_id, availability_domain, volume)
+
+    utils.log("Delete the volume claim")
+>>>>>>> fcfa92b6... Retrieve pirvate ip for mount target and fixed system tests
     _kubectl("delete -f " + claim_target, exit_on_error=False)
 
     if check_oci:
-        _log("Querying the OCI api to make sure a volume with this name now doesnt exist...")
+        utils.log("Querying the OCI api to make sure a volume with this name now doesnt exist...")
         _wait_for_volume_to_delete(compartment_id, volume, storageType=storageType,
                                    availability_domain=availability_domain)
         if not _volume_exists(compartment_id, volume, LIFECYCLE_STATE_OFF[storageType], storageType=storageType,
                               availability_domain=availability_domain):
+<<<<<<< HEAD
             _log("Volume with name: " + volume + " still exists")
             return False
         _log("Volume: " + volume + " has now been terminated")
-    
+=======
+            utils.log("Volume with name: " + volume + " still exists")
+            utils.finish_with_exit_code(1)
+        utils.log("Volume: " + volume + " has now been terminated")
+>>>>>>> fcfa92b6... Retrieve pirvate ip for mount target and fixed system tests
+
     return True
 
 def _patch_template_file(infile, outfile, volume_name, test_id, availability_domain):
@@ -514,17 +487,6 @@ def _patch_template_file(infile, outfile, volume_name, test_id, availability_dom
                 patched_line = re.sub('{{AVAILABILITY_DOMAIN}}', availability_domain, patched_line)
             sources.write(patched_line)
     return outfile + "." + test_id
-
-def _create_rc_yaml(using_oci, volume_name, test_id, availability_domain):
-    '''Generate replication controller yaml file from provided templates'''
-    if using_oci:
-        return _patch_template_file( "replication-controller.yaml.template",
-                                     "replication-controller.yaml",
-                                     volume_name, test_id, availability_domain)
-    else:
-        return _patch_template_file( "replication-controller-with-volume-claim.yaml.template",
-                                     "replication-controller-with-volume-claim.yaml",
-                                     volume_name, test_id, availability_domain)
 
 def _get_terraform_output_var(terraform_env, var_name):
     '''Retrieve variable value from terraform output from state file
@@ -555,19 +517,19 @@ def _wait_for_pod_status(desired_status, test_id, pod_type):
     @type test_id: C{Str}
     @param pod_type: Pod type to query
     @type pod_type: C{Str}
-    @return: Tuple containing the name of the resource, its status and the 
+    @return: Tuple containing the name of the resource, its status and the
     node it's running on
     @rtype: C{Tuple}'''
     infos = _get_pod_infos(test_id, pod_type)
     num_polls = 0
     while not any(i[1] == desired_status for i in infos):
         for i in infos:
-            _log("    - pod: " + i[0] + ", status: " + i[1] + ", node: " + i[2])
+            utils.log("    - pod: " + i[0] + ", status: " + i[1] + ", node: " + i[2])
         time.sleep(1)
         num_polls += 1
         if num_polls == TIMEOUT:
             for i in infos:
-                _log("Error: Pod: " + i[0] + " " +
+                utils.log("Error: Pod: " + i[0] + " " +
                      "failed to achieve status: " + desired_status + "." +
                      "Final status was: " + i[1])
             sys.exit(1)
@@ -578,8 +540,10 @@ def _wait_for_pod_status(desired_status, test_id, pod_type):
     # Should never get here.
     return (None, None, None)
 
-def _create_replication_controller(test_id, availability_domain, volume_name="default_volume"):
-    '''Create replication controller and wait for it to start
+def _create_rc_or_pod(config, test_id, availability_domain, volume_name="default_volume"):
+    '''Create replication controller or pod and wait for it to start
+    @param rc_config: Replication controller configuration file to patch
+    @type rc_config: C{Str}
     @param test_id: Test id used to append to component names
     @type test_id : C{Str}
     @param availability_domain: Availability domain to start rc in
@@ -588,13 +552,13 @@ def _create_replication_controller(test_id, availability_domain, volume_name="de
     @type volume_name: C{Str}
     @return: Tuple containing the name of the created rc and its config file
     @rtype: C{Tuple}'''
-    _rc_config = _create_rc_yaml(True, volume_name, test_id, availability_domain)
-    _log("Starting the replication controller (creates a single nginx pod).")
-    _kubectl("delete -f " + _rc_config, exit_on_error=False, display_errors=False)
-    _kubectl("create -f " + _rc_config)
-    _log("Waiting for the pod to start.")
-    _rc_name, _, _ = _wait_for_pod_status("Running", test_id, POD_CONTROLLER)
-    return _rc_name, _rc_config
+    _config = _patch_template_file(config, config + '.yaml', volume_name, test_id, availability_domain)
+    utils.log("Starting the replication controller (creates a single nginx pod).")
+    _kubectl("delete -f " + _config, exit_on_error=False, display_errors=False)
+    _kubectl("create -f " + _config)
+    utils.log("Waiting for the pod to start.")
+    _name, _, _ = _wait_for_pod_status("Running", test_id, POD_CONTROLLER)
+    return _name, _config
 
 def _create_file_via_replication_controller(rc_name, file_name="hello.txt"):
     '''Create file via the replication controller
@@ -610,12 +574,12 @@ def _verify_file_existance_via_replication_controller(rc_name, file_name="hello.
     @type rcName: C{Str}
     @param fileName: Name of file to create
     @type fileName: C{Str}'''
-    _log("Does the new file exist?")
+    utils.log("Does the new file exist?")
     stdout = _kubectl("exec " + rc_name + " -- ls /usr/share/nginx/html")
     if file_name not in stdout.split("\n"):
-        _log("Error: Failed to find file %s in mounted volume" % file_name)
+        utils.log("Error: Failed to find file %s in mounted volume" % file_name)
         sys.exit(1)
-    _log("Yes it does!")
+    utils.log("Yes it does!")
 
 def  _setup_create_volume_from_backup(terraform_env, test_id, storageType=BLOCK_STORAGE, availability_domain=None):
     '''Setup environment for creating a volume from a backup device
@@ -623,20 +587,25 @@ def  _setup_create_volume_from_backup(terraform_env, test_id, storageType=BLOCK_
     @type test_id : C{Str}
     @return: OCID of generated backup
     @rtype: C{Str}'''
-    _log("Creating test volume (using terraform)", as_banner=True)
+    utils.log("Creating test volume (using terraform)", as_banner=True)
     _terraform("init", TERRAFORM_DIR, terraform_env)
     _terraform("apply", TERRAFORM_DIR, terraform_env)
     _availability_domain = _get_terraform_output_var(terraform_env, TERRAFORM_AVAILABILITY_DOMAIN)
-    _log(_terraform("output -json", TERRAFORM_DIR, terraform_env))
+    utils.log(_terraform("output -json", TERRAFORM_DIR, terraform_env))
     # Create replication controller and write data to the generated volume
-    _rc_name, _rc_config = _create_replication_controller(test_id, _availability_domain, volume_name=_get_volume_name(terraform_env))
+    _rc_name, _rc_config = _create_rc_or_pod("../../examples/example-replication-controller-with-volume-claim.template",
+                                             test_id, _availability_domain, volume_name=_get_volume_name(terraform_env))
     _create_file_via_replication_controller(_rc_name)
     _verify_file_existance_via_replication_controller(_rc_name)
     # Create backup from generated volume
     _backup_ocid, compartment_id, _volume_name = _create_backup(_get_terraform_output_var(terraform_env, TERRAFORM_VOLUME_OCID), test_id)
     if not _wait_for_volume_to_create(compartment_id, _backup_ocid, backup=True, storageType=storageType,
                                       availability_domain=availability_domain):
-        _log("Failed to find backup with name: " + _volume_name)  
+<<<<<<< HEAD
+        _log("Failed to find backup with name: " + _volume_name)
+=======
+        utils.log("Failed to find backup with name: " + _volume_name)
+>>>>>>> fcfa92b6... Retrieve pirvate ip for mount target and fixed system tests
     return _backup_ocid, _availability_domain
 
 def _tear_down_create_volume_from_backup(terraform_env, backup_ocid):
@@ -646,7 +615,7 @@ def _tear_down_create_volume_from_backup(terraform_env, backup_ocid):
     @param backup_ocid: OCID of backup from which the test volume was created
     @type backup_ocid: C{Str}'''
     def _destroy_test_volume_atexit():
-        _log("Destroying test volume (using terraform)", as_banner=True)
+        utils.log("Destroying test volume (using terraform)", as_banner=True)
         _terraform("destroy -force", TERRAFORM_DIR, terraform_env)
     atexit.register(_destroy_test_volume_atexit)
     _delete_backup(backup_ocid)
@@ -663,22 +632,44 @@ def _volume_from_backup_check(test_id, availability_domain, volume, file_name='h
     @type file_name: C{Str}'''
     _ocid = volume.split('.')
     _ocid = _ocid[-1]
-    _rc_name, _rc_config = _create_replication_controller(test_id, availability_domain, _ocid)
-    _log("Does the file from the previous backup exist?")
+    _rc_name, _rc_config = _create_rc_or_pod("../../examples/example-replication-controller.template", test_id, availability_domain, _ocid)
+    utils.log("Does the file from the previous backup exist?")
     stdout = _kubectl("exec " + _rc_name + " -- ls /usr/share/nginx/html")
     if file_name not in stdout.split("\n"):
-        _log("Error: Failed to find file %s in mounted volume" % file_name)
-    _log("Deleting the replication controller (deletes the single nginx pod).")
+        utils.log("Error: Failed to find file %s in mounted volume" % file_name)
+    utils.log("Deleting the replication controller (deletes the single nginx pod).")
+    _kubectl("delete -f " + _rc_config)
+
+def _volume_from_fss_dynamic_check(test_id, availability_domain, volume, file_name='hello.txt'):
+    '''Verify whether the file system is attached to the pod and can be written to
+    @param test_id: Test id to use for creating components
+    @type test_id: C{Str}
+    @param availability_domain: Availability domain to create resource in
+    @type availability_domain: C{Str}
+    @param volume: Name of volume to verify
+    @type volume: C{Str}
+    @param file_name: Name of file to do checks for
+    @type file_name: C{Str}'''
+    _ocid = volume.split('.')
+    _ocid = _ocid[-1]
+    _rc_name, _rc_config = _create_rc_or_pod("../../examples/example-pod-fss.template",
+                                             test_id, availability_domain, _ocid)
+    utils.log("Does the file from the previous backup exist?")
+    stdout = _kubectl("exec " + _rc_name + " -- ls /usr/share/nginx/html")
+    if file_name not in stdout.split("\n"):
+        utils.log("Error: Failed to find file %s in mounted volume" % file_name)
+    utils.log("Deleting the replication controller (deletes the single nginx pod).")
     _kubectl("delete -f " + _rc_config)
 
 
+<<<<<<< HEAD
 # Canary Metrics **************************************************************
-# 
+#
 
 CM_SIMPLE = "volume_provisioner_simple"
 CM_EXT3 = "volume_provisioner_ext3"
 CM_NO_AD = "volume_provisioner_no_ad"
-CM_VOLUME_FROM_BACKUP = "volume_provisioner_volume_from_backup" 
+CM_VOLUME_FROM_BACKUP = "volume_provisioner_volume_from_backup"
 
 def canary_metric_date():
    return datetime.datetime.today().strftime('%Y-%m-%d-%H%m%S')
@@ -692,7 +683,7 @@ def init_canary_metrics(check_oci):
         canary_metrics[CM_EXT3] = 0
         canary_metrics[CM_NO_AD] = 0
         if check_oci:
-            canary_metrics[CM_VOLUME_FROM_BACKUP] = 0 
+            canary_metrics[CM_VOLUME_FROM_BACKUP] = 0
         with open(os.environ.get("METRICS_FILE"), 'w') as metrics_file:
             json.dump(canary_metrics, metrics_file, sort_keys=True, indent=4)
 
@@ -710,10 +701,12 @@ def finish_canary_metrics():
 
 
 # Main ************************************************************************
-# 
+#
 
+=======
+>>>>>>> fcfa92b6... Retrieve pirvate ip for mount target and fixed system tests
 def _main():
-    _reset_debug_file()
+    utils.reset_debug_file()
     args = _handle_args()
 
     _check_env(args['check_oci'])
@@ -725,7 +718,7 @@ def _main():
     test_id = str(uuid.uuid4())[:8]
 
     success = True
-    _storageClassFile = _create_yaml("../../examples/example-storage-class-fss.template", test_id, 
+    _storageClassFile = _create_yaml("../../examples/example-storage-class-fss.template", test_id,
                                      mount_target_ocid=os.environ.get(MNT_TARGET_OCID))
 
     _k8sResources = [_storageClassFile,
@@ -736,7 +729,7 @@ def _main():
     if args['setup']:
         # Cleanup in case any existing state exists in the cluster
         _cleanup(k8sResources=_k8sResources, display_errors=False)
-        _log("Setting up the volume provisioner", as_banner=True)
+        utils.log("Setting up the volume provisioner", as_banner=True)
         _kubectl("-n kube-system create secret generic oci-volume-provisioner " + \
                  "--from-file=config.yaml=" + _get_oci_config_file(),
                  exit_on_error=False)
@@ -749,13 +742,13 @@ def _main():
 
     if args['teardown']:
         def _teardown_atexit():
-            _log("Tearing down the volume provisioner", as_banner=True)
+            utils.log("Tearing down the volume provisioner", as_banner=True)
             _cleanup(k8sResources=_k8sResources)
         atexit.register(_teardown_atexit)
 
     if not args['no_test']:
         _log("Running system test: Simple", as_banner=True)
-        init_canary_metrics(args['check_oci']) 
+        init_canary_metrics(args['check_oci'])
         res = _test_create_volume(compartment_id,
                             _create_yaml("../../examples/example-claim.template", test_id, _get_region()),
                             "demooci-" + test_id, args['check_oci'])
@@ -767,17 +760,14 @@ def _main():
                             _create_yaml("../../examples/example-claim-ext3.template", test_id, None),
                             "demooci-ext3-" + test_id, args['check_oci'])
         update_canary_metric(CM_EXT3, int(res))
-        success = False if res == False else success 
+        success = False if res == False else success
 
         _log("Running system test: No AD specified", as_banner=True)
         res = _test_create_volume(compartment_id,
                             _create_yaml("../../examples/example-claim-no-AD.template", test_id, None),
                             "demooci-no-ad-" + test_id, args['check_oci'])
-<<<<<<< HEAD
         update_canary_metric(CM_NO_AD, int(res))
         success = False if res == False else success
-=======
->>>>>>> cc023ec8... File system storage
 
         _log("Running system test: Create volume with FSS", as_banner=True)
         _test_create_volume(compartment_id,
@@ -785,11 +775,11 @@ def _main():
                             "demooci-fss-" + test_id, args['check_oci'], availability_domain=DEFAULT_AVAILABILITY_DOMAIN,
                             storageType=FS_STORAGE)
         _log("Running system test: Create volume from backup", as_banner=True)
-        if args['check_oci']: 
+        if args['check_oci']:
             _log("Running system test: Create volume from backup", as_banner=True)
             terraform_env = _get_terraform_env()
             _backup_ocid, _availability_domain = _setup_create_volume_from_backup(terraform_env, test_id)
-            _claim_target = _create_yaml("../../examples/example-claim-from-backup.template", test_id, 
+            _claim_target = _create_yaml("../../examples/example-claim-from-backup.template", test_id,
                                         region=_availability_domain.split(':')[1], backup_id=_backup_ocid)
             res = _test_create_volume(compartment_id, _claim_target,
                                 "demooci-from-backup-" + test_id, args['check_oci'],
@@ -801,7 +791,7 @@ def _main():
 
     if not success:
         _finish_with_exit_code(1)
-    else: 
+    else:
         _finish_with_exit_code(0)
 
 if __name__ == "__main__":
