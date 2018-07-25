@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-fss-pod
+  labels:
+    name: nginx-fss-pod
+spec:
+  containers:
+    - name: nginx-fss-pod
+      image: fedora/nginx
+      ports:
+        - name: web
+          containerPort: 80
+      volumeMounts:
+        - name: nginx
+          mountPath: /usr/share/nginx/html
+  volumes:
+    - name: nginx
+      persistentVolumeClaim:
+        claimName: demooci-fss-{{TEST_ID}}

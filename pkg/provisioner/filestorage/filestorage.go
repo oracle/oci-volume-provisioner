@@ -133,7 +133,7 @@ func (filesystem *filesystemProvisioner) Provision(
 		CreateExportDetails: filestorage.CreateExportDetails{
 			ExportSetId:  mntTargetResp.ExportSetId,
 			FileSystemId: response.FileSystem.Id,
-			Path:         common.String("/"),
+			Path:         common.String("/" + *response.FileSystem.Id),
 		},
 	})
 
@@ -141,10 +141,7 @@ func (filesystem *filesystemProvisioner) Provision(
 		glog.Errorf("Failed to create export:%s", err)
 		return nil, err
 	}
-	mntTargetSubnetIDPtr := ""
-	if mntTargetResp.SubnetId != nil {
-		mntTargetSubnetIDPtr = *mntTargetResp.SubnetId
-	}
+
 	glog.Infof("Creating persistent volume")
 	return &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
@@ -164,8 +161,9 @@ func (filesystem *filesystemProvisioner) Provision(
 			},
 			PersistentVolumeSource: v1.PersistentVolumeSource{
 				NFS: &v1.NFSVolumeSource{
-					Server:   mntTargetSubnetIDPtr,
-					Path:     "/",
+					// Randomnly select IP address associated with the mount target to use for attachment
+					Server:   mntTargetResp.PrivateIpIds[rand.Int()%len(mntTargetResp.PrivateIpIds)],
+					Path:     *common.String("/" + *response.FileSystem.Id),
 					ReadOnly: false,
 				},
 			},

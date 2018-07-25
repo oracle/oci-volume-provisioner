@@ -512,17 +512,6 @@ def _patch_template_file(infile, outfile, volume_name, test_id, availability_dom
             sources.write(patched_line)
     return outfile + "." + test_id
 
-def _create_rc_yaml(using_oci, volume_name, test_id, availability_domain):
-    '''Generate replication controller yaml file from provided templates'''
-    if using_oci:
-        return _patch_template_file( "replication-controller.yaml.template",
-                                     "replication-controller.yaml",
-                                     volume_name, test_id, availability_domain)
-    else:
-        return _patch_template_file( "replication-controller-with-volume-claim.yaml.template",
-                                     "replication-controller-with-volume-claim.yaml",
-                                     volume_name, test_id, availability_domain)
-
 def _get_terraform_output_var(terraform_env, var_name):
     '''Retrieve variable value from terraform output from state file
     @param terraform_env: Terraform test id
@@ -575,8 +564,10 @@ def _wait_for_pod_status(desired_status, test_id, pod_type):
     # Should never get here.
     return (None, None, None)
 
-def _create_replication_controller(test_id, availability_domain, volume_name="default_volume"):
-    '''Create replication controller and wait for it to start
+def _create_rc_or_pod(config, test_id, availability_domain, volume_name="default_volume"):
+    '''Create replication controller or pod and wait for it to start
+    @param rc_config: Replication controller configuration file to patch
+    @type rc_config: C{Str}
     @param test_id: Test id used to append to component names
     @type test_id : C{Str}
     @param availability_domain: Availability domain to start rc in
@@ -585,13 +576,13 @@ def _create_replication_controller(test_id, availability_domain, volume_name="de
     @type volume_name: C{Str}
     @return: Tuple containing the name of the created rc and its config file
     @rtype: C{Tuple}'''
-    _rc_config = _create_rc_yaml(True, volume_name, test_id, availability_domain)
+    _config = _patch_template_file(config, config + '.yaml', volume_name, test_id, availability_domain)
     _log("Starting the replication controller (creates a single nginx pod).")
-    _kubectl("delete -f " + _rc_config, exit_on_error=False, display_errors=False)
-    _kubectl("create -f " + _rc_config)
+    _kubectl("delete -f " + _config, exit_on_error=False, display_errors=False)
+    _kubectl("create -f " + _config)
     _log("Waiting for the pod to start.")
-    _rc_name, _, _ = _wait_for_pod_status("Running", test_id, POD_CONTROLLER)
-    return _rc_name, _rc_config
+    _name, _, _ = _wait_for_pod_status("Running", test_id, POD_CONTROLLER)
+    return _name, _config
 
 def _create_file_via_replication_controller(rc_name, file_name="hello.txt"):
     '''Create file via the replication controller
@@ -626,7 +617,8 @@ def  _setup_create_volume_from_backup(terraform_env, test_id, storageType=BLOCK_
     _availability_domain = _get_terraform_output_var(terraform_env, TERRAFORM_AVAILABILITY_DOMAIN)
     _log(_terraform("output -json", TERRAFORM_DIR, terraform_env))
     # Create replication controller and write data to the generated volume
-    _rc_name, _rc_config = _create_replication_controller(test_id, _availability_domain, volume_name=_get_volume_name(terraform_env))
+    _rc_name, _rc_config = _create_rc_or_pod("../../examples/example-replication-controller-with-volume-claim.template",
+                                             test_id, _availability_domain, volume_name=_get_volume_name(terraform_env))
     _create_file_via_replication_controller(_rc_name)
     _verify_file_existance_via_replication_controller(_rc_name)
     # Create backup from generated volume
@@ -660,7 +652,28 @@ def _volume_from_backup_check(test_id, availability_domain, volume, file_name='h
     @type file_name: C{Str}'''
     _ocid = volume.split('.')
     _ocid = _ocid[-1]
-    _rc_name, _rc_config = _create_replication_controller(test_id, availability_domain, _ocid)
+    _rc_name, _rc_config = _create_rc_or_pod("../../examples/example-replication-controller.template", test_id, availability_domain, _ocid)
+    _log("Does the file from the previous backup exist?")
+    stdout = _kubectl("exec " + _rc_name + " -- ls /usr/share/nginx/html")
+    if file_name not in stdout.split("\n"):
+        _log("Error: Failed to find file %s in mounted volume" % file_name)
+    _log("Deleting the replication controller (deletes the single nginx pod).")
+    _kubectl("delete -f " + _rc_config)
+
+def _volume_from_fss_dynamic_check(test_id, availability_domain, volume, file_name='hello.txt'):
+    '''Verify whether the file system is attached to the pod and can be written to
+    @param test_id: Test id to use for creating components
+    @type test_id: C{Str}
+    @param availability_domain: Availability domain to create resource in
+    @type availability_domain: C{Str}
+    @param volume: Name of volume to verify
+    @type volume: C{Str}
+    @param file_name: Name of file to do checks for
+    @type file_name: C{Str}'''
+    _ocid = volume.split('.')
+    _ocid = _ocid[-1]
+    _rc_name, _rc_config = _create_rc_or_pod("../../examples/example-pod-fss.template",
+                                             test_id, availability_domain, _ocid)
     _log("Does the file from the previous backup exist?")
     stdout = _kubectl("exec " + _rc_name + " -- ls /usr/share/nginx/html")
     if file_name not in stdout.split("\n"):
@@ -710,37 +723,37 @@ def _main():
         atexit.register(_teardown_atexit)
 
     if not args['no_test']:
-        _log("Running system test: Simple", as_banner=True)
-        _test_create_volume(compartment_id,
-                            _create_yaml("../../examples/example-claim.template", test_id, _get_region()),
-                            "demooci-" + test_id, args['check_oci'])
+        # _log("Running system test: Simple", as_banner=True)
+        # _test_create_volume(compartment_id,
+        #                     _create_yaml("../../examples/example-claim.template", test_id, _get_region()),
+        #                     "demooci-" + test_id, args['check_oci'])
 
-        _log("Running system test: Ext3 file system", as_banner=True)
-        _test_create_volume(compartment_id,
-                            _create_yaml("../../examples/example-claim-ext3.template", test_id, None),
-                            "demooci-ext3-" + test_id, args['check_oci'])
+        # _log("Running system test: Ext3 file system", as_banner=True)
+        # _test_create_volume(compartment_id,
+        #                     _create_yaml("../../examples/example-claim-ext3.template", test_id, None),
+        #                     "demooci-ext3-" + test_id, args['check_oci'])
 
-        _log("Running system test: No AD specified", as_banner=True)
-        _test_create_volume(compartment_id,
-                            _create_yaml("../../examples/example-claim-no-AD.template", test_id, None),
-                            "demooci-no-ad-" + test_id, args['check_oci'])
+        # _log("Running system test: No AD specified", as_banner=True)
+        # _test_create_volume(compartment_id,
+        #                     _create_yaml("../../examples/example-claim-no-AD.template", test_id, None),
+        #                     "demooci-no-ad-" + test_id, args['check_oci'])
 
         _log("Running system test: Create volume with FSS", as_banner=True)
         _test_create_volume(compartment_id,
                             _create_yaml("../../examples/example-claim-fss.template", test_id, _get_region()),
                             "demooci-fss-" + test_id, args['check_oci'], availability_domain=DEFAULT_AVAILABILITY_DOMAIN,
-                            storageType=FS_STORAGE)
-        _log("Running system test: Create volume from backup", as_banner=True)
-        if args['check_oci']: 
-            terraform_env = _get_terraform_env()
-            _backup_ocid, _availability_domain = _setup_create_volume_from_backup(terraform_env, test_id)
-            _claim_target = _create_yaml("../../examples/example-claim-from-backup.template", test_id, 
-                                        region=_availability_domain.split(':')[1], backup_id=_backup_ocid)
-            _test_create_volume(compartment_id, _claim_target,
-                                "demooci-from-backup-" + test_id, args['check_oci'],
-                                test_id=test_id, availability_domain=_availability_domain,
-                                verify_func=_volume_from_backup_check)
-            _tear_down_create_volume_from_backup(terraform_env, _backup_ocid)
+                            test_id=test_id, storageType=FS_STORAGE, verify_func=_volume_from_fss_dynamic_check)
+        # _log("Running system test: Create volume from backup", as_banner=True)
+        # if args['check_oci']: 
+        #     terraform_env = _get_terraform_env()
+        #     _backup_ocid, _availability_domain = _setup_create_volume_from_backup(terraform_env, test_id)
+        #     _claim_target = _create_yaml("../../examples/example-claim-from-backup.template", test_id, 
+        #                                 region=_availability_domain.split(':')[1], backup_id=_backup_ocid)
+        #     _test_create_volume(compartment_id, _claim_target,
+        #                         "demooci-from-backup-" + test_id, args['check_oci'],
+        #                         test_id=test_id, availability_domain=_availability_domain,
+        #                         verify_func=_volume_from_backup_check)
+        #     _tear_down_create_volume_from_backup(terraform_env, _backup_ocid)
     if not success:
         _finish_with_exit_code(1)
     else: 
