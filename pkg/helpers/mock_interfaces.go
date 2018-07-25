@@ -29,6 +29,7 @@ var (
 	// VolumeBackupID of backup volume
 	VolumeBackupID = "dummyVolumeBackupId"
 	fileSystemID   = "dummyFileSystemId"
+	exportID       = "dummyExportID"
 )
 
 // MockBlockStorageClient mocks BlockStorage client implementation
@@ -61,7 +62,7 @@ func (c *MockFileStorageClient) DeleteFileSystem(ctx context.Context, request fi
 
 // CreateExport mocks the FileStorage CreateExport implementation
 func (c *MockFileStorageClient) CreateExport(ctx context.Context, request filestorage.CreateExportRequest) (response filestorage.CreateExportResponse, err error) {
-	return filestorage.CreateExportResponse{}, nil
+	return filestorage.CreateExportResponse{Export: filestorage.Export{Id: common.String(exportID)}}, nil
 }
 
 // DeleteExport mocks the FileStorage DeleteExport implementation

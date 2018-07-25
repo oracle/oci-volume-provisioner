@@ -151,7 +151,7 @@ func (filesystem *filesystemProvisioner) Provision(
 			Name: *response.FileSystem.Id,
 			Annotations: map[string]string{
 				ociVolumeID: *response.FileSystem.Id,
-				ociExportID: *createExportResponse.Id,
+				ociExportID: *createExportResponse.Export.Id,
 			},
 			Labels: map[string]string{},
 		},
