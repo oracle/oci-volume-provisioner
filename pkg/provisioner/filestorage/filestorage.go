@@ -141,7 +141,13 @@ func (filesystem *filesystemProvisioner) Provision(
 		glog.Errorf("Failed to create export:%s", err)
 		return nil, err
 	}
-
+	serverIP := ""
+	if len(mntTargetResp.PrivateIpIds) != 0 {
+		serverIP = mntTargetResp.PrivateIpIds[rand.Int()%len(mntTargetResp.PrivateIpIds)]
+	} else {
+		glog.Errorf("Failed to find server IDs associated with the mount target to provision a persistent volume")
+		return nil, fmt.Errorf("Failed to find server IDs associated with the mount target")
+	}
 	glog.Infof("Creating persistent volume")
 	return &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
@@ -162,7 +168,7 @@ func (filesystem *filesystemProvisioner) Provision(
 			PersistentVolumeSource: v1.PersistentVolumeSource{
 				NFS: &v1.NFSVolumeSource{
 					// Randomnly select IP address associated with the mount target to use for attachment
-					Server:   mntTargetResp.PrivateIpIds[rand.Int()%len(mntTargetResp.PrivateIpIds)],
+					Server:   serverIP,
 					Path:     *common.String("/" + *response.FileSystem.Id),
 					ReadOnly: false,
 				},

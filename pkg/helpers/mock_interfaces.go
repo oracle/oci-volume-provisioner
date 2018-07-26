@@ -30,6 +30,7 @@ var (
 	VolumeBackupID = "dummyVolumeBackupId"
 	fileSystemID   = "dummyFileSystemId"
 	exportID       = "dummyExportID"
+	serverIPs      = []string{"dummyServerIP"}
 )
 
 // MockBlockStorageClient mocks BlockStorage client implementation
@@ -72,7 +73,7 @@ func (c *MockFileStorageClient) DeleteExport(ctx context.Context, request filest
 
 // CreateMountTarget mocks the FileStorage CreateMountTarget implementation
 func (c *MockFileStorageClient) CreateMountTarget(ctx context.Context, request filestorage.CreateMountTargetRequest) (response filestorage.CreateMountTargetResponse, err error) {
-	return filestorage.CreateMountTargetResponse{}, nil
+	return filestorage.CreateMountTargetResponse{MountTarget: filestorage.MountTarget{PrivateIpIds: serverIPs}}, nil
 }
 
 // GetMountTarget mocks the FileStorage GetMountTarget implementation
