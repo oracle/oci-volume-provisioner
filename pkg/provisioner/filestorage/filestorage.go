@@ -25,6 +25,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/oracle/oci-go-sdk/common"
+	"github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-go-sdk/filestorage"
 	"github.com/oracle/oci-go-sdk/identity"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -143,12 +144,22 @@ func (filesystem *filesystemProvisioner) Provision(
 	}
 	serverIP := ""
 	if len(mntTargetResp.PrivateIpIds) != 0 {
-		serverIP = mntTargetResp.PrivateIpIds[rand.Int()%len(mntTargetResp.PrivateIpIds)]
+		privateIPID := mntTargetResp.PrivateIpIds[rand.Int()%len(mntTargetResp.PrivateIpIds)]
+		virtualNetworkClient := filesystem.client.VirtualNetwork()
+		getPrivateIPResponse, err := virtualNetworkClient.GetPrivateIp(ctx, core.GetPrivateIpRequest{
+			PrivateIpId: common.String(privateIPID),
+		})
+		if err != nil {
+			glog.Errorf("Failed to retrieve IP address for mount target:%s", err)
+			return nil, err
+		}
+		serverIP = *getPrivateIPResponse.PrivateIp.IpAddress
 	} else {
 		glog.Errorf("Failed to find server IDs associated with the mount target to provision a persistent volume")
 		return nil, fmt.Errorf("Failed to find server IDs associated with the mount target")
 	}
-	glog.Infof("Creating persistent volume")
+
+	glog.Infof("Creating persistent volume on mount target with private IP address %s", serverIP)
 	return &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: *response.FileSystem.Id,

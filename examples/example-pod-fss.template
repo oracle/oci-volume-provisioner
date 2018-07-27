@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: nginx-fss-pod
+  name: demooci-fss-pod-{{TEST_ID}}
   labels:
-    name: nginx-fss-pod
+    name: demooci-fss-pod-{{TEST_ID}}
 spec:
   containers:
-    - name: nginx-fss-pod
+    - name: demooci-fss-pod-{{TEST_ID}}
       image: fedora/nginx
       ports:
         - name: web
