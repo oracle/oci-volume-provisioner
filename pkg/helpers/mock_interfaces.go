@@ -31,6 +31,7 @@ var (
 	fileSystemID   = "dummyFileSystemId"
 	exportID       = "dummyExportID"
 	serverIPs      = []string{"dummyServerIP"}
+	privateIp      = "127.0.0.1"
 )
 
 // MockBlockStorageClient mocks BlockStorage client implementation
@@ -86,6 +87,15 @@ func (c *MockFileStorageClient) ListMountTargets(ctx context.Context, request fi
 	return filestorage.ListMountTargetsResponse{}, nil
 }
 
+// MockVirtualNetworkClient mocks VirtualNetwork client implementation
+type MockVirtualNetworkClient struct {
+}
+
+// GetPrivateIp mocks the VirtualNetwork GetPrivateIp implementation
+func (c *MockVirtualNetworkClient) GetPrivateIp(ctx context.Context, request core.GetPrivateIpRequest) (response core.GetPrivateIpResponse, err error) {
+	return core.GetPrivateIpResponse{PrivateIp: core.PrivateIp{IpAddress: common.String(privateIp)}}, nil
+}
+
 // MockIdentityClient mocks identity client structure
 type MockIdentityClient struct {
 	common.BaseClient
@@ -108,6 +118,11 @@ func (p *MockProvisionerClient) BlockStorage() client.BlockStorage {
 // FileStorage mocks client FileStorage implementation
 func (p *MockProvisionerClient) FileStorage() client.FileStorage {
 	return &MockFileStorageClient{}
+}
+
+// VirtualNetwork mocks client VirtualNetwork implementation
+func (p *MockProvisionerClient) VirtualNetwork() client.VirtualNetwork {
+	return &MockVirtualNetworkClient{}
 }
 
 // Identity mocks client Identity implementation
