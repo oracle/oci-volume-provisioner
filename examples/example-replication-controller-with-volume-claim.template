@@ -32,8 +32,7 @@ spec:
         - name: vol
           mountPath: /usr/share/nginx/html
       volumes:
-      - name: 
-      
+      - name: vol
         persistentVolumeClaim:
           claimName: nginx-pvc-{{TEST_ID}}
       nodeSelector:

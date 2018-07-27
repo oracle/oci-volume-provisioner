@@ -339,7 +339,7 @@ def _get_region():
     utils.finish_with_exit_code(1)
 
 
-def _create_yaml(template, test_id, region=None, backup_id=None, mount_target_ocid=None):
+def _create_yaml(template, test_id, region=None, backup_id=None, mount_target_ocid=None, volume_name=None, availability_domain=None):
     '''Generate yaml based on the given template and fill in additional details
     @param template: Name of file to use as template
     @type template: C{Str}
@@ -349,6 +349,12 @@ def _create_yaml(template, test_id, region=None, backup_id=None, mount_target_oc
     @type region: C{Str}
     @param backup_id: Backup id to create PVC from
     @type backup_id: C{Str}
+    @param mount_target_ocid: Mount target OCID to populate config with
+    @type mount_target_ocid: C{Str}
+    @param volume_name: Name used to create volume
+    @type volume_name: C{Str}
+    @param availability_domain: Availability domain (used for pvc)
+    @type availability_domain: C{Str}
     @return: Name of generated config file
     @rtype: C{Str}'''
     yaml_file = template + ".yaml"
@@ -358,10 +364,15 @@ def _create_yaml(template, test_id, region=None, backup_id=None, mount_target_oc
         for line in lines:
             patched_line = line
             patched_line = re.sub('{{TEST_ID}}', test_id, patched_line)
+            if volume_name is not None:
+                patched_line = re.sub('{{VOLUME_NAME}}', volume_name, patched_line)
             if region is not None:
                 patched_line = re.sub('{{REGION}}', region, patched_line)
             if backup_id is not None:
                 patched_line = re.sub('{{BACKUP_ID}}', backup_id, patched_line)
+            if availability_domain:
+                availability_domain = availability_domain.replace(':', '-') # yaml config does not allow ':'
+                patched_line = re.sub('{{AVAILABILITY_DOMAIN}}', availability_domain, patched_line)
             if mount_target_ocid is not None:
                 patched_line = re.sub('{{MNT_TARGET_OCID}}', mount_target_ocid, patched_line)
             elif "MNT_TARGET_OCID" in patched_line:
