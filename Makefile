@@ -101,6 +101,8 @@ ifdef OCICONFIG_VAR
 	$(eval export DOCKER_OPTIONS)
 endif
 endif
+DOCKER_OPTIONS+=-e SUBNET_OCID=$(SUBNET_OCID)
+export DOCKER_OPTIONS
 
 .PHONY: system-test
 system-test: system-test-config
