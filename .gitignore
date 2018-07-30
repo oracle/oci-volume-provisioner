@@ -6,3 +6,4 @@ env.sh
 test/system/venv/
 test/system/run-test-image.yaml*
 examples/*.yaml
+*.pyc

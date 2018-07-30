@@ -24,6 +24,7 @@ from shutil import copyfile
 DEBUG_FILE = "runner.log"
 REPORT_DIR_PATH="/tmp/results"
 REPORT_FILE="done"
+TMP_KUBECONFIG = "/tmp/kubeconfig.conf"
 
 def _banner(as_banner, bold):
     if as_banner:
@@ -105,3 +106,18 @@ def run_command(cmd, cwd, display_errors=True):
         log("    stderr: " + stderr)
         log("    result: " + str(returncode))
     return (stdout, stderr, returncode)
+
+def _get_kubeconfig():
+    return os.environ['KUBECONFIG'] if "KUBECONFIG" in os.environ else TMP_KUBECONFIG
+
+def kubectl(action, exit_on_error=True, display_errors=True, log_stdout=True):
+    if "KUBECONFIG" not in os.environ and "KUBECONFIG_VAR" not in os.environ:
+        (stdout, _, returncode) = run_command("kubectl " + action, ".", display_errors)
+    else:
+        (stdout, _, returncode) = run_command("KUBECONFIG=" + _get_kubeconfig() + " kubectl " + action, ".", display_errors)
+    if exit_on_error and returncode != 0:
+        log("Error running kubectl")
+        finish_with_exit_code(1)
+    if log_stdout:
+        log(stdout)
+    return stdout
