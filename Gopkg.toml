@@ -48,7 +48,7 @@ ignored = ["k8s.io/client-go/pkg/api/v1"]
 
 [[override]]
 name = "github.com/docker/distribution"
-revision = "f0cc927784781fa395c06317c58dea2841ece3a9" # Lock in to version 2.6.3 when it is released 
+revision = "f0cc927784781fa395c06317c58dea2841ece3a9" # Lock in to version 2.6.3 when it is released
 
 [[override]]
  name = "k8s.io/api"

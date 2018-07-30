@@ -19,17 +19,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/golang/glog"
-
-	"github.com/oracle/oci-go-sdk/common"
-	"github.com/oracle/oci-go-sdk/identity"
-
 	"k8s.io/api/core/v1"
-	metav1 "k8s.io/kubernetes/pkg/kubelet/apis"
-
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
+	metav1 "k8s.io/kubernetes/pkg/kubelet/apis"
 	"k8s.io/kubernetes/pkg/volume/util"
+
+	"github.com/golang/glog"
+	"github.com/oracle/oci-go-sdk/common"
+	"github.com/oracle/oci-go-sdk/identity"
 )
 
 func (p *OCIProvisioner) findADByName(name string) (*identity.AvailabilityDomain, error) {

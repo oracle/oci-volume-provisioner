@@ -26,25 +26,21 @@ import (
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/core"
 	"github.com/oracle/oci-volume-provisioner/pkg/signals"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-
-	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
 	resyncPeriod              = 15 * time.Second
 	minResyncPeriod           = 12 * time.Hour
-	provisionerNameBlock      = "oracle.com/oci"
-	provisionerNameFss        = "oracle.com/oci-fss"
 	exponentialBackOffOnError = false
 	failedRetryThreshold      = 5
 	leasePeriod               = controller.DefaultLeaseDuration
 	retryPeriod               = controller.DefaultRetryPeriod
 	renewDeadline             = controller.DefaultRenewDeadline
 	termLimit                 = controller.DefaultTermLimit
-	provisionerTypeArg        = "provisionerType"
 )
 
 // informerResyncPeriod computes the time interval a shared informer waits
@@ -58,7 +54,7 @@ func informerResyncPeriod(minResyncPeriod time.Duration) func() time.Duration {
 
 func main() {
 	syscall.Umask(0)
-
+	rand.Seed(time.Now().Unix())
 	kubeconfig := flag.String("kubeconfig", "", "Path to Kubeconfig file with authorization and master location information.")
 	volumeRoundingEnabled := flag.Bool("rounding-enabled", true, "When enabled volumes will be rounded up if less than 'minVolumeSizeMB'")
 	minVolumeSize := flag.String("min-volume-size", "50Gi", "The minimum size for a block volume. By default OCI only supports block volumes > 50GB")
@@ -97,7 +93,7 @@ func main() {
 	// Decides what type of provider to deploy, either block or fss
 	provisionerType := os.Getenv("PROVISIONER_TYPE")
 	if provisionerType == "" {
-		provisionerType = provisionerNameBlock
+		provisionerType = core.ProvisionerNameBlock
 	}
 
 	glog.Infof("Starting volume provisioner in %s mode", provisionerType)
@@ -111,8 +107,10 @@ func main() {
 
 	// Create the provisioner: it implements the Provisioner interface expected by
 	// the controller
-	ociProvisioner := core.NewOCIProvisioner(clientset, sharedInformerFactory.Core().V1().Nodes(), nodeName, *volumeRoundingEnabled, volumeSizeLowerBound)
-
+	ociProvisioner, err := core.NewOCIProvisioner(clientset, sharedInformerFactory.Core().V1().Nodes(), provisionerType, nodeName, *volumeRoundingEnabled, volumeSizeLowerBound)
+	if err != nil {
+		glog.Fatalf("Cannot create volume provisioner %v", err)
+	}
 	// Start the provision controller which will dynamically provision oci
 	// PVs
 	pc := controller.NewProvisionController(

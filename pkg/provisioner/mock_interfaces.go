@@ -1,4 +1,4 @@
-// Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package helpers
+package provisioner
 
 import (
 	"context"
@@ -30,12 +30,23 @@ var (
 	VolumeBackupID = "dummyVolumeBackupId"
 	fileSystemID   = "dummyFileSystemId"
 	exportID       = "dummyExportID"
-	serverIPs      = []string{"dummyServerIP"}
-	privateIP      = "127.0.0.1"
+	// NilListMountTargetsADID lists no mount targets for the given AD
+	NilListMountTargetsADID = "dummyNilListMountTargetsForADID"
+	mountTargetID           = "dummyMountTargetID"
+	// CreatedMountTargetID for dynamically created mount target
+	CreatedMountTargetID = "dummyCreatedMountTargetID"
+	// ServerIPs address for mount target
+	ServerIPs = []string{"dummyServerIP"}
+	// MountTargetItems retrieving during listing
+	MountTargetItems = []filestorage.MountTargetSummary{filestorage.MountTargetSummary{Id: &mountTargetID}}
+	// EmptyMountTargetItems retrieving during listing
+	EmptyMountTargetItems = []filestorage.MountTargetSummary{}
+	privateIP             = "127.0.0.1"
 )
 
 // MockBlockStorageClient mocks BlockStorage client implementation
 type MockBlockStorageClient struct {
+	VolumeState core.VolumeLifecycleStateEnum
 }
 
 // CreateVolume mocks the BlockStorage CreateVolume implementation
@@ -50,7 +61,7 @@ func (c *MockBlockStorageClient) DeleteVolume(ctx context.Context, request core.
 
 // GetVolume mocks the BlockStorage GetVolume implementation
 func (c *MockBlockStorageClient) GetVolume(ctx context.Context, request core.GetVolumeRequest) (response core.GetVolumeResponse, err error) {
-	return core.GetVolumeResponse{Volume: core.Volume{Id: common.String(VolumeBackupID)}}, nil
+	return core.GetVolumeResponse{Volume: core.Volume{LifecycleState: c.VolumeState}}, nil
 }
 
 // MockFileStorageClient mocks FileStorage client implementation
@@ -79,17 +90,20 @@ func (c *MockFileStorageClient) DeleteExport(ctx context.Context, request filest
 
 // CreateMountTarget mocks the FileStorage CreateMountTarget implementation
 func (c *MockFileStorageClient) CreateMountTarget(ctx context.Context, request filestorage.CreateMountTargetRequest) (response filestorage.CreateMountTargetResponse, err error) {
-	return filestorage.CreateMountTargetResponse{MountTarget: filestorage.MountTarget{PrivateIpIds: serverIPs}}, nil
+	return filestorage.CreateMountTargetResponse{MountTarget: filestorage.MountTarget{PrivateIpIds: ServerIPs, Id: &CreatedMountTargetID}}, nil
 }
 
 // GetMountTarget mocks the FileStorage GetMountTarget implementation
 func (c *MockFileStorageClient) GetMountTarget(ctx context.Context, request filestorage.GetMountTargetRequest) (response filestorage.GetMountTargetResponse, err error) {
-	return filestorage.GetMountTargetResponse{}, nil
+	return filestorage.GetMountTargetResponse{MountTarget: filestorage.MountTarget{PrivateIpIds: ServerIPs}}, nil
 }
 
 // ListMountTargets mocks the FileStorage ListMountTargets implementation
 func (c *MockFileStorageClient) ListMountTargets(ctx context.Context, request filestorage.ListMountTargetsRequest) (response filestorage.ListMountTargetsResponse, err error) {
-	return filestorage.ListMountTargetsResponse{}, nil
+	if *request.AvailabilityDomain == NilListMountTargetsADID {
+		return filestorage.ListMountTargetsResponse{Items: EmptyMountTargetItems}, nil
+	}
+	return filestorage.ListMountTargetsResponse{Items: MountTargetItems}, nil
 }
 
 // MockVirtualNetworkClient mocks VirtualNetwork client implementation
@@ -113,20 +127,21 @@ func (client MockIdentityClient) ListAvailabilityDomains(ctx context.Context, re
 
 // MockProvisionerClient mocks client structure
 type MockProvisionerClient struct {
+	Storage *MockBlockStorageClient
 }
 
 // BlockStorage mocks client BlockStorage implementation
 func (p *MockProvisionerClient) BlockStorage() client.BlockStorage {
-	return &MockBlockStorageClient{}
+	return p.Storage
 }
 
-// FileStorage mocks client FileStorage implementation
-func (p *MockProvisionerClient) FileStorage() client.FileStorage {
+// FSS mocks client FileStorage implementation
+func (p *MockProvisionerClient) FSS() client.FSS {
 	return &MockFileStorageClient{}
 }
 
-// VirtualNetwork mocks client VirtualNetwork implementation
-func (p *MockProvisionerClient) VirtualNetwork() client.VirtualNetwork {
+// VCN mocks client VirtualNetwork implementation
+func (p *MockProvisionerClient) VCN() client.VCN {
 	return &MockVirtualNetworkClient{}
 }
 
@@ -156,6 +171,6 @@ func (p *MockProvisionerClient) TenancyOCID() string {
 }
 
 // NewClientProvisioner creates an OCI client from the given configuration.
-func NewClientProvisioner(pcData client.ProvisionerClient) client.ProvisionerClient {
-	return &MockProvisionerClient{}
+func NewClientProvisioner(pcData client.ProvisionerClient, storage *MockBlockStorageClient) client.ProvisionerClient {
+	return &MockProvisionerClient{Storage: storage}
 }

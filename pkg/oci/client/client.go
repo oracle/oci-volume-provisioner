@@ -28,13 +28,13 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/pkg/errors"
-
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/common/auth"
 	"github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-go-sdk/filestorage"
 	"github.com/oracle/oci-go-sdk/identity"
+	"github.com/pkg/errors"
+
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 )
 
@@ -62,8 +62,8 @@ type Identity interface {
 	ListAvailabilityDomains(ctx context.Context, request identity.ListAvailabilityDomainsRequest) (response identity.ListAvailabilityDomainsResponse, err error)
 }
 
-// FileStorage specifies the subset of the OCI core API utilised by the provisioner.
-type FileStorage interface {
+// FSS specifies the subset of the OCI core API utilised by the provisioner.
+type FSS interface {
 	CreateFileSystem(ctx context.Context, request filestorage.CreateFileSystemRequest) (response filestorage.CreateFileSystemResponse, err error)
 	DeleteFileSystem(ctx context.Context, request filestorage.DeleteFileSystemRequest) (response filestorage.DeleteFileSystemResponse, err error)
 	CreateMountTarget(ctx context.Context, request filestorage.CreateMountTargetRequest) (response filestorage.CreateMountTargetResponse, err error)
@@ -73,8 +73,8 @@ type FileStorage interface {
 	ListMountTargets(ctx context.Context, request filestorage.ListMountTargetsRequest) (response filestorage.ListMountTargetsResponse, err error)
 }
 
-//VirtualNetwork specifies the subset of the OCI core API utilised by the provisioner.
-type VirtualNetwork interface {
+//VCN specifies the subset of the OCI core API utilised by the provisioner.
+type VCN interface {
 	GetPrivateIp(ctx context.Context, request core.GetPrivateIpRequest) (response core.GetPrivateIpResponse, err error)
 }
 
@@ -82,8 +82,8 @@ type VirtualNetwork interface {
 type ProvisionerClient interface {
 	BlockStorage() BlockStorage
 	Identity() Identity
-	FileStorage() FileStorage
-	VirtualNetwork() VirtualNetwork
+	FSS() FSS
+	VCN() VCN
 	Context() context.Context
 	Timeout() time.Duration
 	CompartmentOCID() string
@@ -98,11 +98,11 @@ func (p *provisionerClient) Identity() Identity {
 	return p.identity
 }
 
-func (p *provisionerClient) FileStorage() FileStorage {
+func (p *provisionerClient) FSS() FSS {
 	return p.fileStorage
 }
 
-func (p *provisionerClient) VirtualNetwork() VirtualNetwork {
+func (p *provisionerClient) VCN() VCN {
 	return p.virtualNetwork
 }
 

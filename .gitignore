@@ -5,4 +5,6 @@ env.sh
 *.log
 test/system/venv/
 test/system/run-test-image.yaml*
-examples/*.yaml
+test/system/templates/*.yaml
+*.pyc
+.vscode/launch.json
