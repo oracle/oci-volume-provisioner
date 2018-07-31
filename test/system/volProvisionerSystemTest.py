@@ -181,8 +181,10 @@ class VolumeProvisionerSystemTestInterface(object):
         @type storageType: C{Str}
         @param availability_domain: Availability domain to look in for
         @type availability_domain: C{Str}'''
+        if compartment_id is None:
+            compartment_id = self._compartment_id
         if storageType == self.BLOCK_STORAGE:
-            utils.log("Retrieving block volumes")
+            utils.log("Retrieving block volumes for compartmentID %s" % compartment_id)
             client = oci.core.blockstorage_client.BlockstorageClient(self._oci_config)
             if backup:
                 volumes= oci.pagination.list_call_get_all_results(client.list_volume_backups, compartment_id)
@@ -201,7 +203,7 @@ class VolumeProvisionerSystemTestInterface(object):
 
     def _wait_for_volume(self, volume, state, compartment_id=None, backup=False, storageType=BLOCK_STORAGE, availability_domain=None):
         num_polls = 0
-        while not self._volume_exists(volume, state,  compartment_id=compartment_id, backup=backup, storageType=storageType,
+        while not self._volume_exists(volume, state, compartment_id=compartment_id, backup=backup, storageType=storageType,
                                       availability_domain=availability_domain,):
             utils.log("    waiting...")
             time.sleep(1)
@@ -211,14 +213,12 @@ class VolumeProvisionerSystemTestInterface(object):
         return True
 
     def _wait_for_volume_to_create(self, volume, compartment_id=None, backup=False, storageType=BLOCK_STORAGE, availability_domain=None):
-        compartment_id = compartment_id if compartment_id else self._compartment_id
-        return self._wait_for_volume(volume, self.LIFECYCLE_STATE_ON[storageType], backup, storageType=storageType, 
-                                availability_domain=availability_domain)
+        return self._wait_for_volume(volume, self.LIFECYCLE_STATE_ON[storageType], compartment_id=compartment_id, backup=backup, storageType=storageType, 
+                                     availability_domain=availability_domain)
 
 
     def _wait_for_volume_to_delete(self, volume, compartment_id=None, backup=False, storageType=BLOCK_STORAGE, availability_domain=None):
-        compartment_id = compartment_id if compartment_id else self._compartment_id
-        return self._wait_for_volume(volume, self.LIFECYCLE_STATE_OFF[storageType], backup, storageType=storageType,
+        return self._wait_for_volume(volume, self.LIFECYCLE_STATE_OFF[storageType], compartment_id=compartment_id, backup=backup, storageType=storageType,
                                      availability_domain=availability_domain)
 
     def _test_create_volume(self, claim_target, claim_volume_name, availability_domain=None, verify_func=None, storageType=BLOCK_STORAGE):
@@ -233,7 +233,7 @@ class VolumeProvisionerSystemTestInterface(object):
         if self._check_oci:
             utils.log("Querying the OCI api to make sure a volume with this name exists...")
             if not self._wait_for_volume_to_create(volume, storageType=storageType, 
-                                                    availability_domain=availability_domain):
+                                                   availability_domain=availability_domain):
                 utils.log("Failed to find volume with name: " + volume)
                 utils.finish_with_exit_code(1)
             utils.log("Volume: " + volume + " is present and available")
@@ -248,8 +248,9 @@ class VolumeProvisionerSystemTestInterface(object):
             utils.log("Querying the OCI api to make sure a volume with this name now doesnt exist...")
             self._wait_for_volume_to_delete(volume, storageType=storageType,
                                     availability_domain=availability_domain)
-            if not self._volume_exists(volume, self.LIFECYCLE_STATE_OFF[storageType], storageType=storageType,
-                                availability_domain=availability_domain):
+            if not self._volume_exists(volume, self.LIFECYCLE_STATE_OFF[storageType], 
+                                       compartment_id=self._compartment_id, storageType=storageType,
+                                       availability_domain=availability_domain):
                 utils.log("Volume with name: " + volume + " still exists")
                 utils.finish_with_exit_code(1)
             utils.log("Volume: " + volume + " has now been terminated")
