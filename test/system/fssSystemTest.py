@@ -28,8 +28,8 @@ class FSSSystemTests(VolumeProvisionerSystemTestInterface):
     KUBERNETES_RESOURCES = ["../../dist/oci-volume-provisioner-fss.yaml",
                             "../../dist/oci-volume-provisioner-rbac.yaml"]
 
-    def __init__(self, subnet_ocid, test_id=None, setup=False):
-        super(FSSSystemTests, self).__init__(test_id=test_id, setup=setup, k8Resources=self.KUBERNETES_RESOURCES)
+    def __init__(self, subnet_ocid, test_id=None, setup=False, check_oci=False):
+        super(FSSSystemTests, self).__init__(test_id=test_id, setup=setup, check_oci=check_oci, k8Resources=self.KUBERNETES_RESOURCES)
         self._subnet_ocid = subnet_ocid
         self._scFile = self.STORAGE_CLAIM_WITH_SUBNET_ID
 

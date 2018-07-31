@@ -26,8 +26,8 @@ class BackupVolumeSystemTest(VolumeProvisionerSystemTestInterface):
                             "../../dist/oci-volume-provisioner.yaml",
                             "../../dist/oci-volume-provisioner-rbac.yaml"]
 
-    def __init__(self, test_id=None, setup=False):
-        super(BackupVolumeSystemTest, self).__init__(test_id=test_id, setup=setup, k8Resources=self.KUBERNETES_RESOURCES)
+    def __init__(self, test_id=None, setup=False, check_oci=False):
+        super(BackupVolumeSystemTest, self).__init__(test_id=test_id, setup=setup, check_oci=check_oci, k8Resources=self.KUBERNETES_RESOURCES)
 
     def run(self):
         super(BackupVolumeSystemTest, self).run()
