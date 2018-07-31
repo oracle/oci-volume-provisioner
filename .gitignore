@@ -7,3 +7,4 @@ test/system/venv/
 test/system/run-test-image.yaml*
 examples/*.yaml
 *.pyc
+.vscode/launch.json

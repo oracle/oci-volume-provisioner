@@ -46,9 +46,9 @@ def _check_env(check_oci):
         if OCICONFIG not in os.environ and OCICONFIG_VAR not in os.environ:
             utils.log("Error. Can't find either OCICONFIG or OCICONFIG_VAR in the environment.")
             utils.finish_with_exit_code(1)
-    if SUBNET_OCID not in os.environ:
-            utils.log("Error. Can't find SUBNET_OCID in the environment.")
-            utils.finish_with_exit_code(1)
+    # if SUBNET_OCID not in os.environ:
+    #         utils.log("Error. Can't find SUBNET_OCID in the environment.")
+    #         utils.finish_with_exit_code(1)
 
 
 def _create_key_files(check_oci):
