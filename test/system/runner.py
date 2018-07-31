@@ -664,7 +664,7 @@ CM_VOLUME_FROM_BACKUP = "volume_provisioner_volume_from_backup"
 def canary_metric_date():
    return datetime.datetime.today().strftime('%Y-%m-%d-%H%m%S')
 
-def init_canary_metrics():
+def init_canary_metrics(check_oci):
     if "METRICS_FILE" in os.environ:
         _log("generating metrics file...")
         canary_metrics = {}
@@ -672,6 +672,8 @@ def init_canary_metrics():
         canary_metrics[CM_SIMPLE] = 0
         canary_metrics[CM_EXT3] = 0
         canary_metrics[CM_NO_AD] = 0
+        if check_oci:
+            canary_metrics[CM_VOLUME_FROM_BACKUP] = 0 
         with open(os.environ.get("METRICS_FILE"), 'w') as metrics_file:
             json.dump(canary_metrics, metrics_file, sort_keys=True, indent=4)
 
@@ -729,7 +731,7 @@ def _main():
 
     if not args['no_test']:
         _log("Running system test: Simple", as_banner=True)
-        init_canary_metrics() 
+        init_canary_metrics(args['check_oci']) 
         res = _test_create_volume(compartment_id,
                             _create_yaml("../../examples/example-claim.template", test_id, _get_region()),
                             "demooci-" + test_id, args['check_oci'])
