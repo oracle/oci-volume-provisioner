@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import re
+import utils
 
 class PopulateYaml():
 
@@ -69,6 +70,10 @@ class PopulateYaml():
                 for _elem, _elemName in self.TEMPLATE_ELEMENTS.iteritems():
                     if getattr(self, _elem) is not None:
                         patched_line = re.sub(_elemName, getattr(self, _elem), patched_line)
+                    elif _elemName in [self.MNT_TARGET_OCID, self.SUBNET_OCID] and _elemName in patched_line:
+                        # Remove lines from config files if attribute is not specified
+                        utils.log("%s not specified. Removing reference from config" % _elemName)
+                        patched_line = ""
                 sources.write(patched_line)
         return yaml_file
             
