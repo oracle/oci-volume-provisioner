@@ -53,7 +53,8 @@ class PopulateYaml():
         self._mount_target_ocid = mount_target_ocid
         self._subnet_ocid = subnet_ocid
         self._volume_name = volume_name
-        self._availability_domain = availability_domain.replace(':', '-') # yaml config does not allow ':'
+        # yaml config does not allow ':'
+        self._availability_domain = availability_domain.replace(':', '-')  if availability_domain else None
 
     def generateFile(self):
         '''Generate yaml based on the given template and fill in additional details
