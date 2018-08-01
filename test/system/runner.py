@@ -135,6 +135,7 @@ def _main():
         atexit.register(_teardown_atexit)
 
     if not args['no_test']:
+        pass
         # BlockSystemTests(test_id, args['setup'], check_oci=args['check_oci']).run()
         # FSSSystemTests(os.environ[SUBNET_OCID], test_id, args['setup'], check_oci=args['check_oci']).run()
         # BackupVolumeSystemTest(test_id, args['setup'], check_oci=args['check_oci']).run()
