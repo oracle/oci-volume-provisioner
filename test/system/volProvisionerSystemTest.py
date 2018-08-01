@@ -62,7 +62,7 @@ class VolumeProvisionerSystemTestInterface(object):
         self._compartment_id = compartment_id
         self._region = self._get_region()
         self._check_oci = check_oci
-        self._oci_config = self._get_oci_config()
+        self._oci_config = self._get_oci_config() if check_oci else None
         self._terraform_env = self._get_terraform_env()
         self._k8sResources = k8Resources if k8Resources else []
 
