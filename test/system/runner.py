@@ -38,7 +38,8 @@ WRITE_REPORT=True
 OCICONFIG = "OCICONFIG"
 OCICONFIG_VAR = "OCICONFIG_VAR"
 KUBECONFIG_VAR = "KUBECONFIG_VAR"
-SUBNET_OCID = "SUBNET_OCID"   
+SUBNET_OCID = "SUBNET_OCID"
+MNT_TARGET_OCID = "MNT_TARGET_OCID" 
 
 
 def _check_env(check_oci):
@@ -135,7 +136,8 @@ def _main():
 
     if not args['no_test']:
         BlockSystemTests(test_id, args['setup'], check_oci=args['check_oci']).run()
-        FSSSystemTests(os.environ[SUBNET_OCID], test_id, args['setup'], check_oci=args['check_oci']).run()
+        FSSSystemTests(subnet_ocid=os.environ.get(SUBNET_OCID), mnt_target_ocid=os.environ.get(SUBNET_OCID),
+                       test_id=test_id, setup=args['setup'], check_oci=args['check_oci']).run()
         BackupVolumeSystemTest(test_id, args['setup'], check_oci=args['check_oci']).run()
     if not success:
         utils.finish_with_exit_code(1)
