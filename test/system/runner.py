@@ -54,6 +54,7 @@ def _check_env(check_oci):
 def _create_key_files(check_oci):
     utils.log("Setting environment variables")
     utils.log(">>>>>>>>>>>>os.environ %s" % str(os.environ))
+    utils.log(">>>>>>>>>>Check oci %s" % check_oci)
     if OCICONFIG_VAR in os.environ:  
         utils.run_command("echo \"$OCICONFIG_VAR\" | openssl enc -base64 -d -A > " + VolumeProvisionerSystemTestInterface.TMP_OCICONFIG, ".")
         utils.run_command("chmod 600 " + VolumeProvisionerSystemTestInterface.TMP_OCICONFIG, ".")
@@ -135,8 +136,7 @@ def _main():
         atexit.register(_teardown_atexit)
 
     if not args['no_test']:
-        pass
-        # BlockSystemTests(test_id, args['setup'], check_oci=args['check_oci']).run()
+        BlockSystemTests(test_id, args['setup'], check_oci=args['check_oci']).run()
         # FSSSystemTests(os.environ[SUBNET_OCID], test_id, args['setup'], check_oci=args['check_oci']).run()
         # BackupVolumeSystemTest(test_id, args['setup'], check_oci=args['check_oci']).run()
     if not success:
