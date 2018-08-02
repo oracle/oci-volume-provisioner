@@ -20,10 +20,10 @@ from yamlUtils import PopulateYaml
 from volProvisionerSystemTest import VolumeProvisionerSystemTestInterface
 
 class FSSSystemTests(VolumeProvisionerSystemTestInterface):
-  
-    STORAGE_CLAIM_WITH_SUBNET_ID = "../../examples/example-storage-class-fss-subnet.template"
-    STORAGE_CLAIM_WITH_MNT_ID = "../../examples/example-storage-class-fss-mnt.template"
-    STORAGE_CLAIM_EMPTY = "../../examples/example-storage-class-fss-empty.template"
+
+    STORAGE_CLAIM_WITH_SUBNET_ID = "templates/example-storage-class-fss-subnet.template"
+    STORAGE_CLAIM_WITH_MNT_ID = "templates/example-storage-class-fss-mnt.template"
+    STORAGE_CLAIM_EMPTY = "templates/example-storage-class-fss-empty.template"
     MNT_TARGET_OCID = "MNT_TARGET_OCID"
     SUBNET_OCID = "SUBNET_OCID"
     KUBERNETES_RESOURCES = ["../../dist/oci-volume-provisioner-fss.yaml",
@@ -38,13 +38,13 @@ class FSSSystemTests(VolumeProvisionerSystemTestInterface):
 
     def run(self):
         super(FSSSystemTests, self).run()
-        if self._check_oci: # Do not run tests in the validate-test-image stage 
+        if self._check_oci: # Do not run tests in the validate-test-image stage (oci_config not propagated to image)
             utils.log("Running system test: Create volume with FSS", as_banner=True)
             for _testSc in self.TEST_SC_FILES:
                 # Not testing the creation of a mount target, as all mount targets on the system will have
                 # to be removed
                 self._testCreateVolumeFromStorageClass(_testSc)
-        
+
     def _testCreateVolumeFromStorageClass(self, scFile):
         '''Test creating a volume based on provided storage class
         @type scFile: Path for storage class config file
@@ -58,7 +58,7 @@ class FSSSystemTests(VolumeProvisionerSystemTestInterface):
         _storageClassFile = PopulateYaml(self._scFile, self._test_id, mount_target_ocid=self._mnt_target_ocid,
                                          subnet_ocid=self._subnet_ocid).generateFile()
         utils.kubectl("create -f " + _storageClassFile, exit_on_error=False)
-        self._test_create_volume(PopulateYaml("../../examples/example-claim-fss.template", self._test_id, region=self._region).generateFile(),
+        self._test_create_volume(PopulateYaml("templates/example-claim-fss.template", self._test_id, region=self._region).generateFile(),
                                  "demooci-fss-" + self._test_id, availability_domain=self.DEFAULT_AVAILABILITY_DOMAIN,
                                  storageType=self.FS_STORAGE, verify_func=self._volume_from_fss_dynamic_check)
 
@@ -75,7 +75,7 @@ class FSSSystemTests(VolumeProvisionerSystemTestInterface):
         @type file_name: C{Str}'''
         _ocid = volume.split('.')
         _ocid = _ocid[-1]
-        _rc_name, _rc_config = self._create_rc_or_pod("../../examples/example-pod-fss.template",
+        _rc_name, _rc_config = self._create_rc_or_pod("templates/example-pod-fss.template",
                                                       availability_domain, _ocid)
         utils.log("Does the file from the previous backup exist?")
         stdout = utils.kubectl("exec " + _rc_name + " -- ls /usr/share/nginx/html")

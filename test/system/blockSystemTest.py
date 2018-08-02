@@ -31,14 +31,13 @@ class BlockSystemTests(VolumeProvisionerSystemTestInterface):
     def run(self):
         super(BlockSystemTests, self).run()
         utils.log("Running system test: Simple", as_banner=True)
-        self._test_create_volume(PopulateYaml("../../examples/example-claim.template", region=self._region, test_id=self._test_id).generateFile(),
+        self._test_create_volume(PopulateYaml("templates/example-claim.template", region=self._region, test_id=self._test_id).generateFile(),
                                  "demooci-" + self._test_id, self._check_oci)
         utils.log("Running system test: Ext3 file system", as_banner=True)
-        self._test_create_volume(PopulateYaml("../../examples/example-claim-ext3.template", self._test_id).generateFile(),
+        self._test_create_volume(PopulateYaml("templates/example-claim-ext3.template", self._test_id).generateFile(),
                                  "demooci-ext3-" + self._test_id, self._check_oci)
-
         utils.log("Running system test: No AD specified", as_banner=True)
-        self._test_create_volume(PopulateYaml("../../examples/example-claim-no-AD.template", self._test_id). generateFile(),
+        self._test_create_volume(PopulateYaml("templates/example-claim-no-AD.template", self._test_id). generateFile(),
                                  "demooci-no-ad-" + self._test_id, self._check_oci)
-        
-        
+
+

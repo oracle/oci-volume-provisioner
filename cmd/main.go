@@ -42,7 +42,6 @@ const (
 	retryPeriod               = controller.DefaultRetryPeriod
 	renewDeadline             = controller.DefaultRenewDeadline
 	termLimit                 = controller.DefaultTermLimit
-	provisionerTypeArg        = "provisionerType"
 )
 
 // informerResyncPeriod computes the time interval a shared informer waits

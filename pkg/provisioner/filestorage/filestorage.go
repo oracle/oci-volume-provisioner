@@ -22,14 +22,15 @@ import (
 	"os"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/pkg/api/v1"
+
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-go-sdk/filestorage"
 	"github.com/oracle/oci-go-sdk/identity"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/pkg/api/v1"
 
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/plugin"
@@ -65,7 +66,7 @@ func getMountTargetFromID(ctx context.Context, mountTargetID string, fileStorage
 		MountTargetId: common.String(mountTargetID),
 	})
 	if err != nil {
-		glog.Errorf("Failed to retrieve mount point: %s", err)
+		glog.Errorf("Failed to retrieve mount point mountTargetId=%q: %v", mountTargetID, err)
 		return nil
 	}
 	return &responseMnt.MountTarget
@@ -167,7 +168,6 @@ func (filesystem *filesystemProvisioner) Provision(
 				ociVolumeID: *response.FileSystem.Id,
 				ociExportID: *createExportResponse.Export.Id,
 			},
-			Labels: map[string]string{},
 		},
 		Spec: v1.PersistentVolumeSpec{
 			PersistentVolumeReclaimPolicy: options.PersistentVolumeReclaimPolicy,
@@ -180,7 +180,7 @@ func (filesystem *filesystemProvisioner) Provision(
 				NFS: &v1.NFSVolumeSource{
 					// Randomnly select IP address associated with the mount target to use for attachment
 					Server:   serverIP,
-					Path:     *common.String("/" + *response.FileSystem.Id),
+					Path:     "/" + *response.FileSystem.Id,
 					ReadOnly: false,
 				},
 			},

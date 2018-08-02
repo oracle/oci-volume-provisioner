@@ -31,10 +31,10 @@ class BackupVolumeSystemTest(VolumeProvisionerSystemTestInterface):
 
     def run(self):
         super(BackupVolumeSystemTest, self).run()
-        if self._check_oci:
+        if self._check_oci: # Do not run tests in the validate-test-image stage (oci_config not propagated to image)
             utils.log("Running system test: Create volume from backup", as_banner=True)
             _backup_ocid, _availability_domain = self._setup_create_volume_from_backup()
-            _claim_target = PopulateYaml("../../examples/example-claim-from-backup.template", self._test_id, 
+            _claim_target = PopulateYaml("templates/example-claim-from-backup.template", self._test_id,
                                         region=_availability_domain.split(':')[1], backup_id=_backup_ocid).generateFile()
             self._test_create_volume(_claim_target, "demooci-from-backup-" + self._test_id,
                                      availability_domain=_availability_domain,
@@ -48,7 +48,7 @@ class BackupVolumeSystemTest(VolumeProvisionerSystemTestInterface):
         @return: Tuple containing the backup id, compartment id and display name
         @rtype: C{Tuple}'''
         client = oci.core.blockstorage_client.BlockstorageClient(self._oci_config)
-        _backup_details = oci.core.models.CreateVolumeBackupDetails(volume_id=volume_ocid, 
+        _backup_details = oci.core.models.CreateVolumeBackupDetails(volume_id=volume_ocid,
                                                                     display_name="backup_volume_system_test" + self._test_id)
         _response = client.create_volume_backup(_backup_details)
         utils.log("Response for creating backup for volume %s: %s" % (volume_ocid, _response.data))
@@ -65,7 +65,7 @@ class BackupVolumeSystemTest(VolumeProvisionerSystemTestInterface):
 
     def _create_volume_from_backup(self, backup_ocid, test_id, availability_domain, compartment_id):
         client = oci.core.blockstorage_client.BlockstorageClient(self._oci_config)
-        _volume_details = oci.core.models.CreateVolumeDetails(volume_backup_id=backup_ocid, 
+        _volume_details = oci.core.models.CreateVolumeDetails(volume_backup_id=backup_ocid,
                                                             display_name="restored_volume_system_test" + test_id,
                                                             availability_domain=availability_domain,
                                                             compartment_id=compartment_id)
@@ -86,15 +86,15 @@ class BackupVolumeSystemTest(VolumeProvisionerSystemTestInterface):
         _availability_domain = self._get_terraform_output_var(self.TERRAFORM_AVAILABILITY_DOMAIN)
         utils.log(self._terraform("output -json", self.TERRAFORM_DIR))
         # Create replication controller and write data to the generated volume
-        _rc_name, _rc_config = self._create_rc_or_pod("../../examples/example-replication-controller-with-volume-claim.template",
+        _rc_name, _rc_config = self._create_rc_or_pod("templates/example-replication-controller-with-volume-claim.template",
                                                       _availability_domain, volume_name=self._get_volume_name())
-        self._create_file_via_replication_controller(_rc_name)  
+        self._create_file_via_replication_controller(_rc_name)
         self._verify_file_existance_via_replication_controller(_rc_name)
         # Create backup from generated volume
         _backup_ocid, compartment_id, _volume_name = self._create_backup(self._get_terraform_output_var(self.TERRAFORM_VOLUME_OCID))
         if not self._wait_for_volume_to_create(_backup_ocid, compartment_id=compartment_id, backup=True, storageType=storageType,
                                                availability_domain=availability_domain):
-            utils.log("Failed to find backup with name: " + _volume_name)  
+            utils.log("Failed to find backup with name: " + _volume_name)
         return _backup_ocid, _availability_domain
 
     def _tear_down_create_volume_from_backup(self, backup_ocid):
@@ -121,7 +121,7 @@ class BackupVolumeSystemTest(VolumeProvisionerSystemTestInterface):
         @type file_name: C{Str}'''
         _ocid = volume.split('.')
         _ocid = _ocid[-1]
-        _rc_name, _rc_config = self._create_rc_or_pod("../../examples/example-replication-controller.template", availability_domain, _ocid)
+        _rc_name, _rc_config = self._create_rc_or_pod("templates/example-replication-controller.template", availability_domain, _ocid)
         utils.log("Does the file from the previous backup exist?")
         stdout = utils.kubectl("exec " + _rc_name + " -- ls /usr/share/nginx/html")
         if file_name not in stdout.split("\n"):

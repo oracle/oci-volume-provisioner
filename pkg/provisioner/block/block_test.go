@@ -18,12 +18,13 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/kubernetes-incubator/external-storage/lib/controller"
+
+	"github.com/oracle/oci-go-sdk/common"
+	"github.com/oracle/oci-go-sdk/identity"
 	"github.com/oracle/oci-volume-provisioner/pkg/helpers"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 
-	"github.com/kubernetes-incubator/external-storage/lib/controller"
-	"github.com/oracle/oci-go-sdk/common"
-	"github.com/oracle/oci-go-sdk/identity"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/pkg/api/v1"

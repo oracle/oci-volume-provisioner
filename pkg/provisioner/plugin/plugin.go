@@ -15,15 +15,15 @@
 package plugin
 
 import (
+	"k8s.io/client-go/pkg/api/v1"
+
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/oracle/oci-go-sdk/identity"
-	"k8s.io/client-go/pkg/api/v1"
 )
 
 const (
 	// OCIProvisionerName is the name of the provisioner defined in the storage class definitions
 	OCIProvisionerName = "oracle/oci"
-
 	// LabelZoneFailureDomain the availability domain in which the PD resides.
 	LabelZoneFailureDomain = "failure-domain.beta.kubernetes.io/zone"
 	// LabelZoneRegion the region in which the PD resides.
