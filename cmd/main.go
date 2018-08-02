@@ -36,6 +36,11 @@ import (
 const (
 	resyncPeriod              = 15 * time.Second
 	minResyncPeriod           = 12 * time.Hour
+<<<<<<< HEAD
+=======
+	provisionerNameBlock      = "oracle.com/oci"
+	provisionerNameFss        = "oracle.com/oci-fss"
+>>>>>>> 939464ac4663fcfd18c3f6dda2cbdac09d4b6f62
 	exponentialBackOffOnError = false
 	failedRetryThreshold      = 5
 	leasePeriod               = controller.DefaultLeaseDuration
@@ -95,7 +100,11 @@ func main() {
 	// Decides what type of provider to deploy, either block or fss
 	provisionerType := os.Getenv("PROVISIONER_TYPE")
 	if provisionerType == "" {
+<<<<<<< HEAD
 		provisionerType = core.ProvisionerNameBlock
+=======
+		provisionerType = provisionerNameBlock
+>>>>>>> 939464ac4663fcfd18c3f6dda2cbdac09d4b6f62
 	}
 
 	glog.Infof("Starting volume provisioner in %s mode", provisionerType)
