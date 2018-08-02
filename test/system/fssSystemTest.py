@@ -38,11 +38,12 @@ class FSSSystemTests(VolumeProvisionerSystemTestInterface):
 
     def run(self):
         super(FSSSystemTests, self).run()
-        utils.log("Running system test: Create volume with FSS", as_banner=True)
-        for _testSc in self.TEST_SC_FILES:
-            # Not testing the creation of a mount target, as all mount targets on the system will have
-            # to be removed
-            self._testCreateVolumeFromStorageClass(_testSc)
+        if self._check_oci: # Do not run tests in the validate-test-image stage 
+            utils.log("Running system test: Create volume with FSS", as_banner=True)
+            for _testSc in self.TEST_SC_FILES:
+                # Not testing the creation of a mount target, as all mount targets on the system will have
+                # to be removed
+                self._testCreateVolumeFromStorageClass(_testSc)
         
     def _testCreateVolumeFromStorageClass(self, scFile):
         '''Test creating a volume based on provided storage class

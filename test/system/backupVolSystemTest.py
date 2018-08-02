@@ -31,8 +31,8 @@ class BackupVolumeSystemTest(VolumeProvisionerSystemTestInterface):
 
     def run(self):
         super(BackupVolumeSystemTest, self).run()
-        utils.log("Running system test: Create volume from backup", as_banner=True)
         if self._check_oci:
+            utils.log("Running system test: Create volume from backup", as_banner=True)
             _backup_ocid, _availability_domain = self._setup_create_volume_from_backup()
             _claim_target = PopulateYaml("../../examples/example-claim-from-backup.template", self._test_id, 
                                         region=_availability_domain.split(':')[1], backup_id=_backup_ocid).generateFile()
