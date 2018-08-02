@@ -38,6 +38,10 @@ import (
 )
 
 const (
+	// ProvisionerNameBlock name to deploy block provisioner by
+	ProvisionerNameBlock = "oracle.com/oci"
+	// ProvisionerNameFss name to deploy block provisioner by
+	ProvisionerNameFss     = "oracle.com/oci-fss"
 	ociProvisionerIdentity = "ociProvisionerIdentity"
 	ociAvailabilityDomain  = "ociAvailabilityDomain"
 	ociCompartment         = "ociCompartment"
@@ -56,7 +60,7 @@ type OCIProvisioner struct {
 }
 
 // NewOCIProvisioner creates a new OCI provisioner.
-func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1.NodeInformer, nodeName string, volumeRoundingEnabled bool, minVolumeSize resource.Quantity) *OCIProvisioner {
+func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1.NodeInformer, provisionerType string, nodeName string, volumeRoundingEnabled bool, minVolumeSize resource.Quantity) *OCIProvisioner {
 	configPath, ok := os.LookupEnv("CONFIG_YAML_FILENAME")
 	if !ok {
 		configPath = configFilePath
@@ -77,23 +81,25 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1
 	if err != nil {
 		glog.Fatalf("Unable to create volume provisioner client: %v", err)
 	}
-
-	blockProvisioner := block.NewBlockProvisioner(client, instancemeta.New(), volumeRoundingEnabled, minVolumeSize)
-	return &OCIProvisioner{
-		client:           client,
-		kubeClient:       kubeClient,
-		nodeLister:       nodeInformer.Lister(),
-		nodeListerSynced: nodeInformer.Informer().HasSynced,
-<<<<<<< HEAD
-		provisioner:      blockProvisioner,
-=======
-		storageClassProvisioners: map[string]plugin.ProvisionerPlugin{
-			"oci":      blockProvisioner,
-			"oci-ext3": blockProvisioner,
-			"oci-fss":  filestorage.NewFilesystemProvisioner(client),
-		},
->>>>>>> File system storage
+	if provisionerType == ProvisionerNameBlock {
+		return &OCIProvisioner{
+			client:           client,
+			kubeClient:       kubeClient,
+			nodeLister:       nodeInformer.Lister(),
+			nodeListerSynced: nodeInformer.Informer().HasSynced,
+			provisioner:      block.NewBlockProvisioner(client, instancemeta.New(), volumeRoundingEnabled, minVolumeSize),
+		}
+	} else if provisionerType == ProvisionerNameFss {
+		return &OCIProvisioner{
+			client:           client,
+			kubeClient:       kubeClient,
+			nodeLister:       nodeInformer.Lister(),
+			nodeListerSynced: nodeInformer.Informer().HasSynced,
+			provisioner:      filestorage.NewFilesystemProvisioner(client),
+		}
 	}
+	glog.Fatalf("Unrecognized provisioner name: %s", provisionerType)
+	return nil
 }
 
 var _ controller.Provisioner = &OCIProvisioner{}

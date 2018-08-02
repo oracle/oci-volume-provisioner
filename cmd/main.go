@@ -36,8 +36,6 @@ import (
 const (
 	resyncPeriod              = 15 * time.Second
 	minResyncPeriod           = 12 * time.Hour
-	provisionerNameBlock      = "oracle.com/oci"
-	provisionerNameFss        = "oracle.com/oci-fss"
 	exponentialBackOffOnError = false
 	failedRetryThreshold      = 5
 	leasePeriod               = controller.DefaultLeaseDuration
@@ -97,7 +95,7 @@ func main() {
 	// Decides what type of provider to deploy, either block or fss
 	provisionerType := os.Getenv("PROVISIONER_TYPE")
 	if provisionerType == "" {
-		provisionerType = provisionerNameBlock
+		provisionerType = core.ProvisionerNameBlock
 	}
 
 	glog.Infof("Starting volume provisioner in %s mode", provisionerType)
@@ -111,7 +109,7 @@ func main() {
 
 	// Create the provisioner: it implements the Provisioner interface expected by
 	// the controller
-	ociProvisioner := core.NewOCIProvisioner(clientset, sharedInformerFactory.Core().V1().Nodes(), nodeName, *volumeRoundingEnabled, volumeSizeLowerBound)
+	ociProvisioner := core.NewOCIProvisioner(clientset, sharedInformerFactory.Core().V1().Nodes(), provisionerType, nodeName, *volumeRoundingEnabled, volumeSizeLowerBound)
 
 	// Start the provision controller which will dynamically provision oci
 	// PVs
