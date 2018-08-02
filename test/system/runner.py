@@ -63,6 +63,7 @@ def _finish_with_exit_code(exit_code, write_report=True, report_dir_path=REPORT_
         copyfile(DEBUG_FILE, report_dir_path + "/" + DEBUG_FILE)
         with open(report_dir_path + "/" + report_file, "w+") as file: 
             file.write(str(report_dir_path + "/" + DEBUG_FILE))
+    finish_canary_metrics()
     sys.exit(exit_code)          
 
 
@@ -453,7 +454,7 @@ def _test_create_volume(compartment_id, claim_target, claim_volume_name, check_o
         _log("Querying the OCI api to make sure a volume with this name exists...")
         if not _wait_for_volume_to_create(compartment_id, volume):
             _log("Failed to find volume with name: " + volume)
-            _finish_with_exit_code(1)
+            return False
         _log("Volume: " + volume + " is present and available")
 
     if verify_func:
@@ -467,8 +468,10 @@ def _test_create_volume(compartment_id, claim_target, claim_volume_name, check_o
         _wait_for_volume_to_delete(compartment_id, volume)
         if not _volume_exists(compartment_id, volume, 'TERMINATED'):
             _log("Volume with name: " + volume + " still exists")
-            _finish_with_exit_code(1)
+            return False
         _log("Volume: " + volume + " has now been terminated")
+    
+    return True
 
 def _patch_template_file(infile, outfile, volume_name, test_id, availability_domain):
     '''Generate yaml based on the given template and fill in additional details
@@ -649,6 +652,47 @@ def _volume_from_backup_check(test_id, availability_domain, volume, file_name='h
     _log("Deleting the replication controller (deletes the single nginx pod).")
     _kubectl("delete -f " + _rc_config)
 
+
+# Canary Metrics **************************************************************
+# 
+
+CM_SIMPLE = "volume_provisioner_simple"
+CM_EXT3 = "volume_provisioner_ext3"
+CM_NO_AD = "volume_provisioner_no_ad"
+CM_VOLUME_FROM_BACKUP = "volume_provisioner_volume_from_backup" 
+
+def canary_metric_date():
+   return datetime.datetime.today().strftime('%Y-%m-%d-%H%m%S')
+
+def init_canary_metrics(check_oci):
+    if "METRICS_FILE" in os.environ:
+        _log("generating metrics file...")
+        canary_metrics = {}
+        canary_metrics["start_time"] = canary_metric_date()
+        canary_metrics[CM_SIMPLE] = 0
+        canary_metrics[CM_EXT3] = 0
+        canary_metrics[CM_NO_AD] = 0
+        if check_oci:
+            canary_metrics[CM_VOLUME_FROM_BACKUP] = 0 
+        with open(os.environ.get("METRICS_FILE"), 'w') as metrics_file:
+            json.dump(canary_metrics, metrics_file, sort_keys=True, indent=4)
+
+def update_canary_metric(name, result):
+    if "METRICS_FILE" in os.environ:
+        _log("updating metrics fle...")
+        with open(os.environ.get("METRICS_FILE"), 'r') as metrics_file:
+            canary_metrics = json.load(metrics_file)
+            canary_metrics[name] = result
+        with open(os.environ.get("METRICS_FILE"), 'w') as metrics_file:
+            json.dump(canary_metrics, metrics_file, sort_keys=True, indent=4)
+
+def finish_canary_metrics():
+   update_canary_metric("end_time", canary_metric_date())
+
+
+# Main ************************************************************************
+# 
+
 def _main():
     _reset_debug_file()
     args = _handle_args()
@@ -687,36 +731,48 @@ def _main():
 
     if not args['no_test']:
         _log("Running system test: Simple", as_banner=True)
-        _test_create_volume(compartment_id,
+        init_canary_metrics(args['check_oci']) 
+        res = _test_create_volume(compartment_id,
                             _create_yaml("../../examples/example-claim.template", test_id, _get_region()),
                             "demooci-" + test_id, args['check_oci'])
+        update_canary_metric(CM_SIMPLE, int(res))
+        success = False if res == False else success
 
         _log("Running system test: Ext3 file system", as_banner=True)
-        _test_create_volume(compartment_id,
+        res = _test_create_volume(compartment_id,
                             _create_yaml("../../examples/example-claim-ext3.template", test_id, None),
                             "demooci-ext3-" + test_id, args['check_oci'])
+        update_canary_metric(CM_EXT3, int(res))
+        success = False if res == False else success 
 
         _log("Running system test: No AD specified", as_banner=True)
-        _test_create_volume(compartment_id,
+        res = _test_create_volume(compartment_id,
                             _create_yaml("../../examples/example-claim-no-AD.template", test_id, None),
                             "demooci-no-ad-" + test_id, args['check_oci'])
-        _log("Running system test: Create volume from backup", as_banner=True)
+        update_canary_metric(CM_NO_AD, int(res))
+        success = False if res == False else success
 
         if args['check_oci']: 
+            _log("Running system test: Create volume from backup", as_banner=True)
             terraform_env = _get_terraform_env()
             _backup_ocid, _availability_domain = _setup_create_volume_from_backup(terraform_env, test_id)
             _claim_target = _create_yaml("../../examples/example-claim-from-backup.template", test_id, 
                                         region=_availability_domain.split(':')[1], backup_id=_backup_ocid)
-            _test_create_volume(compartment_id, _claim_target,
+            res = _test_create_volume(compartment_id, _claim_target,
                                 "demooci-from-backup-" + test_id, args['check_oci'],
                                 test_id=test_id, availability_domain=_availability_domain,
                                 verify_func=_volume_from_backup_check)
+            update_canary_metric(CM_VOLUME_FROM_BACKUP, int(res))
+            success = False if res == False else success
             _tear_down_create_volume_from_backup(terraform_env, _backup_ocid)
+
     if not success:
         _finish_with_exit_code(1)
     else: 
         _finish_with_exit_code(0)
 
-
 if __name__ == "__main__":
     _main()
+
+
+
