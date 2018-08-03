@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/version"
 )
 
 const (
@@ -51,6 +52,45 @@ func informerResyncPeriod(minResyncPeriod time.Duration) func() time.Duration {
 		factor := rand.Float64() + 1
 		return time.Duration(float64(minResyncPeriod.Nanoseconds()) * factor)
 	}
+}
+
+func startController(provisionerType string, clientset *kubernetes.Clientset, minVolumeSize *string,
+	nodeName string, volumeRoundingEnabled *bool, serverVersion *version.Info, stopCh <-chan struct{}) {
+	glog.Infof("Starting controller for  provisioner %s", provisionerType)
+	sharedInformerFactory := informers.NewSharedInformerFactory(clientset, informerResyncPeriod(minResyncPeriod)())
+
+	volumeSizeLowerBound, err := resource.ParseQuantity(*minVolumeSize)
+	if err != nil {
+		glog.Fatalf("Cannot parse volume size %s", *minVolumeSize)
+	}
+	// Create the provisioner: it implements the Provisioner interface expected by
+	// the controller
+	ociProvisioner := core.NewOCIProvisioner(clientset, sharedInformerFactory.Core().V1().Nodes(), provisionerType, nodeName, *volumeRoundingEnabled, volumeSizeLowerBound)
+
+	// Start the provision controller which will dynamically provision oci
+	// PVs
+	pc := controller.NewProvisionController(
+		clientset,
+		resyncPeriod,
+		provisionerType,
+		ociProvisioner,
+		serverVersion.GitVersion,
+		exponentialBackOffOnError,
+		failedRetryThreshold,
+		leasePeriod,
+		renewDeadline,
+		retryPeriod,
+		termLimit)
+
+	go sharedInformerFactory.Start(stopCh)
+
+	// We block waiting for Ready() after the shared informer factory has
+	// started so we don't deadlock waiting for caches to sync.
+	if err := ociProvisioner.Ready(stopCh); err != nil {
+		glog.Fatalf("Failed to start volume provisioner: %v", err)
+	}
+
+	pc.Run(stopCh)
 }
 
 func main() {
@@ -91,47 +131,8 @@ func main() {
 		glog.Fatal("env variable NODE_NAME must be set so that this provisioner can identify itself")
 	}
 
-	// Decides what type of provider to deploy, either block or fss
-	provisionerType := os.Getenv("PROVISIONER_TYPE")
-	if provisionerType == "" {
-		provisionerType = core.ProvisionerNameBlock
-	}
-
-	glog.Infof("Starting volume provisioner in %s mode", provisionerType)
-
-	sharedInformerFactory := informers.NewSharedInformerFactory(clientset, informerResyncPeriod(minResyncPeriod)())
-
-	volumeSizeLowerBound, err := resource.ParseQuantity(*minVolumeSize)
-	if err != nil {
-		glog.Fatalf("Cannot parse volume size %s", *minVolumeSize)
-	}
-
-	// Create the provisioner: it implements the Provisioner interface expected by
-	// the controller
-	ociProvisioner := core.NewOCIProvisioner(clientset, sharedInformerFactory.Core().V1().Nodes(), provisionerType, nodeName, *volumeRoundingEnabled, volumeSizeLowerBound)
-
-	// Start the provision controller which will dynamically provision oci
-	// PVs
-	pc := controller.NewProvisionController(
-		clientset,
-		resyncPeriod,
-		provisionerType,
-		ociProvisioner,
-		serverVersion.GitVersion,
-		exponentialBackOffOnError,
-		failedRetryThreshold,
-		leasePeriod,
-		renewDeadline,
-		retryPeriod,
-		termLimit)
-
-	go sharedInformerFactory.Start(stopCh)
-
-	// We block waiting for Ready() after the shared informer factory has
-	// started so we don't deadlock waiting for caches to sync.
-	if err := ociProvisioner.Ready(stopCh); err != nil {
-		glog.Fatalf("Failed to start volume provisioner: %v", err)
-	}
-
-	pc.Run(stopCh)
+	//start Block Controller
+	startController(core.ProvisionerNameBlock, clientset, minVolumeSize, nodeName, volumeRoundingEnabled, serverVersion, stopCh)
+	//start FSS Controller
+	startController(core.ProvisionerNameFss, clientset, minVolumeSize, nodeName, volumeRoundingEnabled, serverVersion, stopCh)
 }
