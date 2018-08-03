@@ -39,7 +39,7 @@ OCICONFIG = "OCICONFIG"
 OCICONFIG_VAR = "OCICONFIG_VAR"
 KUBECONFIG_VAR = "KUBECONFIG_VAR"
 SUBNET_OCID = "SUBNET_OCID"
-MNT_TARGET_OCID = "MNT_TARGET_OCID" 
+MNT_TARGET_OCID = "MNT_TARGET_OCID"
 
 
 def _check_env(check_oci):
@@ -47,20 +47,16 @@ def _check_env(check_oci):
         if OCICONFIG not in os.environ and OCICONFIG_VAR not in os.environ:
             utils.log("Error. Can't find either OCICONFIG or OCICONFIG_VAR in the environment.")
             utils.finish_with_exit_code(1)
-    # if SUBNET_OCID not in os.environ:
-    #         utils.log("Error. Can't find SUBNET_OCID in the environment.")
-    #         utils.finish_with_exit_code(1)
-
 
 def _create_key_files(check_oci):
     utils.log("Setting environment variables")
-    if OCICONFIG_VAR in os.environ:  
+    if OCICONFIG_VAR in os.environ:
         utils.run_command("echo \"$OCICONFIG_VAR\" | openssl enc -base64 -d -A > " + VolumeProvisionerSystemTestInterface.TMP_OCICONFIG, ".")
         utils.run_command("chmod 600 " + VolumeProvisionerSystemTestInterface.TMP_OCICONFIG, ".")
     if KUBECONFIG_VAR in os.environ:
         utils.run_command("echo \"$KUBECONFIG_VAR\" | openssl enc -base64 -d -A > " + utils.TMP_KUBECONFIG, ".")
 
-    if check_oci:  
+    if check_oci:
         oci_config_file = VolumeProvisionerSystemTestInterface()._get_oci_config_file()
         with open(oci_config_file, 'r') as stream:
             try:
@@ -141,7 +137,7 @@ def _main():
         BackupVolumeSystemTest(test_id, args['setup'], check_oci=args['check_oci']).run()
     if not success:
         utils.finish_with_exit_code(1)
-    else: 
+    else:
         utils.finish_with_exit_code(0)
 
 

@@ -168,6 +168,7 @@ func (filesystem *filesystemProvisioner) Provision(
 				ociVolumeID: *response.FileSystem.Id,
 				ociExportID: *createExportResponse.Export.Id,
 			},
+			Labels: map[string]string{},
 		},
 		Spec: v1.PersistentVolumeSpec{
 			PersistentVolumeReclaimPolicy: options.PersistentVolumeReclaimPolicy,
