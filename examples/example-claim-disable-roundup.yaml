@@ -1,0 +1,14 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: demoocinoroundup
+spec:
+  storageClassName: "oci-disableroundup"
+  selector:
+    matchLabels:
+      failure-domain.beta.kubernetes.io/zone: "PHX-AD-1"
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 48Gi
