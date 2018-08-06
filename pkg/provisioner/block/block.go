@@ -40,10 +40,11 @@ import (
 )
 
 const (
-	ociVolumeID            = "ociVolumeID"
-	ociVolumeBackupID      = "volume.beta.kubernetes.io/oci-volume-source"
-	volumePrefixEnvVarName = "OCI_VOLUME_NAME_PREFIX"
-	fsType                 = "fsType"
+	ociVolumeID             = "ociVolumeID"
+	ociVolumeBackupID       = "volume.beta.kubernetes.io/oci-volume-source"
+	volumePrefixEnvVarName  = "OCI_VOLUME_NAME_PREFIX"
+	fsType                  = "fsType"
+	volumeRoundingUpEnabled = "volumeRoundingUpEnabled"
 )
 
 // blockProvisioner is the internal provisioner for OCI block volumes
@@ -120,6 +121,16 @@ func (block *blockProvisioner) waitForVolumeAvailable(volumeID *string, timeout 
 	})
 }
 
+func volumeRoundingEnabled(param map[string]string) bool {
+	volumeRounding := true //default
+	if volumeRoundingUpParam, ok := param[volumeRoundingUpEnabled]; ok {
+		if volumeRoundingUpParam == "false" {
+			volumeRounding = false
+		}
+	}
+	return volumeRounding
+}
+
 // Provision creates an OCI block volume
 func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *identity.AvailabilityDomain) (*v1.PersistentVolume, error) {
 	for _, accessMode := range options.PVC.Spec.AccessModes {
@@ -137,11 +148,13 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 	volSizeMB := int(roundUpSize(capacity.Value(), 1024*1024))
 	glog.Infof("Volume size: %dMB", volSizeMB)
 
-	if block.volumeRoundingEnabled && block.minVolumeSize.Cmp(capacity) == 1 {
-		glog.Warningf("PVC requested storage less than %s. Rounding up to ensure volume creation", block.minVolumeSize.String())
+	if volumeRoundingEnabled(options.Parameters) {
+		if block.volumeRoundingEnabled && block.minVolumeSize.Cmp(capacity) == 1 {
+			glog.Warningf("PVC requested storage less than %s. Rounding up to ensure volume creation", block.minVolumeSize.String())
 
-		volSizeMB = int(roundUpSize(block.minVolumeSize.Value(), 1024*1024))
-		capacity = block.minVolumeSize
+			volSizeMB = int(roundUpSize(block.minVolumeSize.Value(), 1024*1024))
+			capacity = block.minVolumeSize
+		}
 	}
 
 	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, *ad.Name, block.client.CompartmentOCID())
@@ -239,6 +252,7 @@ func (block *blockProvisioner) Delete(volume *v1.PersistentVolume) error {
 	response, err := block.client.BlockStorage().DeleteVolume(ctx, request)
 	// If the volume does not exists (perhaps a user deleted it) then stop retrying the delete
 	// Note that we cannot differentiate between a volume that no longer exists and an authentication failure.
+	// bl - bug, doesnt stop retrying delete
 	if response.RawResponse != nil && response.RawResponse.StatusCode == http.StatusNotFound {
 		return nil
 	}
