@@ -120,6 +120,16 @@ func (block *blockProvisioner) waitForVolumeAvailable(volumeID *string, timeout 
 		}
 		return ready, nil
 	})
+
+}
+func volumeRoundingEnabled(param map[string]string) bool {
+	volumeRounding := true //default
+	if volumeRoundingUpParam, ok := param[volumeRoundingUpEnabled]; ok {
+		if volumeRoundingUpParam == "false" {
+			volumeRounding = false
+		}
+	}
+	return volumeRounding
 }
 
 func volumeRoundingEnabled(param map[string]string) bool {
