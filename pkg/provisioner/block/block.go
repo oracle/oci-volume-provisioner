@@ -21,11 +21,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/pkg/api/v1"
 
 	"github.com/oracle/oci-go-sdk/common"
@@ -50,17 +52,24 @@ type blockProvisioner struct {
 	metadata              instancemeta.Interface
 	volumeRoundingEnabled bool
 	minVolumeSize         resource.Quantity
+	timeout               time.Duration
 }
 
 var _ plugin.ProvisionerPlugin = &blockProvisioner{}
 
 // NewBlockProvisioner creates a new instance of the block storage provisioner
-func NewBlockProvisioner(client client.ProvisionerClient, metadata instancemeta.Interface, volumeRoundingEnabled bool, minVolumeSize resource.Quantity) plugin.ProvisionerPlugin {
+func NewBlockProvisioner(client client.ProvisionerClient,
+	metadata instancemeta.Interface,
+	volumeRoundingEnabled bool,
+	minVolumeSize resource.Quantity,
+	timeout time.Duration,
+) plugin.ProvisionerPlugin {
 	return &blockProvisioner{
 		client:                client,
 		metadata:              metadata,
 		volumeRoundingEnabled: volumeRoundingEnabled,
 		minVolumeSize:         minVolumeSize,
+		timeout:               timeout,
 	}
 }
 
@@ -78,6 +87,37 @@ func resolveFSType(options controller.VolumeOptions) string {
 
 func roundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
 	return (volumeSizeBytes + allocationUnitBytes - 1) / allocationUnitBytes
+}
+
+func (block *blockProvisioner) waitForVolumeAvailable(volumeID *string, timeout time.Duration) error {
+	isVolumeReady := func() (bool, error) {
+		ctx, cancel := context.WithTimeout(block.client.Context(), block.client.Timeout())
+		defer cancel()
+
+		getVolumeResponse, err := block.client.BlockStorage().GetVolume(ctx,
+			core.GetVolumeRequest{VolumeId: volumeID})
+		if err != nil {
+			return false, err
+		}
+
+		switch state := getVolumeResponse.LifecycleState; state {
+		case core.VolumeLifecycleStateAvailable:
+			return true, nil
+		case core.VolumeLifecycleStateFaulty,
+			core.VolumeLifecycleStateTerminated,
+			core.VolumeLifecycleStateTerminating:
+			return false, fmt.Errorf("volume has lifecycle state %q", state)
+		}
+		return false, nil
+	}
+
+	return wait.PollImmediate(time.Second*5, timeout, func() (bool, error) {
+		ready, err := isVolumeReady()
+		if err != nil {
+			return false, fmt.Errorf("failed to provision volume %q: %v", *volumeID, err)
+		}
+		return ready, nil
+	})
 }
 
 // Provision creates an OCI block volume
@@ -129,6 +169,18 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 		CreateVolumeDetails: volumeDetails,
 	})
 	if err != nil {
+		return nil, err
+	}
+
+	err = block.waitForVolumeAvailable(newVolume.Id, block.timeout)
+	if err != nil {
+		// Delete the volume if it failed to get in a good state for us
+		ctx, cancel := context.WithTimeout(block.client.Context(), block.client.Timeout())
+		defer cancel()
+
+		_, _ = block.client.BlockStorage().DeleteVolume(ctx,
+			core.DeleteVolumeRequest{VolumeId: newVolume.Id})
+
 		return nil, err
 	}
 

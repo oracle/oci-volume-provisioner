@@ -51,6 +51,7 @@ type provisionerClient struct {
 type BlockStorage interface {
 	CreateVolume(ctx context.Context, request core.CreateVolumeRequest) (response core.CreateVolumeResponse, err error)
 	DeleteVolume(ctx context.Context, request core.DeleteVolumeRequest) (response core.DeleteVolumeResponse, err error)
+	GetVolume(ctx context.Context, request core.GetVolumeRequest) (response core.GetVolumeResponse, err error)
 }
 
 // Identity specifies the subset of the OCI identity API utilised by the provisioner.
