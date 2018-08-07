@@ -27,6 +27,7 @@ import (
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/pkg/api/v1"
 
 	"github.com/oracle/oci-go-sdk/common"
@@ -61,7 +62,8 @@ func NewBlockProvisioner(client client.ProvisionerClient,
 	metadata instancemeta.Interface,
 	volumeRoundingEnabled bool,
 	minVolumeSize resource.Quantity,
-	timeout time.Duration) plugin.ProvisionerPlugin {
+	timeout time.Duration,
+) plugin.ProvisionerPlugin {
 	return &blockProvisioner{
 		client:                client,
 		metadata:              metadata,
@@ -89,66 +91,33 @@ func roundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
 
 func (block *blockProvisioner) waitForVolumeAvailable(volumeID *string, timeout time.Duration) error {
 	isVolumeReady := func() (bool, error) {
-		getVolumeRequest := core.GetVolumeRequest{VolumeId: volumeID}
 		ctx, cancel := context.WithTimeout(block.client.Context(), block.client.Timeout())
 		defer cancel()
 
-		getVolumeResponse, err := block.client.BlockStorage().GetVolume(ctx, getVolumeRequest)
+		getVolumeResponse, err := block.client.BlockStorage().GetVolume(ctx,
+			core.GetVolumeRequest{VolumeId: volumeID})
 		if err != nil {
 			return false, err
 		}
 
-		if getVolumeResponse.LifecycleState == core.VolumeLifecycleStateAvailable {
+		switch state := getVolumeResponse.LifecycleState; state {
+		case core.VolumeLifecycleStateAvailable:
 			return true, nil
+		case core.VolumeLifecycleStateFaulty,
+			core.VolumeLifecycleStateTerminated,
+			core.VolumeLifecycleStateTerminating:
+			return false, fmt.Errorf("volume has lifecycle state %q", state)
 		}
-
-		if getVolumeResponse.LifecycleState == core.VolumeLifecycleStateFaulty {
-			return false, fmt.Errorf("Failed to provision volume. Volume: %v is in Faulty state", *volumeID)
-		}
-
-		if getVolumeResponse.LifecycleState == core.VolumeLifecycleStateTerminated {
-			return false, fmt.Errorf("Failed to provision volume. Volume: %v is in Terminated state", *volumeID)
-		}
-
-		if getVolumeResponse.LifecycleState == core.VolumeLifecycleStateTerminating {
-			return false, fmt.Errorf("Failed to provision volume. Volume: %v is in Terminating state", *volumeID)
-		}
-
 		return false, nil
 	}
 
-	ready, err := isVolumeReady()
-	if err != nil {
-		return err
-	}
-	if ready {
-		return nil
-	}
-
-	//Not ready so we'll kick off a polling loop to wait for readyness or failure...
-	tickduration := time.Second * 5
-	timeoutticker := time.NewTicker(timeout)
-	defer timeoutticker.Stop()
-
-	ticker := time.NewTicker(tickduration)
-	defer ticker.Stop()
-
-	// Keep trying until we're timed out or got a result or got an error
-	for {
-		select {
-		case <-timeoutticker.C:
-			return fmt.Errorf("Timed out waiting for volume %v to become %s", *volumeID, core.VolumeLifecycleStateAvailable)
-
-		case <-ticker.C:
-			ready, err := isVolumeReady()
-			if err != nil {
-				return err
-			}
-			if ready {
-				return nil
-			}
+	return wait.PollImmediate(time.Second*5, timeout, func() (bool, error) {
+		ready, err := isVolumeReady()
+		if err != nil {
+			return false, fmt.Errorf("failed to provision volume %q: %v", *volumeID, err)
 		}
-	}
+		return ready, nil
+	})
 }
 
 // Provision creates an OCI block volume
@@ -206,11 +175,11 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 	err = block.waitForVolumeAvailable(newVolume.Id, block.timeout)
 	if err != nil {
 		// Delete the volume if it failed to get in a good state for us
-		request := core.DeleteVolumeRequest{VolumeId: newVolume.Id}
 		ctx, cancel := context.WithTimeout(block.client.Context(), block.client.Timeout())
 		defer cancel()
 
-		_, _ = block.client.BlockStorage().DeleteVolume(ctx, request)
+		_, _ = block.client.BlockStorage().DeleteVolume(ctx,
+			core.DeleteVolumeRequest{VolumeId: newVolume.Id})
 
 		return nil, err
 	}

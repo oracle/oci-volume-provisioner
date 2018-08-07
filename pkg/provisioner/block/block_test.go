@@ -109,7 +109,8 @@ func (p *mockProvisionerClient) TenancyOCID() string {
 
 // NewClientProvisioner creates an OCI client from the given configuration.
 func NewClientProvisioner(pcData client.ProvisionerClient,
-	storage *mockBlockStorageClient) client.ProvisionerClient {
+	storage *mockBlockStorageClient,
+) client.ProvisionerClient {
 	return &mockProvisionerClient{storage: storage}
 }
 
@@ -158,10 +159,10 @@ func TestCreateVolumeFailure(t *testing.T) {
 		state    core.VolumeLifecycleStateEnum
 		errormsg string
 	}{
-		{core.VolumeLifecycleStateTerminated, "Failed to provision volume. Volume: dummyVolumeBackupId is in Terminated state"},
-		{core.VolumeLifecycleStateProvisioning, "Timed out waiting for volume dummyVolumeBackupId to become AVAILABLE"},
-		{core.VolumeLifecycleStateFaulty, "Failed to provision volume. Volume: dummyVolumeBackupId is in Faulty state"},
-		{core.VolumeLifecycleStateTerminating, "Failed to provision volume. Volume: dummyVolumeBackupId is in Terminating state"},
+		{core.VolumeLifecycleStateTerminated, "failed to provision volume \"dummyVolumeBackupId\": volume has lifecycle state \"TERMINATED\""},
+		{core.VolumeLifecycleStateFaulty, "failed to provision volume \"dummyVolumeBackupId\": volume has lifecycle state \"FAULTY\""},
+		{core.VolumeLifecycleStateTerminating, "failed to provision volume \"dummyVolumeBackupId\": volume has lifecycle state \"TERMINATING\""},
+		{core.VolumeLifecycleStateProvisioning, "timed out waiting for the condition"},
 	}
 	for i, tt := range volumeFailureTests {
 		t.Run(fmt.Sprintf("test-%d", i), func(t *testing.T) {
