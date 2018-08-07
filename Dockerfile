@@ -12,9 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM oraclelinux:7.3
-
-RUN yum install -y openssl ca-certificates
+FROM oraclelinux:7.5
 
 COPY dist/oci-volume-provisioner /
 

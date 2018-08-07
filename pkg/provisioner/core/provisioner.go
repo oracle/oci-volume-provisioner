@@ -18,6 +18,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/golang/glog"
 
@@ -77,7 +78,10 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1
 		glog.Fatalf("Unable to create volume provisioner client: %v", err)
 	}
 
-	blockProvisioner := block.NewBlockProvisioner(client, instancemeta.New(), volumeRoundingEnabled, minVolumeSize)
+	blockProvisioner := block.NewBlockProvisioner(client, instancemeta.New(),
+		volumeRoundingEnabled,
+		minVolumeSize,
+		time.Minute*3)
 
 	return &OCIProvisioner{
 		client:           client,
