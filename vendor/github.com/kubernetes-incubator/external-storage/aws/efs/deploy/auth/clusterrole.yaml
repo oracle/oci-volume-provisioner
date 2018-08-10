@@ -1,5 +1,5 @@
 kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1alpha1
+apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: efs-provisioner-runner
 rules:
@@ -14,7 +14,4 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["events"]
-    verbs: ["watch", "create", "update", "patch"]
-  - apiGroups: [""]
-    resources: ["services", "endpoints"]
-    verbs: ["get"]
+    verbs: ["list", "watch", "create", "update", "patch"]

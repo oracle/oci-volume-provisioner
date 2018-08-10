@@ -17,8 +17,8 @@ limitations under the License.
 package cm
 
 import (
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/kubernetes/pkg/api/v1"
 )
 
 type podContainerManagerStub struct {
@@ -35,7 +35,7 @@ func (m *podContainerManagerStub) EnsureExists(_ *v1.Pod) error {
 }
 
 func (m *podContainerManagerStub) GetPodContainerName(_ *v1.Pod) (CgroupName, string) {
-	return "", ""
+	return nil, ""
 }
 
 func (m *podContainerManagerStub) Destroy(_ CgroupName) error {
@@ -48,4 +48,8 @@ func (m *podContainerManagerStub) ReduceCPULimits(_ CgroupName) error {
 
 func (m *podContainerManagerStub) GetAllPodsFromCgroups() (map[types.UID]CgroupName, error) {
 	return nil, nil
+}
+
+func (m *podContainerManagerStub) IsPodCgroup(cgroupfs string) (bool, types.UID) {
+	return false, types.UID("")
 }

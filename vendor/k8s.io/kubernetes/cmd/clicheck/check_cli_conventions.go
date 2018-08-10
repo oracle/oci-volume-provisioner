@@ -22,7 +22,6 @@ import (
 	"os"
 
 	"k8s.io/kubernetes/pkg/kubectl/cmd"
-	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	cmdsanity "k8s.io/kubernetes/pkg/kubectl/cmd/util/sanity"
 )
 
@@ -31,16 +30,23 @@ var (
 )
 
 func main() {
-	errors := []error{}
+	var errorCount int
 
-	kubectl := cmd.NewKubectlCommand(cmdutil.NewFactory(nil), os.Stdin, ioutil.Discard, ioutil.Discard)
-	result := cmdsanity.CheckCmdTree(kubectl, cmdsanity.AllCmdChecks, []string{})
-	errors = append(errors, result...)
+	kubectl := cmd.NewKubectlCommand(os.Stdin, ioutil.Discard, ioutil.Discard)
+	errors := cmdsanity.RunCmdChecks(kubectl, cmdsanity.AllCmdChecks, []string{})
+	for _, err := range errors {
+		errorCount++
+		fmt.Fprintf(os.Stderr, "     %d. %s\n", errorCount, err)
+	}
 
-	if len(errors) > 0 {
-		for i, err := range errors {
-			fmt.Fprintf(os.Stderr, "%d. %s\n\n", i+1, err)
-		}
+	errors = cmdsanity.RunGlobalChecks(cmdsanity.AllGlobalChecks)
+	for _, err := range errors {
+		errorCount++
+		fmt.Fprintf(os.Stderr, "     %d. %s\n", errorCount, err)
+	}
+
+	if errorCount > 0 {
+		fmt.Fprintf(os.Stdout, "Found %d errors.\n", errorCount)
 		os.Exit(1)
 	}
 

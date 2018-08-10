@@ -5,7 +5,7 @@ metadata:
 spec:
   containers:
     - name: test-container
-      image: gcr.io/google_containers/busybox
+      image: k8s.gcr.io/busybox
       command: [ "/bin/sh", "-c", "env" ]
       env:
         - name: MY_POD_NAME
@@ -20,4 +20,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
+        - name: MY_HOST_IP
+          valueFrom:
+            fieldRef:
+               fieldPath: status.hostIP
   restartPolicy: Never

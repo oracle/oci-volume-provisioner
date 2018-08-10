@@ -23,6 +23,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -34,7 +36,7 @@ var resultsDir = flag.String("results-dir", "/tmp/", "Directory to scp test resu
 
 const archiveName = "e2e_node_test.tar.gz"
 
-func CreateTestArchive(suite TestSuite) (string, error) {
+func CreateTestArchive(suite TestSuite, systemSpecName string) (string, error) {
 	glog.V(2).Infof("Building archive...")
 	tardir, err := ioutil.TempDir("", "node-e2e-archive")
 	if err != nil {
@@ -43,7 +45,7 @@ func CreateTestArchive(suite TestSuite) (string, error) {
 	defer os.RemoveAll(tardir)
 
 	// Call the suite function to setup the test package.
-	err = suite.SetupTestPackage(tardir)
+	err = suite.SetupTestPackage(tardir, systemSpecName)
 	if err != nil {
 		return "", fmt.Errorf("failed to setup test package %q: %v", tardir, err)
 	}
@@ -63,10 +65,10 @@ func CreateTestArchive(suite TestSuite) (string, error) {
 
 // Returns the command output, whether the exit was ok, and any errors
 // TODO(random-liu): junitFilePrefix is not prefix actually, the file name is junit-junitFilePrefix.xml. Change the variable name.
-func RunRemote(suite TestSuite, archive string, host string, cleanup bool, junitFilePrefix string, testArgs string, ginkgoArgs string) (string, bool, error) {
+func RunRemote(suite TestSuite, archive string, host string, cleanup bool, imageDesc, junitFilePrefix string, testArgs string, ginkgoArgs string, systemSpecName string) (string, bool, error) {
 	// Create the temp staging directory
 	glog.V(2).Infof("Staging test binaries on %q", host)
-	workspace := fmt.Sprintf("/tmp/node-e2e-%s", getTimestamp())
+	workspace := newWorkspaceDir()
 	// Do not sudo here, so that we can use scp to copy test archive to the directdory.
 	if output, err := SSHNoSudo(host, "mkdir", workspace); err != nil {
 		// Exit failure with the error
@@ -108,13 +110,13 @@ func RunRemote(suite TestSuite, archive string, host string, cleanup bool, junit
 	}
 
 	glog.V(2).Infof("Running test on %q", host)
-	output, err := suite.RunTest(host, workspace, resultDir, junitFilePrefix, testArgs, ginkgoArgs, *testTimeoutSeconds)
+	output, err := suite.RunTest(host, workspace, resultDir, imageDesc, junitFilePrefix, testArgs, ginkgoArgs, systemSpecName, *testTimeoutSeconds)
 
 	aggErrs := []error{}
 	// Do not log the output here, let the caller deal with the test output.
 	if err != nil {
 		aggErrs = append(aggErrs, err)
-		collectSystemLog(host, workspace)
+		collectSystemLog(host)
 	}
 
 	glog.V(2).Infof("Copying test artifacts from %q", host)
@@ -126,11 +128,33 @@ func RunRemote(suite TestSuite, archive string, host string, cleanup bool, junit
 	return output, len(aggErrs) == 0, utilerrors.NewAggregate(aggErrs)
 }
 
-// timestampFormat is the timestamp format used in the node e2e directory name.
-const timestampFormat = "20060102T150405"
+const (
+	// workspaceDirPrefix is the string prefix used in the workspace directory name.
+	workspaceDirPrefix = "node-e2e-"
+	// timestampFormat is the timestamp format used in the node e2e directory name.
+	timestampFormat = "20060102T150405"
+)
 
 func getTimestamp() string {
 	return fmt.Sprintf(time.Now().Format(timestampFormat))
+}
+
+func newWorkspaceDir() string {
+	return filepath.Join("/tmp", workspaceDirPrefix+getTimestamp())
+}
+
+// Parses the workspace directory name and gets the timestamp part of it.
+// This can later be used to name other artifacts (such as the
+// kubelet-${instance}.service systemd transient service used to launch
+// Kubelet) so that they can be matched to each other.
+func GetTimestampFromWorkspaceDir(dir string) string {
+	dirTimestamp := strings.TrimPrefix(filepath.Base(dir), workspaceDirPrefix)
+	re := regexp.MustCompile("^\\d{8}T\\d{6}$")
+	if re.MatchString(dirTimestamp) {
+		return dirTimestamp
+	}
+	// Fallback: if we can't find that timestamp, default to using Now()
+	return getTimestamp()
 }
 
 func getTestArtifacts(host, testDir string) error {
@@ -139,21 +163,27 @@ func getTestArtifacts(host, testDir string) error {
 		return fmt.Errorf("failed to create log directory %q: %v", logPath, err)
 	}
 	// Copy logs to artifacts/hostname
-	_, err := runSSHCommand("scp", "-r", fmt.Sprintf("%s:%s/results/*.log", GetHostnameOrIp(host), testDir), logPath)
-	if err != nil {
+	if _, err := runSSHCommand("scp", "-r", fmt.Sprintf("%s:%s/results/*.log", GetHostnameOrIp(host), testDir), logPath); err != nil {
 		return err
 	}
-	// Copy junit to the top of artifacts
-	_, err = runSSHCommand("scp", fmt.Sprintf("%s:%s/results/junit*", GetHostnameOrIp(host), testDir), *resultsDir)
-	if err != nil {
-		return err
+	// Copy json files (if any) to artifacts.
+	if _, err := SSH(host, "ls", fmt.Sprintf("%s/results/*.json", testDir)); err == nil {
+		if _, err = runSSHCommand("scp", "-r", fmt.Sprintf("%s:%s/results/*.json", GetHostnameOrIp(host), testDir), *resultsDir); err != nil {
+			return err
+		}
+	}
+	if _, err := SSH(host, "ls", fmt.Sprintf("%s/results/junit*", testDir)); err == nil {
+		// Copy junit (if any) to the top of artifacts
+		if _, err = runSSHCommand("scp", fmt.Sprintf("%s:%s/results/junit*", GetHostnameOrIp(host), testDir), *resultsDir); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 // collectSystemLog is a temporary hack to collect system log when encountered on
 // unexpected error.
-func collectSystemLog(host, workspace string) {
+func collectSystemLog(host string) {
 	// Encountered an unexpected error. The remote test harness may not
 	// have finished retrieved and stored all the logs in this case. Try
 	// to get some logs for debugging purposes.
@@ -164,7 +194,7 @@ func collectSystemLog(host, workspace string) {
 		logPath  = fmt.Sprintf("/tmp/%s-%s", getTimestamp(), logName)
 		destPath = fmt.Sprintf("%s/%s-%s", *resultsDir, host, logName)
 	)
-	glog.V(2).Infof("Test failed unexpectedly. Attempting to retreiving system logs (only works for nodes with journald)")
+	glog.V(2).Infof("Test failed unexpectedly. Attempting to retrieving system logs (only works for nodes with journald)")
 	// Try getting the system logs from journald and store it to a file.
 	// Don't reuse the original test directory on the remote host because
 	// it could've be been removed if the node was rebooted.

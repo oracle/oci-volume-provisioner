@@ -21,27 +21,20 @@ import (
 	"flag"
 	"os"
 	"path"
-	"time"
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
-	"github.com/kubernetes-incubator/external-storage/lib/leaderelection"
+
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/rest"
+	"syscall"
 )
 
 const (
-	resyncPeriod              = 15 * time.Second
-	provisionerName           = "example.com/hostpath"
-	exponentialBackOffOnError = false
-	failedRetryThreshold      = 5
-	leasePeriod               = leaderelection.DefaultLeaseDuration
-	retryPeriod               = leaderelection.DefaultRetryPeriod
-	renewDeadline             = leaderelection.DefaultRenewDeadline
-	termLimit                 = leaderelection.DefaultTermLimit
+	provisionerName = "example.com/hostpath"
 )
 
 type hostPathProvisioner struct {
@@ -53,6 +46,7 @@ type hostPathProvisioner struct {
 	identity string
 }
 
+// NewHostPathProvisioner creates a new hostpath provisioner
 func NewHostPathProvisioner() controller.Provisioner {
 	nodeName := os.Getenv("NODE_NAME")
 	if nodeName == "" {
@@ -106,7 +100,7 @@ func (p *hostPathProvisioner) Delete(volume *v1.PersistentVolume) error {
 		return errors.New("identity annotation not found on PV")
 	}
 	if ann != p.identity {
-		return &controller.IgnoredError{"identity annotation on PV does not match ours"}
+		return &controller.IgnoredError{Reason: "identity annotation on PV does not match ours"}
 	}
 
 	path := path.Join(p.pvDir, volume.Name)
@@ -118,6 +112,8 @@ func (p *hostPathProvisioner) Delete(volume *v1.PersistentVolume) error {
 }
 
 func main() {
+	syscall.Umask(0)
+
 	flag.Parse()
 	flag.Set("logtostderr", "true")
 
@@ -145,6 +141,6 @@ func main() {
 
 	// Start the provision controller which will dynamically provision hostPath
 	// PVs
-	pc := controller.NewProvisionController(clientset, resyncPeriod, provisionerName, hostPathProvisioner, serverVersion.GitVersion, exponentialBackOffOnError, failedRetryThreshold, leasePeriod, renewDeadline, retryPeriod, termLimit)
+	pc := controller.NewProvisionController(clientset, provisionerName, hostPathProvisioner, serverVersion.GitVersion)
 	pc.Run(wait.NeverStop)
 }

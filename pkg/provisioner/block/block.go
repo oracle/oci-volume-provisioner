@@ -26,18 +26,18 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/pkg/api/v1"
-
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-go-sdk/identity"
+
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
+	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/plugin"
 
-	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
+	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
@@ -228,7 +228,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 				v1.ResourceName(v1.ResourceStorage): capacity,
 			},
 			PersistentVolumeSource: v1.PersistentVolumeSource{
-				FlexVolume: &v1.FlexVolumeSource{
+				FlexVolume: &v1.FlexPersistentVolumeSource{
 					Driver: plugin.OCIProvisionerName,
 					FSType: filesystemType,
 				},

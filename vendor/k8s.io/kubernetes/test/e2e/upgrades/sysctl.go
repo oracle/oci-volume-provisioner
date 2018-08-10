@@ -22,10 +22,10 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
-	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/kubelet/sysctl"
 
 	"k8s.io/kubernetes/test/e2e/framework"
@@ -53,13 +53,13 @@ func (t *SysctlUpgradeTest) Test(f *framework.Framework, done <-chan struct{}, u
 	switch upgrade {
 	case MasterUpgrade:
 		By("Checking the safe sysctl pod keeps running on master upgrade")
-		pod, err := f.ClientSet.Core().Pods(t.validPod.Namespace).Get(t.validPod.Name, metav1.GetOptions{})
+		pod, err := f.ClientSet.CoreV1().Pods(t.validPod.Namespace).Get(t.validPod.Name, metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pod.Status.Phase).To(Equal(v1.PodRunning))
 	}
 
 	By("Checking the old unsafe sysctl pod was not suddenly started during an upgrade")
-	pod, err := f.ClientSet.Core().Pods(t.invalidPod.Namespace).Get(t.invalidPod.Name, metav1.GetOptions{})
+	pod, err := f.ClientSet.CoreV1().Pods(t.invalidPod.Namespace).Get(t.invalidPod.Name, metav1.GetOptions{})
 	if err != nil && !errors.IsNotFound(err) {
 		Expect(err).NotTo(HaveOccurred())
 	}
@@ -122,19 +122,19 @@ func sysctlTestPod(name string, sysctls map[string]string) *v1.Pod {
 	return &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
-			Annotations: map[string]string{
-				v1.SysctlsPodAnnotationKey: v1.PodAnnotationsFromSysctls(sysctlList),
-			},
 		},
 		Spec: v1.PodSpec{
 			Containers: []v1.Container{
 				{
 					Name:    "test-container",
-					Image:   "gcr.io/google_containers/busybox:1.24",
+					Image:   "busybox",
 					Command: append([]string{"/bin/sysctl"}, keys...),
 				},
 			},
 			RestartPolicy: v1.RestartPolicyNever,
+			SecurityContext: &v1.PodSecurityContext{
+				Sysctls: sysctlList,
+			},
 		},
 	}
 }

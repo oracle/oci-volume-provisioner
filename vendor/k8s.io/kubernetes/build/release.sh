@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2014 The Kubernetes Authors.
 #
@@ -43,4 +43,3 @@ fi
 kube::build::copy_output
 
 kube::release::package_tarballs
-kube::release::package_hyperkube

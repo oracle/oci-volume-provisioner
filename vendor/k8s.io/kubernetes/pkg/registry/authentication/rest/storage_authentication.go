@@ -17,15 +17,15 @@ limitations under the License.
 package rest
 
 import (
+	authenticationv1 "k8s.io/api/authentication/v1"
+	authenticationv1beta1 "k8s.io/api/authentication/v1beta1"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/registry/generic"
 	"k8s.io/apiserver/pkg/registry/rest"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	serverstorage "k8s.io/apiserver/pkg/server/storage"
-	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	"k8s.io/kubernetes/pkg/apis/authentication"
-	authenticationv1 "k8s.io/kubernetes/pkg/apis/authentication/v1"
-	authenticationv1beta1 "k8s.io/kubernetes/pkg/apis/authentication/v1beta1"
 	"k8s.io/kubernetes/pkg/registry/authentication/tokenreview"
 )
 
@@ -39,44 +39,34 @@ func (p RESTStorageProvider) NewRESTStorage(apiResourceConfigSource serverstorag
 	// 	return genericapiserver.APIGroupInfo{}, false
 	// }
 
-	apiGroupInfo := genericapiserver.NewDefaultAPIGroupInfo(authentication.GroupName, api.Registry, api.Scheme, api.ParameterCodec, api.Codecs)
+	apiGroupInfo := genericapiserver.NewDefaultAPIGroupInfo(authentication.GroupName, legacyscheme.Scheme, legacyscheme.ParameterCodec, legacyscheme.Codecs)
+	// If you add a version here, be sure to add an entry in `k8s.io/kubernetes/cmd/kube-apiserver/app/aggregator.go with specific priorities.
+	// TODO refactor the plumbing to provide the information in the APIGroupInfo
 
-	if apiResourceConfigSource.AnyResourcesForVersionEnabled(authenticationv1beta1.SchemeGroupVersion) {
+	if apiResourceConfigSource.VersionEnabled(authenticationv1beta1.SchemeGroupVersion) {
 		apiGroupInfo.VersionedResourcesStorageMap[authenticationv1beta1.SchemeGroupVersion.Version] = p.v1beta1Storage(apiResourceConfigSource, restOptionsGetter)
-		apiGroupInfo.GroupMeta.GroupVersion = authenticationv1beta1.SchemeGroupVersion
 	}
-	if apiResourceConfigSource.AnyResourcesForVersionEnabled(authenticationv1.SchemeGroupVersion) {
+	if apiResourceConfigSource.VersionEnabled(authenticationv1.SchemeGroupVersion) {
 		apiGroupInfo.VersionedResourcesStorageMap[authenticationv1.SchemeGroupVersion.Version] = p.v1Storage(apiResourceConfigSource, restOptionsGetter)
-		apiGroupInfo.GroupMeta.GroupVersion = authenticationv1.SchemeGroupVersion
 	}
 
 	return apiGroupInfo, true
 }
 
 func (p RESTStorageProvider) v1beta1Storage(apiResourceConfigSource serverstorage.APIResourceConfigSource, restOptionsGetter generic.RESTOptionsGetter) map[string]rest.Storage {
-	version := authenticationv1beta1.SchemeGroupVersion
-
 	storage := map[string]rest.Storage{}
-	if apiResourceConfigSource.AnyResourcesForVersionEnabled(authenticationv1beta1.SchemeGroupVersion) {
-		if apiResourceConfigSource.ResourceEnabled(version.WithResource("tokenreviews")) {
-			tokenReviewStorage := tokenreview.NewREST(p.Authenticator)
-			storage["tokenreviews"] = tokenReviewStorage
-		}
-	}
+	// tokenreviews
+	tokenReviewStorage := tokenreview.NewREST(p.Authenticator)
+	storage["tokenreviews"] = tokenReviewStorage
 
 	return storage
 }
 
 func (p RESTStorageProvider) v1Storage(apiResourceConfigSource serverstorage.APIResourceConfigSource, restOptionsGetter generic.RESTOptionsGetter) map[string]rest.Storage {
-	version := authenticationv1.SchemeGroupVersion
-
 	storage := map[string]rest.Storage{}
-	if apiResourceConfigSource.AnyResourcesForVersionEnabled(authenticationv1.SchemeGroupVersion) {
-		if apiResourceConfigSource.ResourceEnabled(version.WithResource("tokenreviews")) {
-			tokenReviewStorage := tokenreview.NewREST(p.Authenticator)
-			storage["tokenreviews"] = tokenReviewStorage
-		}
-	}
+	// tokenreviews
+	tokenReviewStorage := tokenreview.NewREST(p.Authenticator)
+	storage["tokenreviews"] = tokenReviewStorage
 
 	return storage
 }

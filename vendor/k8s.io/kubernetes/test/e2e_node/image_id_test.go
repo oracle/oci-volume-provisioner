@@ -17,9 +17,8 @@ limitations under the License.
 package e2e_node
 
 import (
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/api/v1"
-	"k8s.io/kubernetes/pkg/kubelet/dockertools"
 	"k8s.io/kubernetes/test/e2e/framework"
 
 	"github.com/davecgh/go-spew/spew"
@@ -27,9 +26,9 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = framework.KubeDescribe("ImageID", func() {
+var _ = framework.KubeDescribe("ImageID [NodeFeature: ImageID]", func() {
 
-	busyBoxImage := "gcr.io/google_containers/busybox@sha256:4bdd623e848417d96127e16037743f0cd8b528c026e9175e22a84f639eca58ff"
+	busyBoxImage := "k8s.gcr.io/busybox@sha256:4bdd623e848417d96127e16037743f0cd8b528c026e9175e22a84f639eca58ff"
 
 	f := framework.NewDefaultFramework("image-id-test")
 
@@ -62,6 +61,6 @@ var _ = framework.KubeDescribe("ImageID", func() {
 			return
 		}
 
-		Expect(status.ContainerStatuses[0].ImageID).To(Equal(dockertools.DockerPullablePrefix + busyBoxImage))
+		Expect(status.ContainerStatuses[0].ImageID).To(ContainSubstring(busyBoxImage))
 	})
 })

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2014 The Kubernetes Authors.
 #
@@ -32,6 +32,26 @@ fi
 
 source "${KUBE_ROOT}/cluster/kube-util.sh"
 
+DEPRECATED_PROVIDERS=(
+  "centos"
+  "local"
+)
+
+for provider in "${DEPRECATED_PROVIDERS[@]}"; do
+  if [[ "${KUBERNETES_PROVIDER}" == "${provider}" ]]; then
+    cat <<EOF 1>&2
+
+!!! DEPRECATION NOTICE !!!
+
+The '${provider}' kube-up provider is deprecated and will be removed in a future
+release of kubernetes. Deprecated providers will be removed within 2 releases.
+
+See https://github.com/kubernetes/kubernetes/issues/49213 for more info.
+
+EOF
+    break
+  fi
+done
 
 if [ -z "${ZONE-}" ]; then
   echo "... Starting cluster using provider: ${KUBERNETES_PROVIDER}" >&2
@@ -43,11 +63,8 @@ echo "... calling verify-prereqs" >&2
 verify-prereqs
 echo "... calling verify-kube-binaries" >&2
 verify-kube-binaries
-
-if [[ "${KUBE_STAGE_IMAGES:-}" == "true" ]]; then
-  echo "... staging images" >&2
-  stage-images
-fi
+echo "... calling verify-release-tars" >&2
+verify-release-tars
 
 echo "... calling kube-up" >&2
 kube-up

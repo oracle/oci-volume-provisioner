@@ -1,5 +1,3 @@
-// +build integration,!no-etcd
-
 /*
 Copyright 2016 The Kubernetes Authors.
 
@@ -22,55 +20,38 @@ import (
 	"reflect"
 	"testing"
 
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
+	clientset "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
-	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/testapi"
-	"k8s.io/kubernetes/pkg/api/v1"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 	"k8s.io/kubernetes/test/integration/framework"
 )
 
 func TestDynamicClient(t *testing.T) {
-	_, s := framework.RunAMaster(nil)
-	defer s.Close()
+	_, s, closeFn := framework.RunAMaster(nil)
+	defer closeFn()
 
 	ns := framework.CreateTestingNamespace("dynamic-client", s, t)
 	defer framework.DeleteTestingNamespace(ns, s, t)
 
-	gv := &api.Registry.GroupOrDie(v1.GroupName).GroupVersion
+	gv := &schema.GroupVersion{Group: "", Version: "v1"}
 	config := &restclient.Config{
 		Host:          s.URL,
 		ContentConfig: restclient.ContentConfig{GroupVersion: gv},
 	}
 
 	client := clientset.NewForConfigOrDie(config)
-	dynamicClient, err := dynamic.NewClient(config)
-	_ = dynamicClient
+	dynamicClient, err := dynamic.NewForConfig(config)
 	if err != nil {
 		t.Fatalf("unexpected error creating dynamic client: %v", err)
 	}
 
-	// Find the Pod resource
-	resources, err := client.Discovery().ServerResourcesForGroupVersion(gv.String())
-	if err != nil {
-		t.Fatalf("unexpected error listing resources: %v", err)
-	}
-
-	var resource metav1.APIResource
-	for _, r := range resources.APIResources {
-		if r.Kind == "Pod" {
-			resource = r
-			break
-		}
-	}
-
-	if len(resource.Name) == 0 {
-		t.Fatalf("could not find the pod resource in group/version %q", gv.String())
-	}
+	resource := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 
 	// Create a Pod with the normal client
 	pod := &v1.Pod{
@@ -93,11 +74,7 @@ func TestDynamicClient(t *testing.T) {
 	}
 
 	// check dynamic list
-	obj, err := dynamicClient.Resource(&resource, ns.Name).List(metav1.ListOptions{})
-	unstructuredList, ok := obj.(*unstructured.UnstructuredList)
-	if !ok {
-		t.Fatalf("expected *unstructured.UnstructuredList, got %#v", obj)
-	}
+	unstructuredList, err := dynamicClient.Resource(resource).Namespace(ns.Name).List(metav1.ListOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error when listing pods: %v", err)
 	}
@@ -106,7 +83,7 @@ func TestDynamicClient(t *testing.T) {
 		t.Fatalf("expected one pod, got %d", len(unstructuredList.Items))
 	}
 
-	got, err := unstructuredToPod(unstructuredList.Items[0])
+	got, err := unstructuredToPod(&unstructuredList.Items[0])
 	if err != nil {
 		t.Fatalf("unexpected error converting Unstructured to v1.Pod: %v", err)
 	}
@@ -116,7 +93,7 @@ func TestDynamicClient(t *testing.T) {
 	}
 
 	// check dynamic get
-	unstruct, err := dynamicClient.Resource(&resource, ns.Name).Get(actual.Name)
+	unstruct, err := dynamicClient.Resource(resource).Namespace(ns.Name).Get(actual.Name, metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error when getting pod %q: %v", actual.Name, err)
 	}
@@ -131,7 +108,7 @@ func TestDynamicClient(t *testing.T) {
 	}
 
 	// delete the pod dynamically
-	err = dynamicClient.Resource(&resource, ns.Name).Delete(actual.Name, nil)
+	err = dynamicClient.Resource(resource).Namespace(ns.Name).Delete(actual.Name, nil)
 	if err != nil {
 		t.Fatalf("unexpected error when deleting pod: %v", err)
 	}

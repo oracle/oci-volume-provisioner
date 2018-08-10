@@ -19,9 +19,10 @@ package main
 import (
 	"flag"
 	"os"
-	"runtime"
 
-	"k8s.io/apimachinery/pkg/util/wait"
+	"github.com/golang/glog"
+
+	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/util/logs"
 	"k8s.io/sample-apiserver/pkg/cmd/server"
 )
@@ -30,13 +31,11 @@ func main() {
 	logs.InitLogs()
 	defer logs.FlushLogs()
 
-	if len(os.Getenv("GOMAXPROCS")) == 0 {
-		runtime.GOMAXPROCS(runtime.NumCPU())
-	}
-
-	cmd := server.NewCommandStartWardleServer(os.Stdout, os.Stderr, wait.NeverStop)
+	stopCh := genericapiserver.SetupSignalHandler()
+	options := server.NewWardleServerOptions(os.Stdout, os.Stderr)
+	cmd := server.NewCommandStartWardleServer(options, stopCh)
 	cmd.Flags().AddGoFlagSet(flag.CommandLine)
 	if err := cmd.Execute(); err != nil {
-		panic(err)
+		glog.Fatal(err)
 	}
 }

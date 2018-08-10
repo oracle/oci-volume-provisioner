@@ -17,6 +17,7 @@ limitations under the License.
 package factory
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
 	"path"
@@ -25,7 +26,6 @@ import (
 
 	"github.com/coreos/etcd/integration"
 	"github.com/coreos/etcd/pkg/transport"
-	"golang.org/x/net/context"
 
 	apitesting "k8s.io/apimachinery/pkg/api/testing"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -71,7 +71,6 @@ func TestTLSConnection(t *testing.T) {
 		KeyFile:    keyFile,
 		CAFile:     caFile,
 		Codec:      codec,
-		Copier:     scheme,
 	}
 	storage, destroyFunc, err := newETCD3Storage(cfg)
 	defer destroyFunc()

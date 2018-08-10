@@ -17,6 +17,7 @@ limitations under the License.
 package rbac
 
 import (
+	"context"
 	"fmt"
 
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -26,12 +27,10 @@ import (
 	"k8s.io/kubernetes/pkg/apis/rbac"
 )
 
-func EscalationAllowed(ctx genericapirequest.Context) bool {
+func EscalationAllowed(ctx context.Context) bool {
 	u, ok := genericapirequest.UserFrom(ctx)
 	if !ok {
-		// the only way to be without a user is to either have no authenticators by explicitly saying that's your preference
-		// or to be connecting via the insecure port, in which case this logically doesn't apply
-		return true
+		return false
 	}
 
 	// system:masters is special because the API server uses it for privileged loopback connections
@@ -46,7 +45,7 @@ func EscalationAllowed(ctx genericapirequest.Context) bool {
 }
 
 // BindingAuthorized returns true if the user associated with the context is explicitly authorized to bind the specified roleRef
-func BindingAuthorized(ctx genericapirequest.Context, roleRef rbac.RoleRef, bindingNamespace string, a authorizer.Authorizer) bool {
+func BindingAuthorized(ctx context.Context, roleRef rbac.RoleRef, bindingNamespace string, a authorizer.Authorizer) bool {
 	if a == nil {
 		return false
 	}
@@ -81,12 +80,12 @@ func BindingAuthorized(ctx genericapirequest.Context, roleRef rbac.RoleRef, bind
 		return false
 	}
 
-	ok, _, err := a.Authorize(attrs)
+	decision, _, err := a.Authorize(attrs)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf(
 			"error authorizing user %#v to bind %#v in namespace %s: %v",
 			user, roleRef, bindingNamespace, err,
 		))
 	}
-	return ok
+	return decision == authorizer.DecisionAllow
 }

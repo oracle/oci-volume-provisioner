@@ -21,9 +21,9 @@ import (
 	"os"
 	"testing"
 
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utiltesting "k8s.io/client-go/util/testing"
-	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/volume"
 	volumetest "k8s.io/kubernetes/pkg/volume/testing"
 
@@ -35,13 +35,13 @@ func newTestableProvisioner(assert *assert.Assertions, options volume.VolumeOpti
 	assert.NoError(err, fmt.Sprintf("can't make a temp dir: %v", err))
 
 	plugMgr := volume.VolumePluginMgr{}
-	plugMgr.InitPlugins(ProbeVolumePlugins(), volumetest.NewFakeVolumeHost(tmpDir, nil, nil))
+	plugMgr.InitPlugins(ProbeVolumePlugins(), nil /* prober */, volumetest.NewFakeVolumeHost(tmpDir, nil, nil))
 
 	plug, err := plugMgr.FindPluginByName(pluginName)
 	assert.NoError(err, "Can't find the plugin by name")
 
 	provisioner, err := plug.(*flockerPlugin).newProvisionerInternal(options, &fakeFlockerUtil{})
-
+	assert.NoError(err, fmt.Sprintf("Can't create new provisioner:%v", err))
 	return tmpDir, provisioner
 }
 
@@ -57,7 +57,7 @@ func TestProvision(t *testing.T) {
 	dir, provisioner := newTestableProvisioner(assert, options)
 	defer os.RemoveAll(dir)
 
-	persistentSpec, err := provisioner.Provision()
+	persistentSpec, err := provisioner.Provision(nil, nil)
 	assert.NoError(err, "Provision() failed: ", err)
 
 	cap := persistentSpec.Spec.Capacity[v1.ResourceStorage]
@@ -85,7 +85,7 @@ func TestProvision(t *testing.T) {
 
 	dir, provisioner = newTestableProvisioner(assert, options)
 	defer os.RemoveAll(dir)
-	persistentSpec, err = provisioner.Provision()
+	persistentSpec, err = provisioner.Provision(nil, nil)
 	assert.Error(err, "Provision() did not fail with Parameters specified")
 
 	// selectors are not supported
@@ -97,6 +97,6 @@ func TestProvision(t *testing.T) {
 
 	dir, provisioner = newTestableProvisioner(assert, options)
 	defer os.RemoveAll(dir)
-	persistentSpec, err = provisioner.Provision()
+	persistentSpec, err = provisioner.Provision(nil, nil)
 	assert.Error(err, "Provision() did not fail with Selector specified")
 }

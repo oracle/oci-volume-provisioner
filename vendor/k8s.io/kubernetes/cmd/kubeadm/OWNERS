@@ -1,13 +1,19 @@
 approvers:
-- errordeveloper
-- jbeda
 - luxas
-- mikedanese
+- timothysc
+- fabriziopandini
 reviewers:
-- mikedanese
 - luxas
-- justinsb
-- errordeveloper
-- pires
-- lukemarsden
-- dmmcquay
+- timothysc
+- fabriziopandini
+- kad
+- xiangpengzhao
+- stealthybox
+- liztio
+- chuckha
+- detiber
+- dixudx
+# Might want to add @kargakis, @jamiehannaford, @krousey and/or @dmmcquay back in the future
+labels: 
+- area/kubeadm
+- sig/cluster-lifecycle

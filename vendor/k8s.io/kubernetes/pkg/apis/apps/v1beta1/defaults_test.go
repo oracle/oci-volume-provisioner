@@ -20,14 +20,18 @@ import (
 	"reflect"
 	"testing"
 
+	appsv1beta1 "k8s.io/api/apps/v1beta1"
+
+	"k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/kubernetes/pkg/api"
-	_ "k8s.io/kubernetes/pkg/api/install"
-	"k8s.io/kubernetes/pkg/api/v1"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	_ "k8s.io/kubernetes/pkg/apis/apps/install"
 	. "k8s.io/kubernetes/pkg/apis/apps/v1beta1"
+	api "k8s.io/kubernetes/pkg/apis/core"
+	_ "k8s.io/kubernetes/pkg/apis/core/install"
+	utilpointer "k8s.io/kubernetes/pkg/util/pointer"
 )
 
 func TestSetDefaultDeployment(t *testing.T) {
@@ -44,121 +48,121 @@ func TestSetDefaultDeployment(t *testing.T) {
 		},
 	}
 	tests := []struct {
-		original *Deployment
-		expected *Deployment
+		original *appsv1beta1.Deployment
+		expected *appsv1beta1.Deployment
 	}{
 		{
-			original: &Deployment{},
-			expected: &Deployment{
-				Spec: DeploymentSpec{
-					Replicas: newInt32(1),
-					Strategy: DeploymentStrategy{
-						Type: RollingUpdateDeploymentStrategyType,
-						RollingUpdate: &RollingUpdateDeployment{
+			original: &appsv1beta1.Deployment{},
+			expected: &appsv1beta1.Deployment{
+				Spec: appsv1beta1.DeploymentSpec{
+					Replicas: utilpointer.Int32Ptr(1),
+					Strategy: appsv1beta1.DeploymentStrategy{
+						Type: appsv1beta1.RollingUpdateDeploymentStrategyType,
+						RollingUpdate: &appsv1beta1.RollingUpdateDeployment{
 							MaxSurge:       &defaultIntOrString,
 							MaxUnavailable: &defaultIntOrString,
 						},
 					},
-					RevisionHistoryLimit:    newInt32(2),
-					ProgressDeadlineSeconds: newInt32(600),
+					RevisionHistoryLimit:    utilpointer.Int32Ptr(2),
+					ProgressDeadlineSeconds: utilpointer.Int32Ptr(600),
 					Template:                defaultTemplate,
 				},
 			},
 		},
 		{
-			original: &Deployment{
-				Spec: DeploymentSpec{
-					Replicas: newInt32(5),
-					Strategy: DeploymentStrategy{
-						RollingUpdate: &RollingUpdateDeployment{
+			original: &appsv1beta1.Deployment{
+				Spec: appsv1beta1.DeploymentSpec{
+					Replicas: utilpointer.Int32Ptr(5),
+					Strategy: appsv1beta1.DeploymentStrategy{
+						RollingUpdate: &appsv1beta1.RollingUpdateDeployment{
 							MaxSurge: &differentIntOrString,
 						},
 					},
 				},
 			},
-			expected: &Deployment{
-				Spec: DeploymentSpec{
-					Replicas: newInt32(5),
-					Strategy: DeploymentStrategy{
-						Type: RollingUpdateDeploymentStrategyType,
-						RollingUpdate: &RollingUpdateDeployment{
+			expected: &appsv1beta1.Deployment{
+				Spec: appsv1beta1.DeploymentSpec{
+					Replicas: utilpointer.Int32Ptr(5),
+					Strategy: appsv1beta1.DeploymentStrategy{
+						Type: appsv1beta1.RollingUpdateDeploymentStrategyType,
+						RollingUpdate: &appsv1beta1.RollingUpdateDeployment{
 							MaxSurge:       &differentIntOrString,
 							MaxUnavailable: &defaultIntOrString,
 						},
 					},
-					RevisionHistoryLimit:    newInt32(2),
-					ProgressDeadlineSeconds: newInt32(600),
+					RevisionHistoryLimit:    utilpointer.Int32Ptr(2),
+					ProgressDeadlineSeconds: utilpointer.Int32Ptr(600),
 					Template:                defaultTemplate,
 				},
 			},
 		},
 		{
-			original: &Deployment{
-				Spec: DeploymentSpec{
-					Replicas: newInt32(3),
-					Strategy: DeploymentStrategy{
-						Type:          RollingUpdateDeploymentStrategyType,
+			original: &appsv1beta1.Deployment{
+				Spec: appsv1beta1.DeploymentSpec{
+					Replicas: utilpointer.Int32Ptr(3),
+					Strategy: appsv1beta1.DeploymentStrategy{
+						Type:          appsv1beta1.RollingUpdateDeploymentStrategyType,
 						RollingUpdate: nil,
 					},
 				},
 			},
-			expected: &Deployment{
-				Spec: DeploymentSpec{
-					Replicas: newInt32(3),
-					Strategy: DeploymentStrategy{
-						Type: RollingUpdateDeploymentStrategyType,
-						RollingUpdate: &RollingUpdateDeployment{
+			expected: &appsv1beta1.Deployment{
+				Spec: appsv1beta1.DeploymentSpec{
+					Replicas: utilpointer.Int32Ptr(3),
+					Strategy: appsv1beta1.DeploymentStrategy{
+						Type: appsv1beta1.RollingUpdateDeploymentStrategyType,
+						RollingUpdate: &appsv1beta1.RollingUpdateDeployment{
 							MaxSurge:       &defaultIntOrString,
 							MaxUnavailable: &defaultIntOrString,
 						},
 					},
-					RevisionHistoryLimit:    newInt32(2),
-					ProgressDeadlineSeconds: newInt32(600),
+					RevisionHistoryLimit:    utilpointer.Int32Ptr(2),
+					ProgressDeadlineSeconds: utilpointer.Int32Ptr(600),
 					Template:                defaultTemplate,
 				},
 			},
 		},
 		{
-			original: &Deployment{
-				Spec: DeploymentSpec{
-					Replicas: newInt32(5),
-					Strategy: DeploymentStrategy{
-						Type: RecreateDeploymentStrategyType,
+			original: &appsv1beta1.Deployment{
+				Spec: appsv1beta1.DeploymentSpec{
+					Replicas: utilpointer.Int32Ptr(5),
+					Strategy: appsv1beta1.DeploymentStrategy{
+						Type: appsv1beta1.RecreateDeploymentStrategyType,
 					},
-					RevisionHistoryLimit: newInt32(0),
+					RevisionHistoryLimit: utilpointer.Int32Ptr(0),
 				},
 			},
-			expected: &Deployment{
-				Spec: DeploymentSpec{
-					Replicas: newInt32(5),
-					Strategy: DeploymentStrategy{
-						Type: RecreateDeploymentStrategyType,
+			expected: &appsv1beta1.Deployment{
+				Spec: appsv1beta1.DeploymentSpec{
+					Replicas: utilpointer.Int32Ptr(5),
+					Strategy: appsv1beta1.DeploymentStrategy{
+						Type: appsv1beta1.RecreateDeploymentStrategyType,
 					},
-					RevisionHistoryLimit:    newInt32(0),
-					ProgressDeadlineSeconds: newInt32(600),
+					RevisionHistoryLimit:    utilpointer.Int32Ptr(0),
+					ProgressDeadlineSeconds: utilpointer.Int32Ptr(600),
 					Template:                defaultTemplate,
 				},
 			},
 		},
 		{
-			original: &Deployment{
-				Spec: DeploymentSpec{
-					Replicas: newInt32(5),
-					Strategy: DeploymentStrategy{
-						Type: RecreateDeploymentStrategyType,
+			original: &appsv1beta1.Deployment{
+				Spec: appsv1beta1.DeploymentSpec{
+					Replicas: utilpointer.Int32Ptr(5),
+					Strategy: appsv1beta1.DeploymentStrategy{
+						Type: appsv1beta1.RecreateDeploymentStrategyType,
 					},
-					ProgressDeadlineSeconds: newInt32(30),
-					RevisionHistoryLimit:    newInt32(2),
+					ProgressDeadlineSeconds: utilpointer.Int32Ptr(30),
+					RevisionHistoryLimit:    utilpointer.Int32Ptr(2),
 				},
 			},
-			expected: &Deployment{
-				Spec: DeploymentSpec{
-					Replicas: newInt32(5),
-					Strategy: DeploymentStrategy{
-						Type: RecreateDeploymentStrategyType,
+			expected: &appsv1beta1.Deployment{
+				Spec: appsv1beta1.DeploymentSpec{
+					Replicas: utilpointer.Int32Ptr(5),
+					Strategy: appsv1beta1.DeploymentStrategy{
+						Type: appsv1beta1.RecreateDeploymentStrategyType,
 					},
-					ProgressDeadlineSeconds: newInt32(30),
-					RevisionHistoryLimit:    newInt32(2),
+					ProgressDeadlineSeconds: utilpointer.Int32Ptr(30),
+					RevisionHistoryLimit:    utilpointer.Int32Ptr(2),
 					Template:                defaultTemplate,
 				},
 			},
@@ -169,7 +173,7 @@ func TestSetDefaultDeployment(t *testing.T) {
 		original := test.original
 		expected := test.expected
 		obj2 := roundTrip(t, runtime.Object(original))
-		got, ok := obj2.(*Deployment)
+		got, ok := obj2.(*appsv1beta1.Deployment)
 		if !ok {
 			t.Errorf("unexpected object: %v", got)
 			t.FailNow()
@@ -181,7 +185,7 @@ func TestSetDefaultDeployment(t *testing.T) {
 }
 
 func TestDefaultDeploymentAvailability(t *testing.T) {
-	d := roundTrip(t, runtime.Object(&Deployment{})).(*Deployment)
+	d := roundTrip(t, runtime.Object(&appsv1beta1.Deployment{})).(*appsv1beta1.Deployment)
 
 	maxUnavailable, err := intstr.GetValueFromIntOrPercent(d.Spec.Strategy.RollingUpdate.MaxUnavailable, int(*(d.Spec.Replicas)), false)
 	if err != nil {
@@ -194,27 +198,21 @@ func TestDefaultDeploymentAvailability(t *testing.T) {
 }
 
 func roundTrip(t *testing.T, obj runtime.Object) runtime.Object {
-	data, err := runtime.Encode(api.Codecs.LegacyCodec(SchemeGroupVersion), obj)
+	data, err := runtime.Encode(legacyscheme.Codecs.LegacyCodec(SchemeGroupVersion), obj)
 	if err != nil {
 		t.Errorf("%v\n %#v", err, obj)
 		return nil
 	}
-	obj2, err := runtime.Decode(api.Codecs.UniversalDecoder(), data)
+	obj2, err := runtime.Decode(legacyscheme.Codecs.UniversalDecoder(), data)
 	if err != nil {
 		t.Errorf("%v\nData: %s\nSource: %#v", err, string(data), obj)
 		return nil
 	}
 	obj3 := reflect.New(reflect.TypeOf(obj).Elem()).Interface().(runtime.Object)
-	err = api.Scheme.Convert(obj2, obj3, nil)
+	err = legacyscheme.Scheme.Convert(obj2, obj3, nil)
 	if err != nil {
 		t.Errorf("%v\nSource: %#v", err, obj2)
 		return nil
 	}
 	return obj3
-}
-
-func newInt32(val int32) *int32 {
-	p := new(int32)
-	*p = val
-	return p
 }

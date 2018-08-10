@@ -21,8 +21,10 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/kubernetes/pkg/api/v1"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/prober/results"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
@@ -64,6 +66,10 @@ type worker struct {
 
 	// If set, skip probing.
 	onHold bool
+
+	// proberResultsMetricLabels holds the labels attached to this worker
+	// for the ProberResults metric.
+	proberResultsMetricLabels prometheus.Labels
 }
 
 // Creates and starts a new probe worker.
@@ -92,12 +98,25 @@ func newWorker(
 		w.initialValue = results.Success
 	}
 
+	w.proberResultsMetricLabels = prometheus.Labels{
+		"probe_type":     w.probeType.String(),
+		"container_name": w.container.Name,
+		"pod_name":       w.pod.Name,
+		"namespace":      w.pod.Namespace,
+		"pod_uid":        string(w.pod.UID),
+	}
+
 	return w
 }
 
 // run periodically probes the container.
 func (w *worker) run() {
 	probeTickerPeriod := time.Duration(w.spec.PeriodSeconds) * time.Second
+
+	// If kubelet restarted the probes could be started in rapid succession.
+	// Let the worker wait for a random portion of tickerPeriod before probing.
+	time.Sleep(time.Duration(rand.Float64() * float64(probeTickerPeriod)))
+
 	probeTicker := time.NewTicker(probeTickerPeriod)
 
 	defer func() {
@@ -108,11 +127,8 @@ func (w *worker) run() {
 		}
 
 		w.probeManager.removeWorker(w.pod.UID, w.container.Name, w.probeType)
+		ProberResults.Delete(w.proberResultsMetricLabels)
 	}()
-
-	// If kubelet restarted the probes could be started in rapid succession.
-	// Let the worker wait for a random portion of tickerPeriod before probing.
-	time.Sleep(time.Duration(rand.Float64() * float64(probeTickerPeriod)))
 
 probeLoop:
 	for w.doProbe() {
@@ -155,7 +171,7 @@ func (w *worker) doProbe() (keepGoing bool) {
 		return false
 	}
 
-	c, ok := v1.GetContainerStatus(status.ContainerStatuses, w.container.Name)
+	c, ok := podutil.GetContainerStatus(status.ContainerStatuses, w.container.Name)
 	if !ok || len(c.ContainerID) == 0 {
 		// Either the container has not been created yet, or it was deleted.
 		glog.V(3).Infof("Probe target container not found: %v - %v",
@@ -216,6 +232,7 @@ func (w *worker) doProbe() (keepGoing bool) {
 	}
 
 	w.resultsManager.Set(w.containerID, result, w.pod)
+	ProberResults.With(w.proberResultsMetricLabels).Set(result.ToPrometheusType())
 
 	if w.probeType == liveness && result == results.Failure {
 		// The container fails a liveness check, it will need to be restarted.
@@ -223,6 +240,7 @@ func (w *worker) doProbe() (keepGoing bool) {
 		// chance of hitting #21751, where running `docker exec` when a
 		// container is being stopped may lead to corrupted container state.
 		w.onHold = true
+		w.resultRun = 0
 	}
 
 	return true

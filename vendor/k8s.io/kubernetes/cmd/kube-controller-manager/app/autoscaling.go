@@ -22,14 +22,13 @@ package app
 
 import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/scale"
 	"k8s.io/kubernetes/pkg/controller/podautoscaler"
 	"k8s.io/kubernetes/pkg/controller/podautoscaler/metrics"
-	resourceclient "k8s.io/metrics/pkg/client/clientset_generated/clientset/typed/metrics/v1alpha1"
+	resourceclient "k8s.io/metrics/pkg/client/clientset_generated/clientset/typed/metrics/v1beta1"
 	"k8s.io/metrics/pkg/client/custom_metrics"
-
-	// install the APIs so that they're registered with the scheme for the clients
-	_ "k8s.io/metrics/pkg/apis/custom_metrics/install"
-	_ "k8s.io/metrics/pkg/apis/metrics/install"
+	"k8s.io/metrics/pkg/client/external_metrics"
 )
 
 func startHPAController(ctx ControllerContext) (bool, error) {
@@ -37,7 +36,7 @@ func startHPAController(ctx ControllerContext) (bool, error) {
 		return false, nil
 	}
 
-	if ctx.Options.HorizontalPodAutoscalerUseRESTClients {
+	if ctx.ComponentConfig.HPAController.HorizontalPodAutoscalerUseRESTClients {
 		// use the new-style clients if support for custom metrics is enabled
 		return startHPAControllerWithRESTClient(ctx)
 	}
@@ -50,6 +49,7 @@ func startHPAControllerWithRESTClient(ctx ControllerContext) (bool, error) {
 	metricsClient := metrics.NewRESTMetricsClient(
 		resourceclient.NewForConfigOrDie(clientConfig),
 		custom_metrics.NewForConfigOrDie(clientConfig),
+		external_metrics.NewForConfigOrDie(clientConfig),
 	)
 	return startHPAControllerWithMetricsClient(ctx, metricsClient)
 }
@@ -67,15 +67,33 @@ func startHPAControllerWithLegacyClient(ctx ControllerContext) (bool, error) {
 }
 
 func startHPAControllerWithMetricsClient(ctx ControllerContext, metricsClient metrics.MetricsClient) (bool, error) {
+	hpaClientGoClient := ctx.ClientBuilder.ClientGoClientOrDie("horizontal-pod-autoscaler")
 	hpaClient := ctx.ClientBuilder.ClientOrDie("horizontal-pod-autoscaler")
-	replicaCalc := podautoscaler.NewReplicaCalculator(metricsClient, hpaClient.Core())
+	hpaClientConfig := ctx.ClientBuilder.ConfigOrDie("horizontal-pod-autoscaler")
+
+	// we don't use cached discovery because DiscoveryScaleKindResolver does its own caching,
+	// so we want to re-fetch every time when we actually ask for it
+	scaleKindResolver := scale.NewDiscoveryScaleKindResolver(hpaClientGoClient.Discovery())
+	scaleClient, err := scale.NewForConfig(hpaClientConfig, ctx.RESTMapper, dynamic.LegacyAPIPathResolverFunc, scaleKindResolver)
+	if err != nil {
+		return false, err
+	}
+
+	replicaCalc := podautoscaler.NewReplicaCalculator(
+		metricsClient,
+		hpaClient.CoreV1(),
+		ctx.ComponentConfig.HPAController.HorizontalPodAutoscalerTolerance,
+	)
 	go podautoscaler.NewHorizontalController(
-		ctx.ClientBuilder.ClientGoClientOrDie("horizontal-pod-autoscaler").Core(),
-		hpaClient.Extensions(),
-		hpaClient.Autoscaling(),
+		hpaClientGoClient.CoreV1(),
+		scaleClient,
+		hpaClient.AutoscalingV1(),
+		ctx.RESTMapper,
 		replicaCalc,
 		ctx.InformerFactory.Autoscaling().V1().HorizontalPodAutoscalers(),
-		ctx.Options.HorizontalPodAutoscalerSyncPeriod.Duration,
+		ctx.ComponentConfig.HPAController.HorizontalPodAutoscalerSyncPeriod.Duration,
+		ctx.ComponentConfig.HPAController.HorizontalPodAutoscalerUpscaleForbiddenWindow.Duration,
+		ctx.ComponentConfig.HPAController.HorizontalPodAutoscalerDownscaleForbiddenWindow.Duration,
 	).Run(ctx.Stop)
 	return true, nil
 }

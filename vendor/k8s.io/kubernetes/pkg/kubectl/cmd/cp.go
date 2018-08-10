@@ -18,58 +18,85 @@ package cmd
 
 import (
 	"archive/tar"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
+	restclient "k8s.io/client-go/rest"
+	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/pkg/kubectl/cmd/templates"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
-	"k8s.io/kubernetes/pkg/util/i18n"
+	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
+	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
+
+	"bytes"
 
 	"github.com/renstrom/dedent"
 	"github.com/spf13/cobra"
 )
 
 var (
-	cp_example = templates.Examples(`
-	    # !!!Important Note!!!
-	    # Requires that the 'tar' binary is present in your container
-	    # image.  If 'tar' is not present, 'kubectl cp' will fail.
+	cpExample = templates.Examples(i18n.T(`
+		# !!!Important Note!!!
+		# Requires that the 'tar' binary is present in your container
+		# image.  If 'tar' is not present, 'kubectl cp' will fail.
 
-	    # Copy /tmp/foo_dir local directory to /tmp/bar_dir in a remote pod in the default namespace
+		# Copy /tmp/foo_dir local directory to /tmp/bar_dir in a remote pod in the default namespace
 		kubectl cp /tmp/foo_dir <some-pod>:/tmp/bar_dir
 
-        # Copy /tmp/foo local file to /tmp/bar in a remote pod in a specific container
+		# Copy /tmp/foo local file to /tmp/bar in a remote pod in a specific container
 		kubectl cp /tmp/foo <some-pod>:/tmp/bar -c <specific-container>
 
 		# Copy /tmp/foo local file to /tmp/bar in a remote pod in namespace <some-namespace>
 		kubectl cp /tmp/foo <some-namespace>/<some-pod>:/tmp/bar
 
 		# Copy /tmp/foo from a remote pod to /tmp/bar locally
-		kubectl cp <some-namespace>/<some-pod>:/tmp/foo /tmp/bar`)
+		kubectl cp <some-namespace>/<some-pod>:/tmp/foo /tmp/bar`))
 
 	cpUsageStr = dedent.Dedent(`
-	    expected 'cp <file-spec-src> <file-spec-dest> [-c container]'.
-	    <file-spec> is:
+		expected 'cp <file-spec-src> <file-spec-dest> [-c container]'.
+		<file-spec> is:
 		[namespace/]pod-name:/file/path for a remote file
 		/file/path for a local file`)
 )
 
+type CopyOptions struct {
+	Container string
+	Namespace string
+
+	ClientConfig *restclient.Config
+	Clientset    internalclientset.Interface
+
+	genericclioptions.IOStreams
+}
+
+func NewCopyOptions(ioStreams genericclioptions.IOStreams) *CopyOptions {
+	return &CopyOptions{
+		IOStreams: ioStreams,
+	}
+}
+
 // NewCmdCp creates a new Copy command.
-func NewCmdCp(f cmdutil.Factory, cmdIn io.Reader, cmdOut, cmdErr io.Writer) *cobra.Command {
+func NewCmdCp(f cmdutil.Factory, ioStreams genericclioptions.IOStreams) *cobra.Command {
+	o := NewCopyOptions(ioStreams)
+
 	cmd := &cobra.Command{
-		Use:     "cp <file-spec-src> <file-spec-dest>",
+		Use: "cp <file-spec-src> <file-spec-dest>",
+		DisableFlagsInUseLine: true,
 		Short:   i18n.T("Copy files and directories to and from containers."),
 		Long:    "Copy files and directories to and from containers.",
-		Example: cp_example,
+		Example: cpExample,
 		Run: func(cmd *cobra.Command, args []string) {
-			cmdutil.CheckErr(runCopy(f, cmd, cmdOut, cmdErr, args))
+			cmdutil.CheckErr(o.Complete(f, cmd))
+			cmdutil.CheckErr(o.Run(args))
 		},
 	}
-	cmd.Flags().StringP("container", "c", "", "Container name. If omitted, the first container in the pod will be chosen")
+	cmd.Flags().StringVarP(&o.Container, "container", "c", o.Container, "Container name. If omitted, the first container in the pod will be chosen")
 
 	return cmd
 }
@@ -80,37 +107,65 @@ type fileSpec struct {
 	File         string
 }
 
+var (
+	errFileSpecDoesntMatchFormat = errors.New("Filespec must match the canonical format: [[namespace/]pod:]file/path")
+	errFileCannotBeEmpty         = errors.New("Filepath can not be empty")
+)
+
 func extractFileSpec(arg string) (fileSpec, error) {
-	pieces := strings.Split(arg, ":")
-	if len(pieces) == 1 {
+	if i := strings.Index(arg, ":"); i == -1 {
 		return fileSpec{File: arg}, nil
-	}
-	if len(pieces) != 2 {
-		return fileSpec{}, fmt.Errorf("Unexpected fileSpec: %s, expected [[namespace/]pod:]file/path", arg)
-	}
-	file := pieces[1]
-
-	pieces = strings.Split(pieces[0], "/")
-	if len(pieces) == 1 {
-		return fileSpec{
-			PodName: pieces[0],
-			File:    file,
-		}, nil
-	}
-	if len(pieces) == 2 {
-		return fileSpec{
-			PodNamespace: pieces[0],
-			PodName:      pieces[1],
-			File:         file,
-		}, nil
+	} else if i > 0 {
+		file := arg[i+1:]
+		pod := arg[:i]
+		pieces := strings.Split(pod, "/")
+		if len(pieces) == 1 {
+			return fileSpec{
+				PodName: pieces[0],
+				File:    file,
+			}, nil
+		}
+		if len(pieces) == 2 {
+			return fileSpec{
+				PodNamespace: pieces[0],
+				PodName:      pieces[1],
+				File:         file,
+			}, nil
+		}
 	}
 
-	return fileSpec{}, fmt.Errorf("Unexpected file spec: %s, expected [[namespace/]pod:]file/path", arg)
+	return fileSpec{}, errFileSpecDoesntMatchFormat
 }
 
-func runCopy(f cmdutil.Factory, cmd *cobra.Command, out, cmderr io.Writer, args []string) error {
+func (o *CopyOptions) Complete(f cmdutil.Factory, cmd *cobra.Command) error {
+	var err error
+	o.Namespace, _, err = f.ToRawKubeConfigLoader().Namespace()
+	if err != nil {
+		return err
+	}
+
+	o.Clientset, err = f.ClientSet()
+	if err != nil {
+		return err
+	}
+
+	o.ClientConfig, err = f.ToRESTConfig()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (o *CopyOptions) Validate(cmd *cobra.Command, args []string) error {
 	if len(args) != 2 {
-		return cmdutil.UsageError(cmd, cpUsageStr)
+		return cmdutil.UsageErrorf(cmd, cpUsageStr)
+	}
+	return nil
+}
+
+func (o *CopyOptions) Run(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("source and destination are required")
 	}
 	srcSpec, err := extractFileSpec(args[0])
 	if err != nil {
@@ -120,20 +175,66 @@ func runCopy(f cmdutil.Factory, cmd *cobra.Command, out, cmderr io.Writer, args 
 	if err != nil {
 		return err
 	}
+
+	if len(srcSpec.PodName) != 0 && len(destSpec.PodName) != 0 {
+		if _, err := os.Stat(args[0]); err == nil {
+			return o.copyToPod(fileSpec{File: args[0]}, destSpec)
+		}
+		return fmt.Errorf("src doesn't exist in local filesystem")
+	}
+
 	if len(srcSpec.PodName) != 0 {
-		return copyFromPod(f, cmd, out, cmderr, srcSpec, destSpec)
+		return o.copyFromPod(srcSpec, destSpec)
 	}
 	if len(destSpec.PodName) != 0 {
-		return copyToPod(f, cmd, out, cmderr, srcSpec, destSpec)
+		return o.copyToPod(srcSpec, destSpec)
 	}
-	return cmdutil.UsageError(cmd, "One of src or dest must be a remote file specification")
+	return fmt.Errorf("one of src or dest must be a remote file specification")
 }
 
-func copyToPod(f cmdutil.Factory, cmd *cobra.Command, stdout, stderr io.Writer, src, dest fileSpec) error {
+// checkDestinationIsDir receives a destination fileSpec and
+// determines if the provided destination path exists on the
+// pod. If the destination path does not exist or is _not_ a
+// directory, an error is returned with the exit code received.
+func (o *CopyOptions) checkDestinationIsDir(dest fileSpec) error {
+	options := &ExecOptions{
+		StreamOptions: StreamOptions{
+			IOStreams: genericclioptions.IOStreams{
+				Out:    bytes.NewBuffer([]byte{}),
+				ErrOut: bytes.NewBuffer([]byte{}),
+			},
+
+			Namespace: dest.PodNamespace,
+			PodName:   dest.PodName,
+		},
+
+		Command:  []string{"test", "-d", dest.File},
+		Executor: &DefaultRemoteExecutor{},
+	}
+
+	return o.execute(options)
+}
+
+func (o *CopyOptions) copyToPod(src, dest fileSpec) error {
+	if len(src.File) == 0 || len(dest.File) == 0 {
+		return errFileCannotBeEmpty
+	}
 	reader, writer := io.Pipe()
+
+	// strip trailing slash (if any)
+	if dest.File != "/" && strings.HasSuffix(string(dest.File[len(dest.File)-1]), "/") {
+		dest.File = dest.File[:len(dest.File)-1]
+	}
+
+	if err := o.checkDestinationIsDir(dest); err == nil {
+		// If no error, dest.File was found to be a directory.
+		// Copy specified src into it
+		dest.File = dest.File + "/" + path.Base(src.File)
+	}
+
 	go func() {
 		defer writer.Close()
-		err := makeTar(src.File, writer)
+		err := makeTar(src.File, dest.File, writer)
 		cmdutil.CheckErr(err)
 	}()
 
@@ -146,9 +247,11 @@ func copyToPod(f cmdutil.Factory, cmd *cobra.Command, stdout, stderr io.Writer, 
 
 	options := &ExecOptions{
 		StreamOptions: StreamOptions{
-			In:    reader,
-			Out:   stdout,
-			Err:   stderr,
+			IOStreams: genericclioptions.IOStreams{
+				In:     reader,
+				Out:    o.Out,
+				ErrOut: o.ErrOut,
+			},
 			Stdin: true,
 
 			Namespace: dest.PodNamespace,
@@ -158,16 +261,22 @@ func copyToPod(f cmdutil.Factory, cmd *cobra.Command, stdout, stderr io.Writer, 
 		Command:  cmdArr,
 		Executor: &DefaultRemoteExecutor{},
 	}
-	return execute(f, cmd, options)
+	return o.execute(options)
 }
 
-func copyFromPod(f cmdutil.Factory, cmd *cobra.Command, out, cmderr io.Writer, src, dest fileSpec) error {
+func (o *CopyOptions) copyFromPod(src, dest fileSpec) error {
+	if len(src.File) == 0 || len(dest.File) == 0 {
+		return errFileCannotBeEmpty
+	}
+
 	reader, outStream := io.Pipe()
 	options := &ExecOptions{
 		StreamOptions: StreamOptions{
-			In:  nil,
-			Out: outStream,
-			Err: cmderr,
+			IOStreams: genericclioptions.IOStreams{
+				In:     nil,
+				Out:    outStream,
+				ErrOut: o.Out,
+			},
 
 			Namespace: src.PodNamespace,
 			PodName:   src.PodName,
@@ -180,23 +289,39 @@ func copyFromPod(f cmdutil.Factory, cmd *cobra.Command, out, cmderr io.Writer, s
 
 	go func() {
 		defer outStream.Close()
-		execute(f, cmd, options)
+		o.execute(options)
 	}()
 	prefix := getPrefix(src.File)
-
+	prefix = path.Clean(prefix)
+	// remove extraneous path shortcuts - these could occur if a path contained extra "../"
+	// and attempted to navigate beyond "/" in a remote filesystem
+	prefix = stripPathShortcuts(prefix)
 	return untarAll(reader, dest.File, prefix)
 }
 
-func makeTar(filepath string, writer io.Writer) error {
+// stripPathShortcuts removes any leading or trailing "../" from a given path
+func stripPathShortcuts(p string) string {
+	newPath := path.Clean(p)
+	if len(newPath) > 0 && string(newPath[0]) == "/" {
+		return newPath[1:]
+	}
+
+	return newPath
+}
+
+func makeTar(srcPath, destPath string, writer io.Writer) error {
 	// TODO: use compression here?
 	tarWriter := tar.NewWriter(writer)
 	defer tarWriter.Close()
-	return recursiveTar(path.Dir(filepath), path.Base(filepath), tarWriter)
+
+	srcPath = path.Clean(srcPath)
+	destPath = path.Clean(destPath)
+	return recursiveTar(path.Dir(srcPath), path.Base(srcPath), path.Dir(destPath), path.Base(destPath), tarWriter)
 }
 
-func recursiveTar(base, file string, tw *tar.Writer) error {
-	filepath := path.Join(base, file)
-	stat, err := os.Stat(filepath)
+func recursiveTar(srcBase, srcFile, destBase, destFile string, tw *tar.Writer) error {
+	filepath := path.Join(srcBase, srcFile)
+	stat, err := os.Lstat(filepath)
 	if err != nil {
 		return err
 	}
@@ -205,31 +330,68 @@ func recursiveTar(base, file string, tw *tar.Writer) error {
 		if err != nil {
 			return err
 		}
+		if len(files) == 0 {
+			//case empty directory
+			hdr, _ := tar.FileInfoHeader(stat, filepath)
+			hdr.Name = destFile
+			if err := tw.WriteHeader(hdr); err != nil {
+				return err
+			}
+		}
 		for _, f := range files {
-			if err := recursiveTar(base, path.Join(file, f.Name()), tw); err != nil {
+			if err := recursiveTar(srcBase, path.Join(srcFile, f.Name()), destBase, path.Join(destFile, f.Name()), tw); err != nil {
 				return err
 			}
 		}
 		return nil
+	} else if stat.Mode()&os.ModeSymlink != 0 {
+		//case soft link
+		hdr, _ := tar.FileInfoHeader(stat, filepath)
+		target, err := os.Readlink(filepath)
+		if err != nil {
+			return err
+		}
+
+		hdr.Linkname = target
+		hdr.Name = destFile
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+	} else {
+		//case regular file or other file type like pipe
+		hdr, err := tar.FileInfoHeader(stat, filepath)
+		if err != nil {
+			return err
+		}
+		hdr.Name = destFile
+
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+
+		f, err := os.Open(filepath)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		if _, err := io.Copy(tw, f); err != nil {
+			return err
+		}
+		return f.Close()
 	}
-	hdr, err := tar.FileInfoHeader(stat, filepath)
-	if err != nil {
-		return err
-	}
-	hdr.Name = file
-	if err := tw.WriteHeader(hdr); err != nil {
-		return err
-	}
-	f, err := os.Open(filepath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = io.Copy(tw, f)
-	return err
+	return nil
+}
+
+// clean prevents path traversals by stripping them out.
+// This is adapted from https://golang.org/src/net/http/fs.go#L74
+func clean(fileName string) string {
+	return path.Clean(string(os.PathSeparator) + fileName)
 }
 
 func untarAll(reader io.Reader, destFile, prefix string) error {
+	entrySeq := -1
+
 	// TODO: use compression here?
 	tarReader := tar.NewReader(reader)
 	for {
@@ -240,58 +402,75 @@ func untarAll(reader io.Reader, destFile, prefix string) error {
 			}
 			break
 		}
-		outFileName := path.Join(destFile, header.Name[len(prefix):])
+		entrySeq++
+		mode := header.FileInfo().Mode()
+		outFileName := path.Join(destFile, clean(header.Name[len(prefix):]))
 		baseName := path.Dir(outFileName)
 		if err := os.MkdirAll(baseName, 0755); err != nil {
 			return err
 		}
 		if header.FileInfo().IsDir() {
-			os.MkdirAll(outFileName, 0755)
+			if err := os.MkdirAll(outFileName, 0755); err != nil {
+				return err
+			}
 			continue
 		}
-		outFile, err := os.Create(outFileName)
-		if err != nil {
-			return err
+
+		// handle coping remote file into local directory
+		if entrySeq == 0 && !header.FileInfo().IsDir() {
+			exists, err := dirExists(outFileName)
+			if err != nil {
+				return err
+			}
+			if exists {
+				outFileName = filepath.Join(outFileName, path.Base(clean(header.Name)))
+			}
 		}
-		defer outFile.Close()
-		io.Copy(outFile, tarReader)
+
+		if mode&os.ModeSymlink != 0 {
+			err := os.Symlink(header.Linkname, outFileName)
+			if err != nil {
+				return err
+			}
+		} else {
+			outFile, err := os.Create(outFileName)
+			if err != nil {
+				return err
+			}
+			defer outFile.Close()
+			if _, err := io.Copy(outFile, tarReader); err != nil {
+				return err
+			}
+			if err := outFile.Close(); err != nil {
+				return err
+			}
+		}
+	}
+
+	if entrySeq == -1 {
+		//if no file was copied
+		errInfo := fmt.Sprintf("error: %s no such file or directory", prefix)
+		return errors.New(errInfo)
 	}
 	return nil
 }
 
 func getPrefix(file string) string {
-	if file[0] == '/' {
-		// tar strips the leading '/' if it's there, so we will too
-		return file[1:]
-	}
-	return file
+	// tar strips the leading '/' if it's there, so we will too
+	return strings.TrimLeft(file, "/")
 }
 
-func execute(f cmdutil.Factory, cmd *cobra.Command, options *ExecOptions) error {
+func (o *CopyOptions) execute(options *ExecOptions) error {
 	if len(options.Namespace) == 0 {
-		namespace, _, err := f.DefaultNamespace()
-		if err != nil {
-			return err
-		}
-		options.Namespace = namespace
+		options.Namespace = o.Namespace
 	}
 
-	container := cmdutil.GetFlagString(cmd, "container")
-	if len(container) > 0 {
-		options.ContainerName = container
+	if len(o.Container) > 0 {
+		options.ContainerName = o.Container
 	}
 
-	config, err := f.ClientConfig()
-	if err != nil {
-		return err
-	}
-	options.Config = config
-
-	clientset, err := f.ClientSet()
-	if err != nil {
-		return err
-	}
-	options.PodClient = clientset.Core()
+	options.Config = o.ClientConfig
+	options.PodClient = o.Clientset.Core()
 
 	if err := options.Validate(); err != nil {
 		return err
@@ -301,4 +480,16 @@ func execute(f cmdutil.Factory, cmd *cobra.Command, options *ExecOptions) error 
 		return err
 	}
 	return nil
+}
+
+// dirExists checks if a path exists and is a directory.
+func dirExists(path string) (bool, error) {
+	fi, err := os.Stat(path)
+	if err == nil && fi.IsDir() {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
 }

@@ -11,7 +11,7 @@ no need to update `translations/test/...` which is only used for unit tests.
 There is an example [PR here](https://github.com/kubernetes/kubernetes/pull/40645) which adds support for French.
 
 Once you've added a new language, you'll need to register it in
-`pkg/util/i18n/i18n.go` by adding it to the `knownTranslations` map.
+`pkg/kubectl/util/i18n/i18n.go` by adding it to the `knownTranslations` map.
 
 ## Wrapping strings
 There is a simple script in `translations/extract.py` that performs
@@ -19,14 +19,14 @@ simple regular expression based wrapping of strings. It can always
 use improvements to understand additional strings.
 
 ## Extracting strings
-Once the strings are wrapped, you can extract strings from go files using 
+Once the strings are wrapped, you can extract strings from go files using
 the `go-xgettext` command which can be installed with:
 
 ```console
-go get github.com/gosexy/gettext/tree/master/go-xgettext
+go get github.com/gosexy/gettext/go-xgettext
 ```
 
-Once that's installed you can run `hack/update-translations.sh`, which
+Once that's installed you can run `./hack/update-translations.sh`, which
 will extract and sort any new strings.
 
 ## Adding new translations
@@ -34,14 +34,14 @@ Edit the appropriate `k8s.po` file, `poedit` is a popular open source tool
 for translations. You can load the `translations/kubectl/template.pot` file
 to find messages that might be missing.
 
-Once you are done with your `.po` file, generate the corresponding `k8s.mo`
-file. `poedit` does this automatically on save, but you can also use
-`hack/update-translations.sh` to perform the `po` to `mo` translation.
+Once you are done with your `k8s.po` file, generate the corresponding `k8s.mo`
+file. `poedit` does this automatically on save, but you can also run
+`./hack/update-translations.sh` to perform the `po` to `mo` translation.
 
 We use the English translation as the `msgid`.
 
 ## Regenerating the bindata file
-Run `./hack/generate-bindata.sh, this will turn the translation files
+Run `./hack/generate-bindata.sh`, this will turn the translation files
 into generated code which will in turn be packaged into the Kubernetes
 binaries.
 

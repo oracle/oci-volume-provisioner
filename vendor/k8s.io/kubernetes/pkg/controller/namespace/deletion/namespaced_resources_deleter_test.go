@@ -25,6 +25,7 @@ import (
 	"sync"
 	"testing"
 
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -32,11 +33,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes/fake"
 	restclient "k8s.io/client-go/rest"
 	core "k8s.io/client-go/testing"
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/v1"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset/fake"
+	api "k8s.io/kubernetes/pkg/apis/core"
 )
 
 func TestFinalized(t *testing.T) {
@@ -172,14 +172,16 @@ func testSyncNamespaceThatIsTerminating(t *testing.T, versions *metav1.APIVersio
 		defer srv.Close()
 
 		mockClient := fake.NewSimpleClientset(testInput.testNamespace)
-		clientPool := dynamic.NewClientPool(clientConfig, api.Registry.RESTMapper(), dynamic.LegacyAPIPathResolverFunc)
+		dynamicClient, err := dynamic.NewForConfig(clientConfig)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		fn := func() ([]*metav1.APIResourceList, error) {
 			return resources, nil
 		}
-		d := NewNamespacedResourcesDeleter(mockClient.Core().Namespaces(), clientPool, mockClient.Core(), fn, v1.FinalizerKubernetes, true)
-		err := d.Delete(testInput.testNamespace.Name)
-		if err != nil {
+		d := NewNamespacedResourcesDeleter(mockClient.Core().Namespaces(), dynamicClient, mockClient.Core(), fn, v1.FinalizerKubernetes, true)
+		if err := d.Delete(testInput.testNamespace.Name); err != nil {
 			t.Errorf("scenario %s - Unexpected error when synching namespace %v", scenario, err)
 		}
 

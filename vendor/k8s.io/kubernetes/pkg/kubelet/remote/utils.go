@@ -17,19 +17,16 @@ limitations under the License.
 package remote
 
 import (
+	"context"
 	"fmt"
-	"net"
 	"time"
 
-	"golang.org/x/net/context"
-
-	runtimeapi "k8s.io/kubernetes/pkg/kubelet/api/v1alpha1/runtime"
+	runtimeapi "k8s.io/kubernetes/pkg/kubelet/apis/cri/runtime/v1alpha2"
 )
 
-// dial creates a net.Conn by unix socket addr.
-func dial(addr string, timeout time.Duration) (net.Conn, error) {
-	return net.DialTimeout("unix", addr, timeout)
-}
+// maxMsgSize use 8MB as the default message size limit.
+// grpc library default is 4MB
+const maxMsgSize = 1024 * 1024 * 8
 
 // getContextWithTimeout returns a context with timeout.
 func getContextWithTimeout(timeout time.Duration) (context.Context, context.CancelFunc) {

@@ -20,18 +20,33 @@ set -o pipefail
 export KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
 source "${KUBE_ROOT}/hack/lib/init.sh"
 
-git config http.https://gopkg.in.followRedirects true
+kube::util::ensure-gnu-sed
 
-go get -u gopkg.in/mikedanese/gazel.v14/gazel
+# Remove generated files prior to running kazel.
+# TODO(spxtr): Remove this line once Bazel is the only way to build.
+rm -f "${KUBE_ROOT}/pkg/generated/openapi/zz_generated.openapi.go"
 
-for path in ${GOPATH//:/ }; do
-    if [[ -e "${path}/bin/gazel" ]]; then
-      gazel="${path}/bin/gazel"
-      break
-    fi
-done
-if [[ -z "${gazel:-}" ]]; then
-  echo "Couldn't find gazel on the GOPATH."
-  exit 1
-fi
-"${gazel}" -root="$(kube::realpath ${KUBE_ROOT})"
+# Ensure that we find the binaries we build before anything else.
+export GOBIN="${KUBE_OUTPUT_BINPATH}"
+PATH="${GOBIN}:${PATH}"
+
+# Install tools we need, but only from vendor/...
+go install ./vendor/github.com/bazelbuild/bazel-gazelle/cmd/gazelle
+
+go install ./vendor/github.com/kubernetes/repo-infra/kazel
+
+touch "${KUBE_ROOT}/vendor/BUILD"
+
+gazelle fix \
+    -build_file_name=BUILD,BUILD.bazel \
+    -external=vendored \
+    -proto=legacy \
+    -mode=fix
+# gazelle gets confused by our staging/ directory, prepending an extra
+# "k8s.io/kubernetes/staging/src" to the import path.
+# gazelle won't follow the symlinks in vendor/, so we can't just exclude
+# staging/. Instead we just fix the bad paths with sed.
+find staging -name BUILD -o -name BUILD.bazel | \
+  xargs ${SED} -i 's|\(importpath = "\)k8s.io/kubernetes/staging/src/\(.*\)|\1\2|'
+
+kazel

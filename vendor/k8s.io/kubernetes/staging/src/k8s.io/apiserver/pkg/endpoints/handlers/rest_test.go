@@ -17,31 +17,43 @@ limitations under the License.
 package handlers
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"reflect"
 	"testing"
 	"time"
 
-	"github.com/emicklei/go-restful"
 	"github.com/evanphx/json-patch"
 
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/diff"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
+	"k8s.io/apiserver/pkg/apis/example"
+	examplev1 "k8s.io/apiserver/pkg/apis/example/v1"
 	"k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
-	"k8s.io/client-go/pkg/api"
-	"k8s.io/client-go/pkg/api/v1"
-
-	// need to register pods
-	_ "k8s.io/client-go/pkg/api/install"
+	utiltrace "k8s.io/apiserver/pkg/util/trace"
 )
+
+var (
+	scheme = runtime.NewScheme()
+	codecs = serializer.NewCodecFactory(scheme)
+)
+
+func init() {
+	metav1.AddToGroupVersion(scheme, metav1.SchemeGroupVersion)
+	example.AddToScheme(scheme)
+	examplev1.AddToScheme(scheme)
+}
 
 type testPatchType struct {
 	metav1.TypeMeta `json:",inline"`
@@ -55,13 +67,19 @@ type TestPatchSubType struct {
 	StringField string `json:"theField"`
 }
 
-func (obj *testPatchType) GetObjectKind() schema.ObjectKind { return &obj.TypeMeta }
+func (obj *testPatchType) DeepCopyObject() runtime.Object {
+	if obj == nil {
+		return nil
+	}
+	clone := *obj
+	return &clone
+}
 
 func TestPatchAnonymousField(t *testing.T) {
 	testGV := schema.GroupVersion{Group: "", Version: "v"}
-	api.Scheme.AddKnownTypes(testGV, &testPatchType{})
-	codec := api.Codecs.LegacyCodec(testGV)
-	defaulter := runtime.ObjectDefaulter(api.Scheme)
+	scheme.AddKnownTypes(testGV, &testPatchType{})
+	codec := codecs.LegacyCodec(testGV)
+	defaulter := runtime.ObjectDefaulter(scheme)
 
 	original := &testPatchType{
 		TypeMeta:         metav1.TypeMeta{Kind: "testPatchType", APIVersion: "v"},
@@ -74,7 +92,7 @@ func TestPatchAnonymousField(t *testing.T) {
 	}
 
 	actual := &testPatchType{}
-	_, _, err := strategicPatchObject(codec, defaulter, original, []byte(patch), actual, &testPatchType{})
+	err := strategicPatchObject(codec, defaulter, original, []byte(patch), actual, &testPatchType{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -83,42 +101,121 @@ func TestPatchAnonymousField(t *testing.T) {
 	}
 }
 
+func TestPatchInvalid(t *testing.T) {
+	testGV := schema.GroupVersion{Group: "", Version: "v"}
+	scheme.AddKnownTypes(testGV, &testPatchType{})
+	codec := codecs.LegacyCodec(testGV)
+	defaulter := runtime.ObjectDefaulter(scheme)
+
+	original := &testPatchType{
+		TypeMeta:         metav1.TypeMeta{Kind: "testPatchType", APIVersion: "v"},
+		TestPatchSubType: TestPatchSubType{StringField: "my-value"},
+	}
+	patch := `barbaz`
+	expectedError := "invalid character 'b' looking for beginning of value"
+
+	actual := &testPatchType{}
+	err := strategicPatchObject(codec, defaulter, original, []byte(patch), actual, &testPatchType{})
+	if !apierrors.IsBadRequest(err) {
+		t.Errorf("expected HTTP status: BadRequest, got: %#v", apierrors.ReasonForError(err))
+	}
+	if err.Error() != expectedError {
+		t.Errorf("expected %#v, got %#v", expectedError, err.Error())
+	}
+}
+
+func TestPatchCustomResource(t *testing.T) {
+	testGV := schema.GroupVersion{Group: "mygroup.example.com", Version: "v1beta1"}
+	scheme.AddKnownTypes(testGV, &unstructured.Unstructured{})
+	codec := codecs.LegacyCodec(testGV)
+	defaulter := runtime.ObjectDefaulter(scheme)
+
+	original := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "mygroup.example.com/v1beta1",
+			"kind":       "Noxu",
+			"metadata": map[string]interface{}{
+				"namespace": "Namespaced",
+				"name":      "foo",
+			},
+			"spec": map[string]interface{}{
+				"num": "10",
+			},
+		},
+	}
+	patch := `{"spec":{"num":"20"}}`
+	expectedError := "strategic merge patch format is not supported"
+
+	actual := &unstructured.Unstructured{}
+	err := strategicPatchObject(codec, defaulter, original, []byte(patch), actual, &unstructured.Unstructured{})
+	if !apierrors.IsBadRequest(err) {
+		t.Errorf("expected HTTP status: BadRequest, got: %#v", apierrors.ReasonForError(err))
+	}
+	if err.Error() != expectedError {
+		t.Errorf("expected %#v, got %#v", expectedError, err.Error())
+	}
+}
+
 type testPatcher struct {
 	t *testing.T
 
 	// startingPod is used for the first Update
-	startingPod *api.Pod
+	startingPod *example.Pod
 
 	// updatePod is the pod that is used for conflict comparison and used for subsequent Update calls
-	updatePod *api.Pod
+	updatePod *example.Pod
 
 	numUpdates int
 }
 
 func (p *testPatcher) New() runtime.Object {
-	return &api.Pod{}
+	return &example.Pod{}
 }
 
-func (p *testPatcher) Update(ctx request.Context, name string, objInfo rest.UpdatedObjectInfo) (runtime.Object, bool, error) {
-	currentPod := p.startingPod
-	if p.numUpdates > 0 {
-		currentPod = p.updatePod
-	}
-	p.numUpdates++
+func (p *testPatcher) Update(ctx context.Context, name string, objInfo rest.UpdatedObjectInfo, createValidation rest.ValidateObjectFunc, updateValidation rest.ValidateObjectUpdateFunc) (runtime.Object, bool, error) {
+	// Simulate GuaranteedUpdate behavior (retries internally on etcd changes if the incoming resource doesn't pin resourceVersion)
+	for {
+		currentPod := p.startingPod
+		if p.numUpdates > 0 {
+			currentPod = p.updatePod
+		}
+		p.numUpdates++
 
-	obj, err := objInfo.UpdatedObject(ctx, currentPod)
-	if err != nil {
-		return nil, false, err
-	}
-	inPod := obj.(*api.Pod)
-	if inPod.ResourceVersion != p.updatePod.ResourceVersion {
-		return nil, false, apierrors.NewConflict(api.Resource("pods"), inPod.Name, fmt.Errorf("existing %v, new %v", p.updatePod.ResourceVersion, inPod.ResourceVersion))
-	}
+		// Remember the current resource version
+		currentResourceVersion := currentPod.ResourceVersion
 
-	return inPod, false, nil
+		obj, err := objInfo.UpdatedObject(ctx, currentPod)
+		if err != nil {
+			return nil, false, err
+		}
+		inPod := obj.(*example.Pod)
+		if inPod.ResourceVersion == "" || inPod.ResourceVersion == "0" {
+			inPod.ResourceVersion = p.updatePod.ResourceVersion
+		}
+		if inPod.ResourceVersion != p.updatePod.ResourceVersion {
+			// If the patch didn't have an opinion on the resource version, retry like GuaranteedUpdate does
+			if inPod.ResourceVersion == currentResourceVersion {
+				continue
+			}
+			// If the patch changed the resource version and it mismatches, conflict
+			return nil, false, apierrors.NewConflict(example.Resource("pods"), inPod.Name, fmt.Errorf("existing %v, new %v", p.updatePod.ResourceVersion, inPod.ResourceVersion))
+		}
+
+		if currentPod == nil {
+			if err := createValidation(currentPod); err != nil {
+				return nil, false, err
+			}
+		} else {
+			if err := updateValidation(currentPod, inPod); err != nil {
+				return nil, false, err
+			}
+		}
+
+		return inPod, false, nil
+	}
 }
 
-func (p *testPatcher) Get(ctx request.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
+func (p *testPatcher) Get(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
 	p.t.Fatal("Unexpected call to testPatcher.Get")
 	return nil, errors.New("Unexpected call to testPatcher.Get")
 }
@@ -128,13 +225,13 @@ type testNamer struct {
 	name      string
 }
 
-func (p *testNamer) Namespace(req *restful.Request) (namespace string, err error) {
+func (p *testNamer) Namespace(req *http.Request) (namespace string, err error) {
 	return p.namespace, nil
 }
 
 // Name returns the name from the request, and an optional namespace value if this is a namespace
 // scoped call. An error is returned if the name is not available.
-func (p *testNamer) Name(req *restful.Request) (namespace, name string, err error) {
+func (p *testNamer) Name(req *http.Request) (namespace, name string, err error) {
 	return p.namespace, p.name, nil
 }
 
@@ -151,12 +248,12 @@ func (p *testNamer) SetSelfLink(obj runtime.Object, url string) error {
 }
 
 // GenerateLink creates a path and query for a given runtime object that represents the canonical path.
-func (p *testNamer) GenerateLink(req *restful.Request, obj runtime.Object) (uri string, err error) {
+func (p *testNamer) GenerateLink(requestInfo *request.RequestInfo, obj runtime.Object) (uri string, err error) {
 	return "", errors.New("not implemented")
 }
 
-// GenerateLink creates a path and query for a list that represents the canonical path.
-func (p *testNamer) GenerateListLink(req *restful.Request) (uri string, err error) {
+// GenerateListLink creates a path and query for a list that represents the canonical path.
+func (p *testNamer) GenerateListLink(req *http.Request) (uri string, err error) {
 	return "", errors.New("not implemented")
 }
 
@@ -164,19 +261,26 @@ type patchTestCase struct {
 	name string
 
 	// admission chain to use, nil is fine
-	admit updateAdmissionFunc
+	admissionMutation   mutateObjectUpdateFunc
+	admissionValidation rest.ValidateObjectUpdateFunc
 
 	// startingPod is used as the starting point for the first Update
-	startingPod *api.Pod
-	// changedPod is the "destination" pod for the patch.  The test will create a patch from the startingPod to the changedPod
-	// to use when calling the patch operation
-	changedPod *api.Pod
+	startingPod *example.Pod
+	// changedPod can be set as the "destination" pod for the patch, and the test will compute a patch from the startingPod to the changedPod,
+	// or patches can be set directly using strategicMergePatch, mergePatch, and jsonPatch
+	changedPod          *example.Pod
+	strategicMergePatch string
+	mergePatch          string
+	jsonPatch           string
+
 	// updatePod is the pod that is used for conflict comparison and as the starting point for the second Update
-	updatePod *api.Pod
+	updatePod *example.Pod
 
 	// expectedPod is the pod that you expect to get back after the patch is complete
-	expectedPod   *api.Pod
+	expectedPod   *example.Pod
 	expectedError string
+	// if set, indicates the number of times patching was expected to be attempted
+	expectedTries int
 }
 
 func (tc *patchTestCase) Run(t *testing.T) {
@@ -185,80 +289,135 @@ func (tc *patchTestCase) Run(t *testing.T) {
 	namespace := tc.startingPod.Namespace
 	name := tc.startingPod.Name
 
-	codec := api.Codecs.LegacyCodec(schema.GroupVersion{Version: "v1"})
-	admit := tc.admit
-	if admit == nil {
-		admit = func(updatedObject runtime.Object, currentObject runtime.Object) error {
+	codec := codecs.LegacyCodec(examplev1.SchemeGroupVersion)
+
+	admissionMutation := tc.admissionMutation
+	if admissionMutation == nil {
+		admissionMutation = func(updatedObject runtime.Object, currentObject runtime.Object) error {
 			return nil
 		}
 	}
-
-	testPatcher := &testPatcher{}
-	testPatcher.t = t
-	testPatcher.startingPod = tc.startingPod
-	testPatcher.updatePod = tc.updatePod
+	admissionValidation := tc.admissionValidation
+	if admissionValidation == nil {
+		admissionValidation = func(updatedObject runtime.Object, currentObject runtime.Object) error {
+			return nil
+		}
+	}
 
 	ctx := request.NewDefaultContext()
 	ctx = request.WithNamespace(ctx, namespace)
 
 	namer := &testNamer{namespace, name}
-	copier := runtime.ObjectCopier(api.Scheme)
-	creater := runtime.ObjectCreater(api.Scheme)
-	defaulter := runtime.ObjectDefaulter(api.Scheme)
-	convertor := runtime.UnsafeObjectConvertor(api.Scheme)
-	kind := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"}
-	resource := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
-	versionedObj := &v1.Pod{}
+	creater := runtime.ObjectCreater(scheme)
+	defaulter := runtime.ObjectDefaulter(scheme)
+	convertor := runtime.UnsafeObjectConvertor(scheme)
+	kind := examplev1.SchemeGroupVersion.WithKind("Pod")
+	resource := examplev1.SchemeGroupVersion.WithResource("pods")
+	schemaReferenceObj := &examplev1.Pod{}
 
 	for _, patchType := range []types.PatchType{types.JSONPatchType, types.MergePatchType, types.StrategicMergePatchType} {
-		// TODO SUPPORT THIS!
-		if patchType == types.JSONPatchType {
-			continue
+		// This needs to be reset on each iteration.
+		testPatcher := &testPatcher{
+			t:           t,
+			startingPod: tc.startingPod,
+			updatePod:   tc.updatePod,
 		}
-		t.Logf("Working with patchType %v", patchType)
 
-		originalObjJS, err := runtime.Encode(codec, tc.startingPod)
-		if err != nil {
-			t.Errorf("%s: unexpected error: %v", tc.name, err)
-			return
-		}
-		changedJS, err := runtime.Encode(codec, tc.changedPod)
-		if err != nil {
-			t.Errorf("%s: unexpected error: %v", tc.name, err)
-			return
-		}
+		t.Logf("Working with patchType %v", patchType)
 
 		patch := []byte{}
 		switch patchType {
-		case types.JSONPatchType:
-			continue
-
 		case types.StrategicMergePatchType:
-			patch, err = strategicpatch.CreateTwoWayMergePatch(originalObjJS, changedJS, versionedObj)
-			if err != nil {
-				t.Errorf("%s: unexpected error: %v", tc.name, err)
-				return
+			patch = []byte(tc.strategicMergePatch)
+			if len(patch) == 0 {
+				originalObjJS, err := runtime.Encode(codec, tc.startingPod)
+				if err != nil {
+					t.Errorf("%s: unexpected error: %v", tc.name, err)
+					continue
+				}
+				changedJS, err := runtime.Encode(codec, tc.changedPod)
+				if err != nil {
+					t.Errorf("%s: unexpected error: %v", tc.name, err)
+					continue
+				}
+				patch, err = strategicpatch.CreateTwoWayMergePatch(originalObjJS, changedJS, schemaReferenceObj)
+				if err != nil {
+					t.Errorf("%s: unexpected error: %v", tc.name, err)
+					continue
+				}
 			}
 
 		case types.MergePatchType:
-			patch, err = jsonpatch.CreateMergePatch(originalObjJS, changedJS)
-			if err != nil {
-				t.Errorf("%s: unexpected error: %v", tc.name, err)
-				return
+			patch = []byte(tc.mergePatch)
+			if len(patch) == 0 {
+				originalObjJS, err := runtime.Encode(codec, tc.startingPod)
+				if err != nil {
+					t.Errorf("%s: unexpected error: %v", tc.name, err)
+					continue
+				}
+				changedJS, err := runtime.Encode(codec, tc.changedPod)
+				if err != nil {
+					t.Errorf("%s: unexpected error: %v", tc.name, err)
+					continue
+				}
+				patch, err = jsonpatch.CreateMergePatch(originalObjJS, changedJS)
+				if err != nil {
+					t.Errorf("%s: unexpected error: %v", tc.name, err)
+					continue
+				}
 			}
 
+		case types.JSONPatchType:
+			patch = []byte(tc.jsonPatch)
+			if len(patch) == 0 {
+				// TODO SUPPORT THIS!
+				continue
+			}
+
+		default:
+			t.Error("unsupported patch type")
 		}
 
-		resultObj, err := patchResource(ctx, admit, 1*time.Second, versionedObj, testPatcher, name, patchType, patch, namer, copier, creater, defaulter, convertor, kind, resource, codec)
+		p := patcher{
+			namer:           namer,
+			creater:         creater,
+			defaulter:       defaulter,
+			unsafeConvertor: convertor,
+			kind:            kind,
+			resource:        resource,
+
+			createValidation: rest.ValidateAllObjectFunc,
+			updateValidation: admissionValidation,
+			admissionCheck:   admissionMutation,
+
+			codec: codec,
+
+			timeout: 1 * time.Second,
+
+			restPatcher: testPatcher,
+			name:        name,
+			patchType:   patchType,
+			patchJS:     patch,
+
+			trace: utiltrace.New("Patch" + name),
+		}
+
+		resultObj, err := p.patchResource(ctx)
 		if len(tc.expectedError) != 0 {
 			if err == nil || err.Error() != tc.expectedError {
 				t.Errorf("%s: expected error %v, but got %v", tc.name, tc.expectedError, err)
-				return
+				continue
 			}
 		} else {
 			if err != nil {
 				t.Errorf("%s: unexpected error: %v", tc.name, err)
-				return
+				continue
+			}
+		}
+
+		if tc.expectedTries > 0 {
+			if tc.expectedTries != testPatcher.numUpdates {
+				t.Errorf("%s: expected %d tries, got %d", tc.name, tc.expectedTries, testPatcher.numUpdates)
 			}
 		}
 
@@ -266,62 +425,91 @@ func (tc *patchTestCase) Run(t *testing.T) {
 			if resultObj != nil {
 				t.Errorf("%s: unexpected result: %v", tc.name, resultObj)
 			}
-			return
+			continue
 		}
 
-		resultPod := resultObj.(*api.Pod)
+		resultPod := resultObj.(*example.Pod)
 
 		// roundtrip to get defaulting
 		expectedJS, err := runtime.Encode(codec, tc.expectedPod)
 		if err != nil {
 			t.Errorf("%s: unexpected error: %v", tc.name, err)
-			return
+			continue
 		}
 		expectedObj, err := runtime.Decode(codec, expectedJS)
 		if err != nil {
 			t.Errorf("%s: unexpected error: %v", tc.name, err)
-			return
+			continue
 		}
-		reallyExpectedPod := expectedObj.(*api.Pod)
+		reallyExpectedPod := expectedObj.(*example.Pod)
 
 		if !reflect.DeepEqual(*reallyExpectedPod, *resultPod) {
 			t.Errorf("%s mismatch: %v\n", tc.name, diff.ObjectGoPrintDiff(reallyExpectedPod, resultPod))
-			return
+			continue
 		}
 	}
 
 }
 
 func TestNumberConversion(t *testing.T) {
-	codec := api.Codecs.LegacyCodec(schema.GroupVersion{Version: "v1"})
-	defaulter := runtime.ObjectDefaulter(api.Scheme)
+	codec := codecs.LegacyCodec(examplev1.SchemeGroupVersion)
+	defaulter := runtime.ObjectDefaulter(scheme)
 
-	currentVersionedObject := &v1.Service{
-		TypeMeta:   metav1.TypeMeta{Kind: "Service", APIVersion: "v1"},
-		ObjectMeta: metav1.ObjectMeta{Name: "test-service"},
-		Spec: v1.ServiceSpec{
-			Ports: []v1.ServicePort{
-				{
-					Port:     80,
-					Protocol: "TCP",
-					NodePort: 31678,
-				},
-			},
+	terminationGracePeriodSeconds := int64(42)
+	activeDeadlineSeconds := int64(42)
+	currentVersionedObject := &examplev1.Pod{
+		TypeMeta:   metav1.TypeMeta{Kind: "Example", APIVersion: examplev1.SchemeGroupVersion.String()},
+		ObjectMeta: metav1.ObjectMeta{Name: "test-example"},
+		Spec: examplev1.PodSpec{
+			TerminationGracePeriodSeconds: &terminationGracePeriodSeconds,
+			ActiveDeadlineSeconds:         &activeDeadlineSeconds,
 		},
 	}
-	versionedObjToUpdate := &v1.Service{}
-	versionedObj := &v1.Service{}
+	versionedObjToUpdate := &examplev1.Pod{}
+	schemaReferenceObj := &examplev1.Pod{}
 
-	patchJS := []byte(`{"spec":{"ports":[{"port":80,"nodePort":31789}]}}`)
+	patchJS := []byte(`{"spec":{"terminationGracePeriodSeconds":42,"activeDeadlineSeconds":120}}`)
 
-	_, _, err := strategicPatchObject(codec, defaulter, currentVersionedObject, patchJS, versionedObjToUpdate, versionedObj)
+	err := strategicPatchObject(codec, defaulter, currentVersionedObject, patchJS, versionedObjToUpdate, schemaReferenceObj)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ports := versionedObjToUpdate.Spec.Ports
-	if len(ports) != 1 || ports[0].Port != 80 || ports[0].NodePort != 31789 {
+	if versionedObjToUpdate.Spec.TerminationGracePeriodSeconds == nil || *versionedObjToUpdate.Spec.TerminationGracePeriodSeconds != 42 ||
+		versionedObjToUpdate.Spec.ActiveDeadlineSeconds == nil || *versionedObjToUpdate.Spec.ActiveDeadlineSeconds != 120 {
 		t.Fatal(errors.New("Ports failed to merge because of number conversion issue"))
 	}
+}
+
+func TestPatchResourceNumberConversion(t *testing.T) {
+	namespace := "bar"
+	name := "foo"
+	uid := types.UID("uid")
+	fifteen := int64(15)
+	thirty := int64(30)
+
+	tc := &patchTestCase{
+		name: "TestPatchResourceNumberConversion",
+
+		startingPod: &example.Pod{},
+		changedPod:  &example.Pod{},
+		updatePod:   &example.Pod{},
+
+		expectedPod: &example.Pod{},
+	}
+
+	setTcPod(tc.startingPod, name, namespace, uid, "1", examplev1.SchemeGroupVersion.String(), &fifteen, "")
+
+	// Patch tries to change to 30.
+	setTcPod(tc.changedPod, name, namespace, uid, "1", examplev1.SchemeGroupVersion.String(), &thirty, "")
+
+	// Someone else already changed it to 30.
+	// This should be fine since it's not a "meaningful conflict".
+	// Previously this was detected as a meaningful conflict because int64(30) != float64(30).
+	setTcPod(tc.updatePod, name, namespace, uid, "2", examplev1.SchemeGroupVersion.String(), &thirty, "anywhere")
+
+	setTcPod(tc.expectedPod, name, namespace, uid, "2", "", &thirty, "anywhere")
+
+	tc.Run(t)
 }
 
 func TestPatchResourceWithVersionConflict(t *testing.T) {
@@ -334,41 +522,87 @@ func TestPatchResourceWithVersionConflict(t *testing.T) {
 	tc := &patchTestCase{
 		name: "TestPatchResourceWithVersionConflict",
 
-		startingPod: &api.Pod{},
-		changedPod:  &api.Pod{},
-		updatePod:   &api.Pod{},
+		startingPod: &example.Pod{},
+		changedPod:  &example.Pod{},
+		updatePod:   &example.Pod{},
 
-		expectedPod: &api.Pod{},
+		expectedPod: &example.Pod{},
 	}
 
+	setTcPod(tc.startingPod, name, namespace, uid, "1", examplev1.SchemeGroupVersion.String(), &fifteen, "")
+
+	setTcPod(tc.changedPod, name, namespace, uid, "1", examplev1.SchemeGroupVersion.String(), &thirty, "")
+
+	setTcPod(tc.updatePod, name, namespace, uid, "2", examplev1.SchemeGroupVersion.String(), &fifteen, "anywhere")
+
+	setTcPod(tc.expectedPod, name, namespace, uid, "2", "", &thirty, "anywhere")
+
+	tc.Run(t)
+}
+
+func TestPatchResourceWithStaleVersionConflict(t *testing.T) {
+	namespace := "bar"
+	name := "foo"
+	uid := types.UID("uid")
+
+	tc := &patchTestCase{
+		name: "TestPatchResourceWithStaleVersionConflict",
+
+		startingPod: &example.Pod{},
+		updatePod:   &example.Pod{},
+
+		expectedError: `Operation cannot be fulfilled on pods.example.apiserver.k8s.io "foo": existing 2, new 1`,
+		expectedTries: 1,
+	}
+
+	// starting pod is at rv=2
 	tc.startingPod.Name = name
 	tc.startingPod.Namespace = namespace
 	tc.startingPod.UID = uid
-	tc.startingPod.ResourceVersion = "1"
-	tc.startingPod.APIVersion = "v1"
-	tc.startingPod.Spec.ActiveDeadlineSeconds = &fifteen
+	tc.startingPod.ResourceVersion = "2"
+	tc.startingPod.APIVersion = examplev1.SchemeGroupVersion.String()
+	// same pod is still in place when attempting to persist the update
+	tc.updatePod = tc.startingPod
 
-	tc.changedPod.Name = name
-	tc.changedPod.Namespace = namespace
-	tc.changedPod.UID = uid
-	tc.changedPod.ResourceVersion = "1"
-	tc.changedPod.APIVersion = "v1"
-	tc.changedPod.Spec.ActiveDeadlineSeconds = &thirty
+	// patches are submitted with a stale rv=1
+	tc.mergePatch = `{"metadata":{"resourceVersion":"1"},"spec":{"nodeName":"foo"}}`
+	tc.strategicMergePatch = `{"metadata":{"resourceVersion":"1"},"spec":{"nodeName":"foo"}}`
 
+	tc.Run(t)
+}
+
+func TestPatchResourceWithRacingVersionConflict(t *testing.T) {
+	namespace := "bar"
+	name := "foo"
+	uid := types.UID("uid")
+
+	tc := &patchTestCase{
+		name: "TestPatchResourceWithRacingVersionConflict",
+
+		startingPod: &example.Pod{},
+		updatePod:   &example.Pod{},
+
+		expectedError: `Operation cannot be fulfilled on pods.example.apiserver.k8s.io "foo": existing 3, new 2`,
+		expectedTries: 2,
+	}
+
+	// starting pod is at rv=2
+	tc.startingPod.Name = name
+	tc.startingPod.Namespace = namespace
+	tc.startingPod.UID = uid
+	tc.startingPod.ResourceVersion = "2"
+	tc.startingPod.APIVersion = examplev1.SchemeGroupVersion.String()
+
+	// pod with rv=3 is found when attempting to persist the update
 	tc.updatePod.Name = name
 	tc.updatePod.Namespace = namespace
 	tc.updatePod.UID = uid
-	tc.updatePod.ResourceVersion = "2"
-	tc.updatePod.APIVersion = "v1"
-	tc.updatePod.Spec.ActiveDeadlineSeconds = &fifteen
-	tc.updatePod.Spec.NodeName = "anywhere"
+	tc.updatePod.ResourceVersion = "3"
+	tc.updatePod.APIVersion = examplev1.SchemeGroupVersion.String()
 
-	tc.expectedPod.Name = name
-	tc.expectedPod.Namespace = namespace
-	tc.expectedPod.UID = uid
-	tc.expectedPod.ResourceVersion = "2"
-	tc.expectedPod.Spec.ActiveDeadlineSeconds = &thirty
-	tc.expectedPod.Spec.NodeName = "anywhere"
+	// patches are submitted with a rv=2
+	tc.mergePatch = `{"metadata":{"resourceVersion":"2"},"spec":{"nodeName":"foo"}}`
+	tc.strategicMergePatch = `{"metadata":{"resourceVersion":"2"},"spec":{"nodeName":"foo"}}`
 
 	tc.Run(t)
 }
@@ -381,33 +615,26 @@ func TestPatchResourceWithConflict(t *testing.T) {
 	tc := &patchTestCase{
 		name: "TestPatchResourceWithConflict",
 
-		startingPod: &api.Pod{},
-		changedPod:  &api.Pod{},
-		updatePod:   &api.Pod{},
-
-		expectedError: `Operation cannot be fulfilled on pods "foo": existing 2, new 1`,
+		startingPod: &example.Pod{},
+		changedPod:  &example.Pod{},
+		updatePod:   &example.Pod{},
+		expectedPod: &example.Pod{},
 	}
 
-	tc.startingPod.Name = name
-	tc.startingPod.Namespace = namespace
-	tc.startingPod.UID = uid
-	tc.startingPod.ResourceVersion = "1"
-	tc.startingPod.APIVersion = "v1"
-	tc.startingPod.Spec.NodeName = "here"
+	// See issue #63104 for discussion of how much sense this makes.
 
-	tc.changedPod.Name = name
-	tc.changedPod.Namespace = namespace
-	tc.changedPod.UID = uid
-	tc.changedPod.ResourceVersion = "1"
-	tc.changedPod.APIVersion = "v1"
-	tc.changedPod.Spec.NodeName = "there"
+	setTcPod(tc.startingPod, name, namespace, uid, "1", examplev1.SchemeGroupVersion.String(), nil, "here")
 
-	tc.updatePod.Name = name
-	tc.updatePod.Namespace = namespace
-	tc.updatePod.UID = uid
-	tc.updatePod.ResourceVersion = "2"
-	tc.updatePod.APIVersion = "v1"
-	tc.updatePod.Spec.NodeName = "anywhere"
+	setTcPod(tc.changedPod, name, namespace, uid, "1", examplev1.SchemeGroupVersion.String(), nil, "there")
+
+	setTcPod(tc.updatePod, name, namespace, uid, "2", examplev1.SchemeGroupVersion.String(), nil, "anywhere")
+
+	tc.expectedPod.Name = name
+	tc.expectedPod.Namespace = namespace
+	tc.expectedPod.UID = uid
+	tc.expectedPod.ResourceVersion = "2"
+	tc.expectedPod.APIVersion = examplev1.SchemeGroupVersion.String()
+	tc.expectedPod.Spec.NodeName = "there"
 
 	tc.Run(t)
 }
@@ -419,35 +646,61 @@ func TestPatchWithAdmissionRejection(t *testing.T) {
 	fifteen := int64(15)
 	thirty := int64(30)
 
-	tc := &patchTestCase{
-		name: "TestPatchWithAdmissionRejection",
-
-		admit: func(updatedObject runtime.Object, currentObject runtime.Object) error {
-			return errors.New("admission failure")
-		},
-
-		startingPod: &api.Pod{},
-		changedPod:  &api.Pod{},
-		updatePod:   &api.Pod{},
-
-		expectedError: "admission failure",
+	type Test struct {
+		name                string
+		admissionMutation   mutateObjectUpdateFunc
+		admissionValidation rest.ValidateObjectUpdateFunc
+		expectedError       string
 	}
+	for _, test := range []Test{
+		{
+			name: "TestPatchWithMutatingAdmissionRejection",
+			admissionMutation: func(updatedObject runtime.Object, currentObject runtime.Object) error {
+				return errors.New("mutating admission failure")
+			},
+			admissionValidation: rest.ValidateAllObjectUpdateFunc,
+			expectedError:       "mutating admission failure",
+		},
+		{
+			name:              "TestPatchWithValidatingAdmissionRejection",
+			admissionMutation: rest.ValidateAllObjectUpdateFunc,
+			admissionValidation: func(updatedObject runtime.Object, currentObject runtime.Object) error {
+				return errors.New("validating admission failure")
+			},
+			expectedError: "validating admission failure",
+		},
+		{
+			name: "TestPatchWithBothAdmissionRejections",
+			admissionMutation: func(updatedObject runtime.Object, currentObject runtime.Object) error {
+				return errors.New("mutating admission failure")
+			},
+			admissionValidation: func(updatedObject runtime.Object, currentObject runtime.Object) error {
+				return errors.New("validating admission failure")
+			},
+			expectedError: "mutating admission failure",
+		},
+	} {
+		tc := &patchTestCase{
+			name: test.name,
 
-	tc.startingPod.Name = name
-	tc.startingPod.Namespace = namespace
-	tc.startingPod.UID = uid
-	tc.startingPod.ResourceVersion = "1"
-	tc.startingPod.APIVersion = "v1"
-	tc.startingPod.Spec.ActiveDeadlineSeconds = &fifteen
+			admissionMutation:   test.admissionMutation,
+			admissionValidation: test.admissionValidation,
 
-	tc.changedPod.Name = name
-	tc.changedPod.Namespace = namespace
-	tc.changedPod.UID = uid
-	tc.changedPod.ResourceVersion = "1"
-	tc.changedPod.APIVersion = "v1"
-	tc.changedPod.Spec.ActiveDeadlineSeconds = &thirty
+			startingPod: &example.Pod{},
+			changedPod:  &example.Pod{},
+			updatePod:   &example.Pod{},
 
-	tc.Run(t)
+			expectedError: test.expectedError,
+		}
+
+		setTcPod(tc.startingPod, name, namespace, uid, "1", examplev1.SchemeGroupVersion.String(), &fifteen, "")
+
+		setTcPod(tc.changedPod, name, namespace, uid, "1", examplev1.SchemeGroupVersion.String(), &thirty, "")
+
+		setTcPod(tc.updatePod, name, namespace, uid, "1", examplev1.SchemeGroupVersion.String(), &fifteen, "")
+
+		tc.Run(t)
+	}
 }
 
 func TestPatchWithVersionConflictThenAdmissionFailure(t *testing.T) {
@@ -461,7 +714,7 @@ func TestPatchWithVersionConflictThenAdmissionFailure(t *testing.T) {
 	tc := &patchTestCase{
 		name: "TestPatchWithVersionConflictThenAdmissionFailure",
 
-		admit: func(updatedObject runtime.Object, currentObject runtime.Object) error {
+		admissionMutation: func(updatedObject runtime.Object, currentObject runtime.Object) error {
 			if seen {
 				return errors.New("admission failure")
 			}
@@ -470,34 +723,18 @@ func TestPatchWithVersionConflictThenAdmissionFailure(t *testing.T) {
 			return nil
 		},
 
-		startingPod: &api.Pod{},
-		changedPod:  &api.Pod{},
-		updatePod:   &api.Pod{},
+		startingPod: &example.Pod{},
+		changedPod:  &example.Pod{},
+		updatePod:   &example.Pod{},
 
 		expectedError: "admission failure",
 	}
 
-	tc.startingPod.Name = name
-	tc.startingPod.Namespace = namespace
-	tc.startingPod.UID = uid
-	tc.startingPod.ResourceVersion = "1"
-	tc.startingPod.APIVersion = "v1"
-	tc.startingPod.Spec.ActiveDeadlineSeconds = &fifteen
+	setTcPod(tc.startingPod, name, namespace, uid, "1", examplev1.SchemeGroupVersion.String(), &fifteen, "")
 
-	tc.changedPod.Name = name
-	tc.changedPod.Namespace = namespace
-	tc.changedPod.UID = uid
-	tc.changedPod.ResourceVersion = "1"
-	tc.changedPod.APIVersion = "v1"
-	tc.changedPod.Spec.ActiveDeadlineSeconds = &thirty
+	setTcPod(tc.changedPod, name, namespace, uid, "1", examplev1.SchemeGroupVersion.String(), &thirty, "")
 
-	tc.updatePod.Name = name
-	tc.updatePod.Namespace = namespace
-	tc.updatePod.UID = uid
-	tc.updatePod.ResourceVersion = "2"
-	tc.updatePod.APIVersion = "v1"
-	tc.updatePod.Spec.ActiveDeadlineSeconds = &fifteen
-	tc.updatePod.Spec.NodeName = "anywhere"
+	setTcPod(tc.updatePod, name, namespace, uid, "2", examplev1.SchemeGroupVersion.String(), &fifteen, "anywhere")
 
 	tc.Run(t)
 }
@@ -508,10 +745,10 @@ func TestHasUID(t *testing.T) {
 		hasUID bool
 	}{
 		{obj: nil, hasUID: false},
-		{obj: &api.Pod{}, hasUID: false},
+		{obj: &example.Pod{}, hasUID: false},
 		{obj: nil, hasUID: false},
 		{obj: runtime.Object(nil), hasUID: false},
-		{obj: &api.Pod{ObjectMeta: metav1.ObjectMeta{UID: types.UID("A")}}, hasUID: true},
+		{obj: &example.Pod{ObjectMeta: metav1.ObjectMeta{UID: types.UID("A")}}, hasUID: true},
 	}
 	for i, tc := range testcases {
 		actual, err := hasUID(tc.obj)
@@ -534,5 +771,80 @@ func TestParseTimeout(t *testing.T) {
 	}
 	if d := parseTimeout("10s"); d != 10*time.Second {
 		t.Errorf("10s timeout produced: %v", d)
+	}
+}
+
+func TestFinishRequest(t *testing.T) {
+	exampleObj := &example.Pod{}
+	exampleErr := fmt.Errorf("error")
+	successStatusObj := &metav1.Status{Status: metav1.StatusSuccess, Message: "success message"}
+	errorStatusObj := &metav1.Status{Status: metav1.StatusFailure, Message: "error message"}
+	testcases := []struct {
+		timeout     time.Duration
+		fn          resultFunc
+		expectedObj runtime.Object
+		expectedErr error
+	}{
+		{
+			// Expected obj is returned.
+			timeout: time.Second,
+			fn: func() (runtime.Object, error) {
+				return exampleObj, nil
+			},
+			expectedObj: exampleObj,
+			expectedErr: nil,
+		},
+		{
+			// Expected error is returned.
+			timeout: time.Second,
+			fn: func() (runtime.Object, error) {
+				return nil, exampleErr
+			},
+			expectedObj: nil,
+			expectedErr: exampleErr,
+		},
+		{
+			// Successful status object is returned as expected.
+			timeout: time.Second,
+			fn: func() (runtime.Object, error) {
+				return successStatusObj, nil
+			},
+			expectedObj: successStatusObj,
+			expectedErr: nil,
+		},
+		{
+			// Error status object is converted to StatusError.
+			timeout: time.Second,
+			fn: func() (runtime.Object, error) {
+				return errorStatusObj, nil
+			},
+			expectedObj: nil,
+			expectedErr: apierrors.FromObject(errorStatusObj),
+		},
+	}
+	for i, tc := range testcases {
+		obj, err := finishRequest(tc.timeout, tc.fn)
+		if (err == nil && tc.expectedErr != nil) || (err != nil && tc.expectedErr == nil) || (err != nil && tc.expectedErr != nil && err.Error() != tc.expectedErr.Error()) {
+			t.Errorf("%d: unexpected err. expected: %v, got: %v", i, tc.expectedErr, err)
+		}
+		if !apiequality.Semantic.DeepEqual(obj, tc.expectedObj) {
+			t.Errorf("%d: unexpected obj. expected %#v, got %#v", i, tc.expectedObj, obj)
+		}
+	}
+}
+
+func setTcPod(tcPod *example.Pod, name string, namespace string, uid types.UID, resourceVersion string, apiVersion string, activeDeadlineSeconds *int64, nodeName string) {
+	tcPod.Name = name
+	tcPod.Namespace = namespace
+	tcPod.UID = uid
+	tcPod.ResourceVersion = resourceVersion
+	if len(apiVersion) != 0 {
+		tcPod.APIVersion = apiVersion
+	}
+	if activeDeadlineSeconds != nil {
+		tcPod.Spec.ActiveDeadlineSeconds = activeDeadlineSeconds
+	}
+	if len(nodeName) != 0 {
+		tcPod.Spec.NodeName = nodeName
 	}
 }

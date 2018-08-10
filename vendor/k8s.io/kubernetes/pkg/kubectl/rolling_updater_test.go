@@ -36,11 +36,13 @@ import (
 	restclient "k8s.io/client-go/rest"
 	manualfake "k8s.io/client-go/rest/fake"
 	testcore "k8s.io/client-go/testing"
-	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	"k8s.io/kubernetes/pkg/api/testapi"
 	apitesting "k8s.io/kubernetes/pkg/api/testing"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/fake"
+	"k8s.io/kubernetes/pkg/kubectl/util"
 )
 
 func oldRc(replicas int, original int) *api.ReplicationController {
@@ -1076,7 +1078,7 @@ func TestRollingUpdater_multipleContainersInPod(t *testing.T) {
 
 		codec := testapi.Default.Codec()
 
-		deploymentHash, err := api.HashObject(test.newRc, codec)
+		deploymentHash, err := util.HashObject(test.newRc, codec)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -1258,7 +1260,6 @@ func TestFindSourceController(t *testing.T) {
 	tests := []struct {
 		list               *api.ReplicationControllerList
 		expectedController *api.ReplicationController
-		err                error
 		name               string
 		expectError        bool
 	}{
@@ -1467,8 +1468,8 @@ func TestUpdateRcWithRetries(t *testing.T) {
 		{StatusCode: 200, Header: header, Body: objBody(codec, rc)},
 	}
 	fakeClient := &manualfake.RESTClient{
-		APIRegistry:          api.Registry,
-		NegotiatedSerializer: testapi.Default.NegotiatedSerializer(),
+		GroupVersion:         schema.GroupVersion{Group: "", Version: "v1"},
+		NegotiatedSerializer: legacyscheme.Codecs,
 		Client: manualfake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
 			switch p, m := req.URL.Path, req.Method; {
 			case p == testapi.Default.ResourcePath("replicationcontrollers", "default", "rc") && m == "PUT":
@@ -1494,13 +1495,13 @@ func TestUpdateRcWithRetries(t *testing.T) {
 			}
 		}),
 	}
-	clientConfig := &restclient.Config{APIPath: "/api", ContentConfig: restclient.ContentConfig{NegotiatedSerializer: api.Codecs, GroupVersion: &api.Registry.GroupOrDie(api.GroupName).GroupVersion}}
+	clientConfig := &restclient.Config{APIPath: "/api", ContentConfig: restclient.ContentConfig{NegotiatedSerializer: legacyscheme.Codecs, GroupVersion: &schema.GroupVersion{Group: "", Version: "v1"}}}
 	restClient, _ := restclient.RESTClientFor(clientConfig)
 	restClient.Client = fakeClient.Client
 	clientset := internalclientset.New(restClient)
 
 	if rc, err := updateRcWithRetries(
-		clientset, "default", rc, func(c *api.ReplicationController) {
+		clientset.Core(), "default", rc, func(c *api.ReplicationController) {
 			c.Spec.Selector["baz"] = "foobar"
 		}); err != nil {
 		t.Errorf("unexpected error: %v", err)
@@ -1560,8 +1561,8 @@ func TestAddDeploymentHash(t *testing.T) {
 	seen := sets.String{}
 	updatedRc := false
 	fakeClient := &manualfake.RESTClient{
-		APIRegistry:          api.Registry,
-		NegotiatedSerializer: testapi.Default.NegotiatedSerializer(),
+		GroupVersion:         schema.GroupVersion{Group: "", Version: "v1"},
+		NegotiatedSerializer: legacyscheme.Codecs,
 		Client: manualfake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
 			header := http.Header{}
 			header.Set("Content-Type", runtime.ContentTypeJSON)
@@ -1595,7 +1596,7 @@ func TestAddDeploymentHash(t *testing.T) {
 			}
 		}),
 	}
-	clientConfig := &restclient.Config{APIPath: "/api", ContentConfig: restclient.ContentConfig{NegotiatedSerializer: api.Codecs, GroupVersion: &api.Registry.GroupOrDie(api.GroupName).GroupVersion}}
+	clientConfig := &restclient.Config{APIPath: "/api", ContentConfig: restclient.ContentConfig{NegotiatedSerializer: legacyscheme.Codecs, GroupVersion: &schema.GroupVersion{Group: "", Version: "v1"}}}
 	restClient, _ := restclient.RESTClientFor(clientConfig)
 	restClient.Client = fakeClient.Client
 	clientset := internalclientset.New(restClient)
@@ -1654,7 +1655,7 @@ func TestRollingUpdater_readyPods(t *testing.T) {
 		oldPods []bool
 		newPods []bool
 		// deletions - should be less then the size of the respective slice above
-		// eg. len(oldPods) > oldPodDeletions && len(newPods) > newPodDeletions
+		// e.g. len(oldPods) > oldPodDeletions && len(newPods) > newPodDeletions
 		oldPodDeletions int
 		newPodDeletions int
 		// specify additional time to wait for deployment to wait on top of the

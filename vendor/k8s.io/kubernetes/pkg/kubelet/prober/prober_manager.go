@@ -20,15 +20,26 @@ import (
 	"sync"
 
 	"github.com/golang/glog"
+	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/kubernetes/pkg/api/v1"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/prober/results"
 	"k8s.io/kubernetes/pkg/kubelet/status"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
+)
+
+// ProberResults stores the results of a probe as prometheus metrics.
+var ProberResults = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Subsystem: "prober",
+		Name:      "probe_result",
+		Help:      "The result of a liveness or readiness probe for a container.",
+	},
+	[]string{"probe_type", "container_name", "pod_name", "namespace", "pod_uid"},
 )
 
 // Manager manages pod probing. It creates a probe "worker" for every container that specifies a

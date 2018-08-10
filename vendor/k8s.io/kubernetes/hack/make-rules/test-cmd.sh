@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2014 The Kubernetes Authors.
 #
@@ -34,20 +34,26 @@ function run_kube_apiserver() {
   kube::log::status "Starting kube-apiserver"
 
   # Admission Controllers to invoke prior to persisting objects in cluster
-  ADMISSION_CONTROL="NamespaceLifecycle,LimitRanger,ResourceQuota"
+  ENABLE_ADMISSION_PLUGINS="Initializers,LimitRanger,ResourceQuota"
+  DISABLE_ADMISSION_PLUGINS="ServiceAccount,PersistentVolumeLabel,DefaultStorageClass,DefaultTolerationSeconds,MutatingAdmissionWebhook,ValidatingAdmissionWebhook"
+
+  # Include RBAC (to exercise bootstrapping), and AlwaysAllow to allow all actions
+  AUTHORIZATION_MODE="RBAC,AlwaysAllow"
 
   "${KUBE_OUTPUT_HOSTBIN}/kube-apiserver" \
-    --address="127.0.0.1" \
-    --public-address-override="127.0.0.1" \
-    --port="${API_PORT}" \
-    --admission-control="${ADMISSION_CONTROL}" \
+    --insecure-bind-address="127.0.0.1" \
+    --bind-address="127.0.0.1" \
+    --insecure-port="${API_PORT}" \
+    --authorization-mode="${AUTHORIZATION_MODE}" \
+    --secure-port="${SECURE_API_PORT}" \
+    --enable-admission-plugins="${ENABLE_ADMISSION_PLUGINS}" \
+    --disable-admission-plugins="${DISABLE_ADMISSION_PLUGINS}" \
     --etcd-servers="http://${ETCD_HOST}:${ETCD_PORT}" \
-    --public-address-override="127.0.0.1" \
-    --kubelet-port=${KUBELET_PORT} \
     --runtime-config=api/v1 \
     --storage-media-type="${KUBE_TEST_API_STORAGE_TYPE-}" \
     --cert-dir="${TMPDIR:-/tmp/}" \
-    --service-cluster-ip-range="10.0.0.0/24" 1>&2 &
+    --service-cluster-ip-range="10.0.0.0/24" \
+    --token-auth-file=hack/testdata/auth-tokens.csv 1>&2 &
   APISERVER_PID=$!
 
   kube::util::wait_for_url "http://127.0.0.1:${API_PORT}/healthz" "apiserver"

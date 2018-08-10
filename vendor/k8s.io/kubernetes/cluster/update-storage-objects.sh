@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2015 The Kubernetes Authors.
 #
@@ -19,7 +19,7 @@
 # they are written using the latest API version.
 #
 # Steps to use this script to upgrade the cluster to a new version:
-# https://github.com/kubernetes/kubernetes/blob/master/docs/cluster_management.md#updgrading-to-a-different-api-version
+# https://kubernetes.io/docs/tasks/administer-cluster/cluster-management/#upgrading-to-a-different-api-version
 
 set -o errexit
 set -o nounset
@@ -48,6 +48,12 @@ declare -a resources=(
     "services"
     "jobs"
     "horizontalpodautoscalers"
+    "storageclasses"
+    "roles.rbac.authorization.k8s.io"
+    "rolebindings.rbac.authorization.k8s.io"
+    "clusterroles.rbac.authorization.k8s.io"
+    "clusterrolebindings.rbac.authorization.k8s.io"
+    "networkpolicies.networking.k8s.io"
 )
 
 # Find all the namespaces.
@@ -98,7 +104,8 @@ do
           # This happens when the instance has been deleted. We can hence ignore
           # this instance.
           echo "Looks like ${instance} got deleted. Ignoring it"
-          continue
+          success=1
+          break
         fi
         output=$("${KUBECTL}" replace -f "${filename}" --namespace="${namespace}") || true
         rm "${filename}"

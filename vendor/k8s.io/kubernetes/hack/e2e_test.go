@@ -63,13 +63,23 @@ func TestParse(t *testing.T) {
 		err      error
 	}{
 		{
+			[]string{"foo", "-v=false"},
+			flags{getDefault, oldDefault, []string{"--verbose-commands=false"}},
+			nil,
+		},
+		{
+			[]string{"foo", "-v"},
+			flags{getDefault, oldDefault, []string{"--verbose-commands=true"}},
+			nil,
+		},
+		{
 			[]string{"hello", "world"},
-			flags{getDefault, oldDefault, []string{"world"}},
+			flags{getDefault, oldDefault, []string{"--verbose-commands=true", "world"}},
 			nil,
 		},
 		{
 			[]string{"hello", "--", "--venus", "--karaoke"},
-			flags{getDefault, oldDefault, []string{"--venus", "--karaoke"}},
+			flags{getDefault, oldDefault, []string{"--verbose-commands=true", "--venus", "--karaoke"}},
 			nil,
 		},
 		{
@@ -84,12 +94,12 @@ func TestParse(t *testing.T) {
 		},
 		{
 			[]string{"omg", "--get=false", "--", "ugh"},
-			flags{false, oldDefault, []string{"ugh"}},
+			flags{false, oldDefault, []string{"--verbose-commands=true", "ugh"}},
 			nil,
 		},
 		{
 			[]string{"wee", "--old=5m", "--get"},
-			flags{true, 5 * time.Minute, []string{}},
+			flags{true, 5 * time.Minute, []string{"--verbose-commands=true"}},
 			nil,
 		},
 		{
@@ -104,7 +114,7 @@ func TestParse(t *testing.T) {
 		},
 		{
 			[]string{"wut", "--", "-h"},
-			flags{getDefault, oldDefault, []string{"-h"}},
+			flags{getDefault, oldDefault, []string{"--verbose-commands=true", "-h"}},
 			nil,
 		},
 	}
@@ -190,10 +200,12 @@ func TestGetKubetest(t *testing.T) {
 	p := "PATH"
 	pk := filepath.Join(p, "kubetest")
 	eu := errors.New("upgrade failed")
+	euVerbose := fmt.Errorf("go get -u k8s.io/test-infra/kubetest: %v", eu)
 	et := errors.New("touch failed")
 	cases := []struct {
-		get bool
-		old time.Duration
+		name string
+		get  bool
+		old  time.Duration
 
 		stat     string        // stat succeeds on this file
 		path     bool          // file exists on path
@@ -205,7 +217,7 @@ func TestGetKubetest(t *testing.T) {
 		returnPath  string
 		returnError error
 	}{
-		{ // 0: Pass when on GOPATH/bin
+		{name: "0: Pass when on GOPATH/bin",
 			get: false,
 			old: 0,
 
@@ -219,7 +231,7 @@ func TestGetKubetest(t *testing.T) {
 			returnPath:  gpk,
 			returnError: nil,
 		},
-		{ // 1: Pass when on PATH
+		{name: "1: Pass when on PATH",
 			get: false,
 			old: 0,
 
@@ -233,7 +245,7 @@ func TestGetKubetest(t *testing.T) {
 			returnPath:  pk,
 			returnError: nil,
 		},
-		{ // 2: Don't upgrade if on PATH and GOPATH is ""
+		{name: "2: Don't upgrade if on PATH and GOPATH is ''",
 			get: true,
 			old: 0,
 
@@ -247,7 +259,7 @@ func TestGetKubetest(t *testing.T) {
 			returnPath:  pk,
 			returnError: nil,
 		},
-		{ // 3: Don't upgrade on PATH when young.
+		{name: "3: Don't upgrade on PATH when young.",
 			get: true,
 			old: time.Hour,
 
@@ -261,7 +273,7 @@ func TestGetKubetest(t *testing.T) {
 			returnPath:  pk,
 			returnError: nil,
 		},
-		{ // 4: Upgrade if old but GOPATH is set.
+		{name: "4: Upgrade if old but GOPATH is set.",
 			get: true,
 			old: 0,
 
@@ -275,7 +287,7 @@ func TestGetKubetest(t *testing.T) {
 			returnPath:  pk,
 			returnError: nil,
 		},
-		{ // 5: Fail if upgrade fails
+		{name: "5: Fail if upgrade fails",
 			get: true,
 			old: 0,
 
@@ -287,9 +299,9 @@ func TestGetKubetest(t *testing.T) {
 			goPath:   gpk,
 
 			returnPath:  "",
-			returnError: eu,
+			returnError: euVerbose,
 		},
-		{ // 6: Fail if touch fails
+		{name: "6: Fail if touch fails",
 			get: true,
 			old: 0,
 
@@ -309,21 +321,21 @@ func TestGetKubetest(t *testing.T) {
 		didUp := false
 		didTouch := false
 		l := tester{
-			func(p string) (os.FileInfo, error) {
+			stat: func(p string) (os.FileInfo, error) {
 				// stat
 				if p != c.stat {
 					return nil, fmt.Errorf("Failed to find %s", p)
 				}
 				return FileInfo{time.Now().Add(c.age * -1)}, nil
 			},
-			func(name string) (string, error) {
+			lookPath: func(name string) (string, error) {
 				if c.path {
 					return filepath.Join(p, name), nil
 				}
 				return "", fmt.Errorf("Not on path: %s", name)
 			},
-			c.goPath,
-			func(cmd string, args ...string) error {
+			goPath: c.goPath,
+			wait: func(cmd string, args ...string) error {
 				if cmd == "go" {
 					if c.upgraded {
 						didUp = true
@@ -338,14 +350,24 @@ func TestGetKubetest(t *testing.T) {
 				return et
 			},
 		}
-		if p, e := l.getKubetest(c.get, c.old); p != c.returnPath || e != c.returnError {
-			t.Errorf("%d: c=%v p=%v e=%v", i, c, p, e)
+		p, e := l.getKubetest(c.get, c.old)
+		if p != c.returnPath {
+			t.Errorf("%d: test=%q returnPath %q != %q", i, c.name, p, c.returnPath)
+		}
+		if e == nil || c.returnError == nil {
+			if e != c.returnError {
+				t.Errorf("%d: test=%q returnError %q != %q", i, c.name, e, c.returnError)
+			}
+		} else {
+			if e.Error() != c.returnError.Error() {
+				t.Errorf("%d: test=%q returnError %q != %q", i, c.name, e, c.returnError)
+			}
 		}
 		if didUp != c.upgraded {
-			t.Errorf("%d: bad upgrade state of %v", i, didUp)
+			t.Errorf("%d: test=%q bad upgrade state of %v", i, c.name, didUp)
 		}
 		if didTouch != c.touched {
-			t.Errorf("%d: bad touch state of %v", i, didTouch)
+			t.Errorf("%d: test=%q bad touch state of %v", i, c.name, didTouch)
 		}
 	}
 }

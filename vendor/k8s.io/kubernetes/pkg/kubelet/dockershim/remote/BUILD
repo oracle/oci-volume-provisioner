@@ -1,7 +1,5 @@
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])
-
 load(
     "@io_bazel_rules_go//go:def.bzl",
     "go_library",
@@ -9,20 +7,14 @@ load(
 
 go_library(
     name = "go_default_library",
-    srcs = [
-        "docker_server.go",
-        "docker_service.go",
-    ],
-    tags = ["automanaged"],
+    srcs = ["docker_server.go"],
+    importpath = "k8s.io/kubernetes/pkg/kubelet/dockershim/remote",
     deps = [
-        "//pkg/kubelet/api:go_default_library",
-        "//pkg/kubelet/api/v1alpha1/runtime:go_default_library",
+        "//pkg/kubelet/apis/cri/runtime/v1alpha2:go_default_library",
         "//pkg/kubelet/dockershim:go_default_library",
-        "//pkg/util/exec:go_default_library",
-        "//pkg/util/interrupt:go_default_library",
-        "//vendor:github.com/golang/glog",
-        "//vendor:golang.org/x/net/context",
-        "//vendor:google.golang.org/grpc",
+        "//pkg/kubelet/util:go_default_library",
+        "//vendor/github.com/golang/glog:go_default_library",
+        "//vendor/google.golang.org/grpc:go_default_library",
     ],
 )
 

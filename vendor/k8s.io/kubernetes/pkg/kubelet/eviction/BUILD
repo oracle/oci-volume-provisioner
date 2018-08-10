@@ -1,24 +1,9 @@
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])
-
 load(
     "@io_bazel_rules_go//go:def.bzl",
-    "cgo_genrule",
     "go_library",
     "go_test",
-)
-
-cgo_genrule(
-    name = "cgo_codegen",
-    srcs = ["threshold_notifier_linux.go"],
-    clinkopts = [
-        "-lz",
-        "-lm",
-        "-lpthread",
-        "-ldl",
-    ],
-    tags = ["automanaged"],
 )
 
 go_test(
@@ -26,25 +11,25 @@ go_test(
     srcs = [
         "eviction_manager_test.go",
         "helpers_test.go",
+        "memory_threshold_notifier_test.go",
+        "mock_threshold_notifier_test.go",
     ],
-    library = ":go_default_library",
-    tags = ["automanaged"],
+    embed = [":go_default_library"],
     deps = [
-        "//pkg/api:go_default_library",
-        "//pkg/api/v1:go_default_library",
-        "//pkg/kubelet/api/v1alpha1/stats:go_default_library",
-        "//pkg/kubelet/cm:go_default_library",
+        "//pkg/apis/core:go_default_library",
+        "//pkg/features:go_default_library",
+        "//pkg/kubelet/apis/stats/v1alpha1:go_default_library",
         "//pkg/kubelet/eviction/api:go_default_library",
         "//pkg/kubelet/lifecycle:go_default_library",
         "//pkg/kubelet/types:go_default_library",
-        "//pkg/quota:go_default_library",
-        "//vendor:k8s.io/apimachinery/pkg/api/resource",
-        "//vendor:k8s.io/apimachinery/pkg/apis/meta/v1",
-        "//vendor:k8s.io/apimachinery/pkg/types",
-        "//vendor:k8s.io/apiserver/pkg/util/feature",
-        "//vendor:k8s.io/client-go/pkg/api/v1",
-        "//vendor:k8s.io/client-go/tools/record",
-        "//vendor:k8s.io/client-go/util/clock",
+        "//vendor/github.com/stretchr/testify/mock:go_default_library",
+        "//vendor/k8s.io/api/core/v1:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/api/resource:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/types:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/util/clock:go_default_library",
+        "//vendor/k8s.io/apiserver/pkg/util/feature:go_default_library",
+        "//vendor/k8s.io/client-go/tools/record:go_default_library",
     ],
 )
 
@@ -54,34 +39,74 @@ go_library(
         "doc.go",
         "eviction_manager.go",
         "helpers.go",
+        "memory_threshold_notifier.go",
         "types.go",
-    ],
-    library = ":cgo_codegen",
-    tags = ["automanaged"],
+    ] + select({
+        "@io_bazel_rules_go//go/platform:android": [
+            "threshold_notifier_unsupported.go",
+        ],
+        "@io_bazel_rules_go//go/platform:darwin": [
+            "threshold_notifier_unsupported.go",
+        ],
+        "@io_bazel_rules_go//go/platform:dragonfly": [
+            "threshold_notifier_unsupported.go",
+        ],
+        "@io_bazel_rules_go//go/platform:freebsd": [
+            "threshold_notifier_unsupported.go",
+        ],
+        "@io_bazel_rules_go//go/platform:linux": [
+            "threshold_notifier_linux.go",
+        ],
+        "@io_bazel_rules_go//go/platform:nacl": [
+            "threshold_notifier_unsupported.go",
+        ],
+        "@io_bazel_rules_go//go/platform:netbsd": [
+            "threshold_notifier_unsupported.go",
+        ],
+        "@io_bazel_rules_go//go/platform:openbsd": [
+            "threshold_notifier_unsupported.go",
+        ],
+        "@io_bazel_rules_go//go/platform:plan9": [
+            "threshold_notifier_unsupported.go",
+        ],
+        "@io_bazel_rules_go//go/platform:solaris": [
+            "threshold_notifier_unsupported.go",
+        ],
+        "@io_bazel_rules_go//go/platform:windows": [
+            "threshold_notifier_unsupported.go",
+        ],
+        "//conditions:default": [],
+    }),
+    importpath = "k8s.io/kubernetes/pkg/kubelet/eviction",
     deps = [
-        "//pkg/api:go_default_library",
-        "//pkg/api/v1:go_default_library",
+        "//pkg/api/v1/resource:go_default_library",
+        "//pkg/apis/core/v1/helper:go_default_library",
+        "//pkg/apis/core/v1/helper/qos:go_default_library",
         "//pkg/features:go_default_library",
-        "//pkg/kubelet/api/v1alpha1/stats:go_default_library",
+        "//pkg/kubelet/apis/stats/v1alpha1:go_default_library",
         "//pkg/kubelet/cm:go_default_library",
         "//pkg/kubelet/eviction/api:go_default_library",
         "//pkg/kubelet/lifecycle:go_default_library",
+        "//pkg/kubelet/metrics:go_default_library",
         "//pkg/kubelet/pod:go_default_library",
-        "//pkg/kubelet/qos:go_default_library",
         "//pkg/kubelet/server/stats:go_default_library",
         "//pkg/kubelet/types:go_default_library",
         "//pkg/kubelet/util/format:go_default_library",
-        "//pkg/quota/evaluator/core:go_default_library",
-        "//vendor:github.com/golang/glog",
-        "//vendor:k8s.io/apimachinery/pkg/api/resource",
-        "//vendor:k8s.io/apimachinery/pkg/apis/meta/v1",
-        "//vendor:k8s.io/apimachinery/pkg/util/sets",
-        "//vendor:k8s.io/apimachinery/pkg/util/wait",
-        "//vendor:k8s.io/apiserver/pkg/util/feature",
-        "//vendor:k8s.io/client-go/pkg/api/v1",
-        "//vendor:k8s.io/client-go/tools/record",
-        "//vendor:k8s.io/client-go/util/clock",
-    ],
+        "//pkg/scheduler/algorithm:go_default_library",
+        "//pkg/scheduler/util:go_default_library",
+        "//vendor/github.com/golang/glog:go_default_library",
+        "//vendor/k8s.io/api/core/v1:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/api/resource:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/util/clock:go_default_library",
+        "//vendor/k8s.io/apiserver/pkg/util/feature:go_default_library",
+        "//vendor/k8s.io/client-go/tools/record:go_default_library",
+    ] + select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "//vendor/golang.org/x/sys/unix:go_default_library",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 filegroup(

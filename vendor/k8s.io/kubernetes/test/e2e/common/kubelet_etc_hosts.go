@@ -22,17 +22,21 @@ import (
 
 	"github.com/golang/glog"
 	. "github.com/onsi/ginkgo"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/test/e2e/framework"
+	imageutils "k8s.io/kubernetes/test/utils/image"
 )
 
 const (
-	etcHostsImageName          = "gcr.io/google_containers/netexec:1.7"
 	etcHostsPodName            = "test-pod"
 	etcHostsHostNetworkPodName = "test-host-network-pod"
 	etcHostsPartialContent     = "# Kubernetes-managed hosts file."
+	etcHostsPath               = "/etc/hosts"
+	etcHostsOriginalPath       = "/etc/hosts-original"
 )
+
+var etcHostsImageName = imageutils.GetE2EImage(imageutils.Netexec)
 
 type KubeletManagedHostConfig struct {
 	hostNetworkPod *v1.Pod
@@ -46,7 +50,12 @@ var _ = framework.KubeDescribe("KubeletManagedEtcHosts", func() {
 		f: f,
 	}
 
-	It("should test kubelet managed /etc/hosts file [Conformance]", func() {
+	/*
+		    Testname: kubelet-managed-etc-hosts
+		    Description: Make sure Kubelet correctly manages /etc/hosts and mounts
+			it into the container.
+	*/
+	framework.ConformanceIt("should test kubelet managed /etc/hosts file [NodeConformance]", func() {
 		By("Setting up the test")
 		config.setup()
 
@@ -99,16 +108,24 @@ func assertManagedStatus(
 	etcHostsContent := ""
 
 	for startTime := time.Now(); time.Since(startTime) < retryTimeout; {
-		etcHostsContent = config.getEtcHostsContent(podName, name)
-		isManaged := strings.Contains(etcHostsContent, etcHostsPartialContent)
+		etcHostsContent = config.getFileContents(podName, name, etcHostsPath)
+		etcHostsOriginalContent := config.getFileContents(podName, name, etcHostsOriginalPath)
 
-		if expectedIsManaged == isManaged {
-			return
+		// Make sure there is some content in both files
+		if len(etcHostsContent) > 0 && len(etcHostsOriginalContent) > 0 {
+			// if the files match, kubernetes did not touch the file at all
+			// if the file has the header, kubernetes is not using host network
+			// and is constructing the file based on Pod IP
+			isManaged := strings.HasPrefix(etcHostsContent, etcHostsPartialContent) &&
+				etcHostsContent != etcHostsOriginalContent
+			if expectedIsManaged == isManaged {
+				return
+			}
 		}
 
 		glog.Warningf(
-			"For pod: %s, name: %s, expected %t, actual %t (/etc/hosts was %q), retryCount: %d",
-			podName, name, expectedIsManaged, isManaged, etcHostsContent, retryCount)
+			"For pod: %s, name: %s, expected %t, (/etc/hosts was %q), (/etc/hosts-original was %q), retryCount: %d",
+			podName, name, expectedIsManaged, etcHostsContent, etcHostsOriginalContent, retryCount)
 
 		retryCount++
 		time.Sleep(100 * time.Millisecond)
@@ -125,11 +142,13 @@ func assertManagedStatus(
 	}
 }
 
-func (config *KubeletManagedHostConfig) getEtcHostsContent(podName, containerName string) string {
-	return config.f.ExecCommandInContainer(podName, containerName, "cat", "/etc/hosts")
+func (config *KubeletManagedHostConfig) getFileContents(podName, containerName, path string) string {
+	return config.f.ExecCommandInContainer(podName, containerName, "cat", path)
 }
 
 func (config *KubeletManagedHostConfig) createPodSpec(podName string) *v1.Pod {
+	hostPathType := new(v1.HostPathType)
+	*hostPathType = v1.HostPathType(string(v1.HostPathFileOrCreate))
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: podName,
@@ -144,6 +163,12 @@ func (config *KubeletManagedHostConfig) createPodSpec(podName string) *v1.Pod {
 						"sleep",
 						"900",
 					},
+					VolumeMounts: []v1.VolumeMount{
+						{
+							Name:      "host-etc-hosts",
+							MountPath: etcHostsOriginalPath,
+						},
+					},
 				},
 				{
 					Name:            "busybox-2",
@@ -152,6 +177,12 @@ func (config *KubeletManagedHostConfig) createPodSpec(podName string) *v1.Pod {
 					Command: []string{
 						"sleep",
 						"900",
+					},
+					VolumeMounts: []v1.VolumeMount{
+						{
+							Name:      "host-etc-hosts",
+							MountPath: etcHostsOriginalPath,
+						},
 					},
 				},
 				{
@@ -165,7 +196,11 @@ func (config *KubeletManagedHostConfig) createPodSpec(podName string) *v1.Pod {
 					VolumeMounts: []v1.VolumeMount{
 						{
 							Name:      "host-etc-hosts",
-							MountPath: "/etc/hosts",
+							MountPath: etcHostsPath,
+						},
+						{
+							Name:      "host-etc-hosts",
+							MountPath: etcHostsOriginalPath,
 						},
 					},
 				},
@@ -175,7 +210,8 @@ func (config *KubeletManagedHostConfig) createPodSpec(podName string) *v1.Pod {
 					Name: "host-etc-hosts",
 					VolumeSource: v1.VolumeSource{
 						HostPath: &v1.HostPathVolumeSource{
-							Path: "/etc/hosts",
+							Path: etcHostsPath,
+							Type: hostPathType,
 						},
 					},
 				},
@@ -186,6 +222,8 @@ func (config *KubeletManagedHostConfig) createPodSpec(podName string) *v1.Pod {
 }
 
 func (config *KubeletManagedHostConfig) createPodSpecWithHostNetwork(podName string) *v1.Pod {
+	hostPathType := new(v1.HostPathType)
+	*hostPathType = v1.HostPathType(string(v1.HostPathFileOrCreate))
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: podName,
@@ -202,6 +240,12 @@ func (config *KubeletManagedHostConfig) createPodSpecWithHostNetwork(podName str
 						"sleep",
 						"900",
 					},
+					VolumeMounts: []v1.VolumeMount{
+						{
+							Name:      "host-etc-hosts",
+							MountPath: etcHostsOriginalPath,
+						},
+					},
 				},
 				{
 					Name:            "busybox-2",
@@ -210,6 +254,23 @@ func (config *KubeletManagedHostConfig) createPodSpecWithHostNetwork(podName str
 					Command: []string{
 						"sleep",
 						"900",
+					},
+					VolumeMounts: []v1.VolumeMount{
+						{
+							Name:      "host-etc-hosts",
+							MountPath: etcHostsOriginalPath,
+						},
+					},
+				},
+			},
+			Volumes: []v1.Volume{
+				{
+					Name: "host-etc-hosts",
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{
+							Path: etcHostsPath,
+							Type: hostPathType,
+						},
 					},
 				},
 			},

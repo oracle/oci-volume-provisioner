@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2014 The Kubernetes Authors.
 #
@@ -23,6 +23,7 @@ kube::util::wait_for_url() {
   local prefix=${2:-}
   local wait=${3:-1}
   local times=${4:-30}
+  local maxtime=${5:-1}
 
   which curl >/dev/null || {
     kube::log::usage "curl must be installed"
@@ -30,42 +31,16 @@ kube::util::wait_for_url() {
   }
 
   local i
-  for i in $(seq 1 $times); do
+  for i in $(seq 1 "$times"); do
     local out
-    if out=$(curl --max-time 1 -gkfs $url 2>/dev/null); then
+    if out=$(curl --max-time "$maxtime" -gkfs "$url" 2>/dev/null); then
       kube::log::status "On try ${i}, ${prefix}: ${out}"
       return 0
     fi
-    sleep ${wait}
+    sleep "${wait}"
   done
   kube::log::error "Timed out waiting for ${prefix} to answer at ${url}; tried ${times} waiting ${wait} between each"
   return 1
-}
-
-# returns a random port
-kube::util::get_random_port() {
-  awk -v min=1024 -v max=65535 'BEGIN{srand(); print int(min+rand()*(max-min+1))}'
-}
-
-# use netcat to check if the host($1):port($2) is free (return 0 means free, 1 means used)
-kube::util::test_host_port_free() {
-  local host=$1
-  local port=$2
-  local success=0
-  local fail=1
-
-  which nc >/dev/null || {
-    kube::log::usage "netcat isn't installed, can't verify if ${host}:${port} is free, skipping the check..."
-    return ${success}
-  }
-
-  if [ ! $(nc -vz "${host}" "${port}") ]; then
-    kube::log::status "${host}:${port} is free, proceeding..."
-    return ${success}
-  else
-    kube::log::status "${host}:${port} is already used"
-    return ${fail}
-  fi
 }
 
 # Example:  kube::util::trap_add 'echo "in trap DEBUG"' DEBUG
@@ -85,7 +60,7 @@ kube::util::trap_add() {
     if [[ -z "${existing_cmd}" ]]; then
       new_cmd="${trap_add_cmd}"
     else
-      new_cmd="${existing_cmd};${trap_add_cmd}"
+      new_cmd="${trap_add_cmd};${existing_cmd}"
     fi
 
     # Assign the test
@@ -174,10 +149,11 @@ kube::util::find-binary-for-platform() {
     "${KUBE_ROOT}/platforms/${platform}/${lookfor}"
   )
   # Also search for binary in bazel build tree.
-  # In some cases we have to name the binary $BINARY_bin, since there was a
-  # directory named $BINARY next to it.
+  # The bazel go rules place binaries in subtrees like
+  # "bazel-bin/source/path/linux_amd64_pure_stripped/binaryname", so make sure
+  # the platform name is matched in the path.
   locations+=($(find "${KUBE_ROOT}/bazel-bin/" -type f -executable \
-    \( -name "${lookfor}" -o -name "${lookfor}_bin" \) 2>/dev/null || true) )
+    -path "*/${platform/\//_}*/${lookfor}" 2>/dev/null || true) )
 
   # List most recently-updated location.
   local -r bin=$( (ls -t "${locations[@]}" 2>/dev/null || true) | head -1 )
@@ -205,23 +181,21 @@ kube::util::gen-docs() {
   mkdir -p "${dest}/docs/admin/"
   "${genkubedocs}" "${dest}/docs/admin/" "kube-apiserver"
   "${genkubedocs}" "${dest}/docs/admin/" "kube-controller-manager"
+  "${genkubedocs}" "${dest}/docs/admin/" "cloud-controller-manager"
   "${genkubedocs}" "${dest}/docs/admin/" "kube-proxy"
   "${genkubedocs}" "${dest}/docs/admin/" "kube-scheduler"
   "${genkubedocs}" "${dest}/docs/admin/" "kubelet"
-
-  # We don't really need federation-apiserver and federation-controller-manager
-  # binaries to generate the docs. We just pass their names to decide which docs
-  # to generate. The actual binary for running federation is hyperkube.
-  "${genfeddocs}" "${dest}/docs/admin/" "federation-apiserver"
-  "${genfeddocs}" "${dest}/docs/admin/" "federation-controller-manager"
+  "${genkubedocs}" "${dest}/docs/admin/" "kubeadm"
 
   mkdir -p "${dest}/docs/man/man1/"
   "${genman}" "${dest}/docs/man/man1/" "kube-apiserver"
   "${genman}" "${dest}/docs/man/man1/" "kube-controller-manager"
+  "${genman}" "${dest}/docs/man/man1/" "cloud-controller-manager"
   "${genman}" "${dest}/docs/man/man1/" "kube-proxy"
   "${genman}" "${dest}/docs/man/man1/" "kube-scheduler"
   "${genman}" "${dest}/docs/man/man1/" "kubelet"
   "${genman}" "${dest}/docs/man/man1/" "kubectl"
+  "${genman}" "${dest}/docs/man/man1/" "kubeadm"
 
   mkdir -p "${dest}/docs/yaml/kubectl/"
   "${genyaml}" "${dest}/docs/yaml/kubectl/"
@@ -236,7 +210,7 @@ kube::util::gen-docs() {
 # Puts a placeholder for every generated doc. This makes the link checker work.
 kube::util::set-placeholder-gen-docs() {
   local list_file="${KUBE_ROOT}/docs/.generated_docs"
-  if [ -e ${list_file} ]; then
+  if [[ -e "${list_file}" ]]; then
     # remove all of the old docs; we don't want to check them in.
     while read file; do
       if [[ "${list_file}" != "${KUBE_ROOT}/${file}" ]]; then
@@ -261,50 +235,6 @@ kube::util::remove-gen-docs() {
   fi
 }
 
-# Takes a path $1 to traverse for md files to append the ga-beacon tracking
-# link to, if needed. If $2 is set, just print files that are missing
-# the link.
-kube::util::gen-analytics() {
-  local path="$1"
-  local dryrun="${2:-}"
-  local mdfiles dir link
-  # find has some strange inconsistencies between darwin/linux. The
-  # path to search must end in '/' for linux, but darwin will put an extra
-  # slash in results if there is a trailing '/'.
-  if [[ $( uname ) == 'Linux' ]]; then
-    dir="${path}/"
-  else
-    dir="${path}"
-  fi
-  # We don't touch files in special dirs, and the kubectl docs are
-  # autogenerated by gendocs.
-  # Don't descend into .directories
-  mdfiles=($( find "${dir}" -name "*.md" -type f \
-              -not -path '*/\.*' \
-              -not -path "${path}/vendor/*" \
-              -not -path "${path}/staging/*" \
-              -not -path "${path}/third_party/*" \
-              -not -path "${path}/_gopath/*" \
-              -not -path "${path}/_output/*" \
-              -not -path "${path}/docs/user-guide/kubectl/kubectl*" ))
-  for f in "${mdfiles[@]}"; do
-    link=$(kube::util::analytics-link "${f#${path}/}")
-    if grep -q -F -x "${link}" "${f}"; then
-      continue
-    elif [[ -z "${dryrun}" ]]; then
-      echo -e "\n\n${link}" >> "${f}"
-    else
-      echo "$f"
-    fi
-  done
-}
-
-# Prints analytics link to append to a file at path $1.
-kube::util::analytics-link() {
-  local path="$1"
-  echo "[![Analytics](https://kubernetes-site.appspot.com/UA-36037335-10/GitHub/${path}?pixel)]()"
-}
-
 # Takes a group/version and returns the path to its location on disk, sans
 # "pkg". E.g.:
 # * default behavior: extensions/v1beta1 -> apis/extensions/v1beta1
@@ -313,29 +243,38 @@ kube::util::analytics-link() {
 # * Special handling for groups suffixed with ".k8s.io": foo.k8s.io/v1 -> apis/foo/v1
 # * Very special handling for when both group and version are "": / -> api
 kube::util::group-version-to-pkg-path() {
+  staging_apis=(
+  $(
+    cd "${KUBE_ROOT}/staging/src/k8s.io/api" &&
+    find . -name types.go -exec dirname {} \; | sed "s|\./||g" | sort
+  ))
+
   local group_version="$1"
+
+  if [[ " ${staging_apis[@]} " =~ " ${group_version/.*k8s.io/} " ]]; then
+    echo "vendor/k8s.io/api/${group_version/.*k8s.io/}"
+    return
+  fi
+
+  # "v1" is the API GroupVersion
+  if [[ "${group_version}" == "v1" ]]; then
+    echo "vendor/k8s.io/api/core/v1"
+    return
+  fi
+
   # Special cases first.
   # TODO(lavalamp): Simplify this by moving pkg/api/v1 and splitting pkg/api,
   # moving the results to pkg/apis/api.
   case "${group_version}" in
     # both group and version are "", this occurs when we generate deep copies for internal objects of the legacy v1 API.
     __internal)
-      echo "pkg/api"
-      ;;
-    v1)
-      echo "pkg/api/v1"
-      ;;
-    federation/v1beta1)
-      echo "federation/apis/federation/v1beta1"
+      echo "pkg/apis/core"
       ;;
     meta/v1)
       echo "vendor/k8s.io/apimachinery/pkg/apis/meta/v1"
       ;;
-    meta/v1)
-      echo "../vendor/k8s.io/apimachinery/pkg/apis/meta/v1"
-      ;;
-    unversioned)
-      echo "pkg/api/unversioned"
+    meta/v1beta1)
+      echo "vendor/k8s.io/apimachinery/pkg/apis/meta/v1beta1"
       ;;
     *.k8s.io)
       echo "pkg/apis/${group_version%.*k8s.io}"
@@ -411,6 +350,23 @@ kube::util::git_upstream_remote_name() {
     head -n 1 | awk '{print $1}'
 }
 
+# Ensures the current directory is a git tree for doing things like restoring or
+# validating godeps
+kube::util::create-fake-git-tree() {
+  local -r target_dir=${1:-$(pwd)}
+
+  pushd "${target_dir}" >/dev/null
+    git init >/dev/null
+    git config --local user.email "nobody@k8s.io"
+    git config --local user.name "$0"
+    git add . >/dev/null
+    git commit -q -m "Snapshot" >/dev/null
+    if (( ${KUBE_VERBOSE:-5} >= 6 )); then
+      kube::log::status "${target_dir} is now a git tree."
+    fi
+  popd >/dev/null
+}
+
 # Checks whether godep restore was run in the current GOPATH, i.e. that all referenced repos exist
 # and are checked out to the referenced rev.
 kube::util::godep_restored() {
@@ -458,34 +414,72 @@ kube::util::godep_restored() {
 kube::util::ensure_clean_working_dir() {
   while ! git diff HEAD --exit-code &>/dev/null; do
     echo -e "\nUnexpected dirty working directory:\n"
-    git status -s | sed 's/^/  /'
-    if ! tty -s; then
+    if tty -s; then
+        git status -s
+    else
+        git diff -a # be more verbose in log files without tty
         exit 1
-    fi
+    fi | sed 's/^/  /'
     echo -e "\nCommit your changes in another terminal and then continue here by pressing enter."
     read
   done 1>&2
 }
 
-# Ensure that the given godep version is installed and in the path
+# Ensure that the given godep version is installed and in the path.  Almost
+# nobody should use any version but the default.
 kube::util::ensure_godep_version() {
-  GODEP_VERSION=${1:-"v79"}
-  if [[ "$(godep version)" == *"godep ${GODEP_VERSION}"* ]]; then
+  GODEP_VERSION=${1:-"v80"} # this version is known to work
+
+  if [[ "$(godep version 2>/dev/null)" == *"godep ${GODEP_VERSION}"* ]]; then
     return
   fi
 
-  kube::util::ensure-temp-dir
-  mkdir -p "${KUBE_TEMP}/go/src"
+  kube::log::status "Installing godep version ${GODEP_VERSION}"
+  go install ./vendor/github.com/tools/godep/
+  if ! which godep >/dev/null 2>&1; then
+    kube::log::error "Can't find godep - is your GOPATH 'bin' in your PATH?"
+    kube::log::error "  GOPATH: ${GOPATH}"
+    kube::log::error "  PATH:   ${PATH}"
+    return 1
+  fi
 
-  GOPATH="${KUBE_TEMP}/go" go get -d -u github.com/tools/godep 2>/dev/null
-  pushd "${KUBE_TEMP}/go/src/github.com/tools/godep" >/dev/null
-    git checkout "${GODEP_VERSION}"
-    GOPATH="${KUBE_TEMP}/go" go install .
-  popd >/dev/null
+  if [[ "$(godep version 2>/dev/null)" != *"godep ${GODEP_VERSION}"* ]]; then
+    kube::log::error "Wrong godep version - is your GOPATH 'bin' in your PATH?"
+    kube::log::error "  expected: godep ${GODEP_VERSION}"
+    kube::log::error "  got:      $(godep version)"
+    kube::log::error "  GOPATH: ${GOPATH}"
+    kube::log::error "  PATH:   ${PATH}"
+    return 1
+  fi
+}
 
-  PATH="${KUBE_TEMP}/go/bin:${PATH}"
-  hash -r # force bash to clear PATH cache
-  godep version
+# Ensure that none of the staging repos is checked out in the GOPATH because this
+# easily confused godep.
+kube::util::ensure_no_staging_repos_in_gopath() {
+  kube::util::ensure_single_dir_gopath
+  local error=0
+  for repo_file in "${KUBE_ROOT}"/staging/src/k8s.io/*; do
+    if [[ ! -d "$repo_file" ]]; then
+      # not a directory or there were no files
+      continue;
+    fi
+    repo="$(basename "$repo_file")"
+    if [ -e "${GOPATH}/src/k8s.io/${repo}" ]; then
+      echo "k8s.io/${repo} exists in GOPATH. Remove before running godep-save.sh." 1>&2
+      error=1
+    fi
+  done
+  if [ "${error}" = "1" ]; then
+    exit 1
+  fi
+}
+
+# Checks that the GOPATH is simple, i.e. consists only of one directory, not multiple.
+kube::util::ensure_single_dir_gopath() {
+  if [[ "${GOPATH}" == *:* ]]; then
+    echo "GOPATH must consist of a single directory." 1>&2
+    exit 1
+  fi
 }
 
 # Checks whether there are any files matching pattern $2 changed between the
@@ -537,20 +531,6 @@ kube::util::download_file() {
   return 1
 }
 
-# Test whether cfssl and cfssljson are installed.
-# Sets:
-#  CFSSL_BIN: The path of the installed cfssl binary
-#  CFSSLJSON_BIN: The path of the installed cfssljson binary
-function kube::util::test_cfssl_installed {
-    if ! command -v cfssl &>/dev/null || ! command -v cfssljson &>/dev/null; then
-      echo "Failed to successfully run 'cfssl', please verify that cfssl and cfssljson are in \$PATH."
-      echo "Hint: export PATH=\$PATH:\$GOPATH/bin; go get -u github.com/cloudflare/cfssl/cmd/..."
-      exit 1
-    fi
-    CFSSL_BIN=$(command -v cfssl)
-    CFSSLJSON_BIN=$(command -v cfssljson)
-}
-
 # Test whether openssl is installed.
 # Sets:
 #  OPENSSL_BIN: The path to the openssl binary to use
@@ -574,7 +554,7 @@ function kube::util::create_signing_certkey {
     local id=$3
     local purpose=$4
     # Create client ca
-    ${sudo} /bin/bash -e <<EOF
+    ${sudo} /usr/bin/env bash -e <<EOF
     rm -f "${dest_dir}/${id}-ca.crt" "${dest_dir}/${id}-ca.key"
     ${OPENSSL_BIN} req -x509 -sha256 -new -nodes -days 365 -newkey rsa:2048 -keyout "${dest_dir}/${id}-ca.key" -out "${dest_dir}/${id}-ca.crt" -subj "/C=xx/ST=x/L=x/O=x/OU=x/CN=ca/emailAddress=x/"
     echo '{"signing":{"default":{"expiry":"43800h","usages":["signing","key encipherment",${purpose}]}}}' > "${dest_dir}/${id}-ca-config.json"
@@ -596,7 +576,7 @@ function kube::util::create_client_certkey {
         SEP=","
         shift 1
     done
-    ${sudo} /bin/bash -e <<EOF
+    ${sudo} /usr/bin/env bash -e <<EOF
     cd ${dest_dir}
     echo '{"CN":"${cn}","names":[${groups}],"hosts":[""],"key":{"algo":"rsa","size":2048}}' | ${CFSSL_BIN} gencert -ca=${ca}.crt -ca-key=${ca}.key -config=${ca}-config.json - | ${CFSSLJSON_BIN} -bare client-${id}
     mv "client-${id}-key.pem" "client-${id}.key"
@@ -620,7 +600,7 @@ function kube::util::create_serving_certkey {
         SEP=","
         shift 1
     done
-    ${sudo} /bin/bash -e <<EOF
+    ${sudo} /usr/bin/env bash -e <<EOF
     cd ${dest_dir}
     echo '{"CN":"${cn}","hosts":[${hosts}],"key":{"algo":"rsa","size":2048}}' | ${CFSSL_BIN} gencert -ca=${ca}.crt -ca-key=${ca}.key -config=${ca}-config.json - | ${CFSSLJSON_BIN} -bare serving-${id}
     mv "serving-${id}-key.pem" "serving-${id}.key"
@@ -662,7 +642,7 @@ EOF
 
     # flatten the kubeconfig files to make them self contained
     username=$(whoami)
-    ${sudo} /bin/bash -e <<EOF
+    ${sudo} /usr/bin/env bash -e <<EOF
     $(kube::util::find-binary kubectl) --kubeconfig="${dest_dir}/${client_id}.kubeconfig" config view --minify --flatten > "/tmp/${client_id}.kubeconfig"
     mv -f "/tmp/${client_id}.kubeconfig" "${dest_dir}/${client_id}.kubeconfig"
     chown ${username} "${dest_dir}/${client_id}.kubeconfig"
@@ -694,6 +674,120 @@ EOF
   fi
 }
 
+# Wait for background jobs to finish. Return with
+# an error status if any of the jobs failed.
+kube::util::wait-for-jobs() {
+  local fail=0
+  local job
+  for job in $(jobs -p); do
+    wait "${job}" || fail=$((fail + 1))
+  done
+  return ${fail}
+}
 
+# kube::util::join <delim> <list...>
+# Concatenates the list elements with the delimiter passed as first parameter
+#
+# Ex: kube::util::join , a b c
+#  -> a,b,c
+function kube::util::join {
+  local IFS="$1"
+  shift
+  echo "$*"
+}
+
+# Downloads cfssl/cfssljson into $1 directory if they do not already exist in PATH
+#
+# Assumed vars:
+#   $1 (cfssl directory) (optional)
+#
+# Sets:
+#  CFSSL_BIN: The path of the installed cfssl binary
+#  CFSSLJSON_BIN: The path of the installed cfssljson binary
+#
+function kube::util::ensure-cfssl {
+  if command -v cfssl &>/dev/null && command -v cfssljson &>/dev/null; then
+    CFSSL_BIN=$(command -v cfssl)
+    CFSSLJSON_BIN=$(command -v cfssljson)
+    return 0
+  fi
+
+  # Create a temp dir for cfssl if no directory was given
+  local cfssldir=${1:-}
+  if [[ -z "${cfssldir}" ]]; then
+    kube::util::ensure-temp-dir
+    cfssldir="${KUBE_TEMP}/cfssl"
+  fi
+
+  mkdir -p "${cfssldir}"
+  pushd "${cfssldir}" > /dev/null
+
+    echo "Unable to successfully run 'cfssl' from $PATH; downloading instead..."
+    kernel=$(uname -s)
+    case "${kernel}" in
+      Linux)
+        curl --retry 10 -L -o cfssl https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
+        curl --retry 10 -L -o cfssljson https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
+        ;;
+      Darwin)
+        curl --retry 10 -L -o cfssl https://pkg.cfssl.org/R1.2/cfssl_darwin-amd64
+        curl --retry 10 -L -o cfssljson https://pkg.cfssl.org/R1.2/cfssljson_darwin-amd64
+        ;;
+      *)
+        echo "Unknown, unsupported platform: ${kernel}." >&2
+        echo "Supported platforms: Linux, Darwin." >&2
+        exit 2
+    esac
+
+    chmod +x cfssl || true
+    chmod +x cfssljson || true
+
+    CFSSL_BIN="${cfssldir}/cfssl"
+    CFSSLJSON_BIN="${cfssldir}/cfssljson"
+    if [[ ! -x ${CFSSL_BIN} || ! -x ${CFSSLJSON_BIN} ]]; then
+      echo "Failed to download 'cfssl'. Please install cfssl and cfssljson and verify they are in \$PATH."
+      echo "Hint: export PATH=\$PATH:\$GOPATH/bin; go get -u github.com/cloudflare/cfssl/cmd/..."
+      exit 1
+    fi
+  popd > /dev/null
+}
+
+# kube::util::ensure_dockerized
+# Confirms that the script is being run inside a kube-build image
+#
+function kube::util::ensure_dockerized {
+  if [[ -f /kube-build-image ]]; then
+    return 0
+  else
+    echo "ERROR: This script is designed to be run inside a kube-build container"
+    exit 1
+  fi
+}
+
+# kube::util::ensure-gnu-sed
+# Determines which sed binary is gnu-sed on linux/darwin
+#
+# Sets:
+#  SED: The name of the gnu-sed binary
+#
+function kube::util::ensure-gnu-sed {
+  if LANG=C sed --help 2>&1 | grep -q GNU; then
+    SED="sed"
+  elif which gsed &>/dev/null; then
+    SED="gsed"
+  else
+    kube::log::error "Failed to find GNU sed as sed or gsed. If you are on Mac: brew install gnu-sed." >&2
+    return 1
+  fi
+}
+
+# Some useful colors.
+if [[ -z "${color_start-}" ]]; then
+  declare -r color_start="\033["
+  declare -r color_red="${color_start}0;31m"
+  declare -r color_yellow="${color_start}0;33m"
+  declare -r color_green="${color_start}0;32m"
+  declare -r color_norm="${color_start}0m"
+fi
 
 # ex: ts=2 sw=2 et filetype=sh

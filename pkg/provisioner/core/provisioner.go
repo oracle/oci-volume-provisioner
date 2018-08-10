@@ -23,13 +23,13 @@ import (
 	"github.com/golang/glog"
 
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	informersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	listersv1 "k8s.io/client-go/listers/core/v1"
-	"k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
+	metav1 "k8s.io/kubernetes/pkg/kubelet/apis"
 
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"

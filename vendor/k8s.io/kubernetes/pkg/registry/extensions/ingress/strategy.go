@@ -17,18 +17,13 @@ limitations under the License.
 package ingress
 
 import (
-	"fmt"
-	"reflect"
+	"context"
 
-	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/labels"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
-	"k8s.io/apiserver/pkg/registry/generic"
-	"k8s.io/apiserver/pkg/storage"
 	"k8s.io/apiserver/pkg/storage/names"
-	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	"k8s.io/kubernetes/pkg/apis/extensions"
 	"k8s.io/kubernetes/pkg/apis/extensions/validation"
 )
@@ -40,7 +35,7 @@ type ingressStrategy struct {
 }
 
 // Strategy is the default logic that applies when creating and updating Replication Ingress objects.
-var Strategy = ingressStrategy{api.Scheme, names.SimpleNameGenerator}
+var Strategy = ingressStrategy{legacyscheme.Scheme, names.SimpleNameGenerator}
 
 // NamespaceScoped returns true because all Ingress' need to be within a namespace.
 func (ingressStrategy) NamespaceScoped() bool {
@@ -48,7 +43,7 @@ func (ingressStrategy) NamespaceScoped() bool {
 }
 
 // PrepareForCreate clears the status of an Ingress before creation.
-func (ingressStrategy) PrepareForCreate(ctx genericapirequest.Context, obj runtime.Object) {
+func (ingressStrategy) PrepareForCreate(ctx context.Context, obj runtime.Object) {
 	ingress := obj.(*extensions.Ingress)
 	// create cannot set status
 	ingress.Status = extensions.IngressStatus{}
@@ -57,7 +52,7 @@ func (ingressStrategy) PrepareForCreate(ctx genericapirequest.Context, obj runti
 }
 
 // PrepareForUpdate clears fields that are not allowed to be set by end users on update.
-func (ingressStrategy) PrepareForUpdate(ctx genericapirequest.Context, obj, old runtime.Object) {
+func (ingressStrategy) PrepareForUpdate(ctx context.Context, obj, old runtime.Object) {
 	newIngress := obj.(*extensions.Ingress)
 	oldIngress := old.(*extensions.Ingress)
 	// Update is not allowed to set status
@@ -66,14 +61,14 @@ func (ingressStrategy) PrepareForUpdate(ctx genericapirequest.Context, obj, old 
 	// Any changes to the spec increment the generation number, any changes to the
 	// status should reflect the generation number of the corresponding object.
 	// See metav1.ObjectMeta description for more information on Generation.
-	if !reflect.DeepEqual(oldIngress.Spec, newIngress.Spec) {
+	if !apiequality.Semantic.DeepEqual(oldIngress.Spec, newIngress.Spec) {
 		newIngress.Generation = oldIngress.Generation + 1
 	}
 
 }
 
 // Validate validates a new Ingress.
-func (ingressStrategy) Validate(ctx genericapirequest.Context, obj runtime.Object) field.ErrorList {
+func (ingressStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
 	ingress := obj.(*extensions.Ingress)
 	err := validation.ValidateIngress(ingress)
 	return err
@@ -89,7 +84,7 @@ func (ingressStrategy) AllowCreateOnUpdate() bool {
 }
 
 // ValidateUpdate is the default update validation for an end user.
-func (ingressStrategy) ValidateUpdate(ctx genericapirequest.Context, obj, old runtime.Object) field.ErrorList {
+func (ingressStrategy) ValidateUpdate(ctx context.Context, obj, old runtime.Object) field.ErrorList {
 	validationErrorList := validation.ValidateIngress(obj.(*extensions.Ingress))
 	updateErrorList := validation.ValidateIngressUpdate(obj.(*extensions.Ingress), old.(*extensions.Ingress))
 	return append(validationErrorList, updateErrorList...)
@@ -100,31 +95,6 @@ func (ingressStrategy) AllowUnconditionalUpdate() bool {
 	return true
 }
 
-// IngressToSelectableFields returns a field set that represents the object.
-func IngressToSelectableFields(ingress *extensions.Ingress) fields.Set {
-	return generic.ObjectMetaFieldsSet(&ingress.ObjectMeta, true)
-}
-
-// GetAttrs returns labels and fields of a given object for filtering purposes.
-func GetAttrs(obj runtime.Object) (labels.Set, fields.Set, error) {
-	ingress, ok := obj.(*extensions.Ingress)
-	if !ok {
-		return nil, nil, fmt.Errorf("Given object is not an Ingress.")
-	}
-	return labels.Set(ingress.ObjectMeta.Labels), IngressToSelectableFields(ingress), nil
-}
-
-// MatchIngress is the filter used by the generic etcd backend to ingress
-// watch events from etcd to clients of the apiserver only interested in specific
-// labels/fields.
-func MatchIngress(label labels.Selector, field fields.Selector) storage.SelectionPredicate {
-	return storage.SelectionPredicate{
-		Label:    label,
-		Field:    field,
-		GetAttrs: GetAttrs,
-	}
-}
-
 type ingressStatusStrategy struct {
 	ingressStrategy
 }
@@ -132,7 +102,7 @@ type ingressStatusStrategy struct {
 var StatusStrategy = ingressStatusStrategy{Strategy}
 
 // PrepareForUpdate clears fields that are not allowed to be set by end users on update of status
-func (ingressStatusStrategy) PrepareForUpdate(ctx genericapirequest.Context, obj, old runtime.Object) {
+func (ingressStatusStrategy) PrepareForUpdate(ctx context.Context, obj, old runtime.Object) {
 	newIngress := obj.(*extensions.Ingress)
 	oldIngress := old.(*extensions.Ingress)
 	// status changes are not allowed to update spec
@@ -140,6 +110,6 @@ func (ingressStatusStrategy) PrepareForUpdate(ctx genericapirequest.Context, obj
 }
 
 // ValidateUpdate is the default update validation for an end user updating status
-func (ingressStatusStrategy) ValidateUpdate(ctx genericapirequest.Context, obj, old runtime.Object) field.ErrorList {
+func (ingressStatusStrategy) ValidateUpdate(ctx context.Context, obj, old runtime.Object) field.ErrorList {
 	return validation.ValidateIngressStatusUpdate(obj.(*extensions.Ingress), old.(*extensions.Ingress))
 }

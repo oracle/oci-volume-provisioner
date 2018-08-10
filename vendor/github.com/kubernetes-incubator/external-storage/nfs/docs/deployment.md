@@ -22,7 +22,7 @@ $ make container
 If you are running in Kubernetes, it will pull the image from Quay for you. Or you can do it yourself.
 
 ```
-$ docker pull quay.io/kubernetes_incubator/nfs-provisioner:v1.0.5
+$ docker pull quay.io/kubernetes_incubator/nfs-provisioner:v1.0.9
 ```
 
 ## Deploying the provisioner
@@ -95,23 +95,23 @@ daemonset "nfs-provisioner" created
 
 The container is going to need to run with one of `master` or `kubeconfig` set. For the `kubeconfig` argument to work, the config file, and any certificate files it references by path like `certificate-authority: /var/run/kubernetes/apiserver.crt`, need to be inside the container somehow. This can be done by creating Docker volumes, or copying the files into the folder where the Dockerfile is and adding lines like `COPY config /.kube/config` to the Dockerfile before building the image. 
 
-Run nfs-provisioner with `provisioner` equal to the name you decided on, and one of `master` or `kubeconfig` set. It needs to be run with capability `DAC_READ_SEARCH`. If you are using Docker 1.10 or newer, it also needs a more permissive seccomp profile: `unconfined` or `deploy/docker/nfs-provisioner-seccomp.json`.
+Run nfs-provisioner with `provisioner` equal to the name you decided on, and one of `master` or `kubeconfig` set. It needs to be run with capability `DAC_READ_SEARCH` in order for Ganesha to work. Optionally, it should be run also with capability `SYS_RESOURCE` so that it can set a higher limit for the number of opened files Ganesha may have. If you are using Docker 1.10 or newer, it also needs a more permissive seccomp profile: `unconfined` or `deploy/docker/nfs-provisioner-seccomp.json`.
 
 You may want to specify the hostname the NFS server exports from, i.e. the server IP to put on PVs, by setting the `server-hostname` flag.
 
 ```
-$ docker run --cap-add DAC_READ_SEARCH \
+$ docker run --cap-add DAC_READ_SEARCH --cap-add SYS_RESOURCE \
 --security-opt seccomp:deploy/docker/nfs-provisioner-seccomp.json \
 -v $HOME/.kube:/.kube:Z \
-quay.io/kubernetes_incubator/nfs-provisioner:v1.0.5 \
+quay.io/kubernetes_incubator/nfs-provisioner:v1.0.9 \
 -provisioner=example.com/nfs \
 -kubeconfig=/.kube/config
 ```
 or
 ```
-$ docker run --cap-add DAC_READ_SEARCH \
+$ docker run --cap-add DAC_READ_SEARCH --cap-add SYS_RESOURCE \
 --security-opt seccomp:deploy/docker/nfs-provisioner-seccomp.json \
-quay.io/kubernetes_incubator/nfs-provisioner:v1.0.5 \
+quay.io/kubernetes_incubator/nfs-provisioner:v1.0.9 \
 -provisioner=example.com/nfs \
 -master=http://172.17.0.1:8080
 ```
@@ -126,7 +126,7 @@ With the two above options, the run command will look something like this.
 $ docker run --privileged \
 -v $HOME/.kube:/.kube:Z \
 -v /xfs:/export:Z \
-quay.io/kubernetes_incubator/nfs-provisioner:v1.0.5 \
+quay.io/kubernetes_incubator/nfs-provisioner:v1.0.9 \
 -provisioner=example.com/nfs \
 -kubeconfig=/.kube/config \
 -enable-xfs-quota=true
@@ -178,7 +178,6 @@ Now that you have finished deploying the provisioner, go to [Usage](usage.md) fo
 * `run-server` - If the provisioner is responsible for running the NFS server, i.e. starting and stopping NFS Ganesha. Default true.
 * `use-ganesha` - If the provisioner will create volumes using NFS Ganesha (D-Bus method calls) as opposed to using the kernel NFS server ('exportfs'). If run-server is true, this must be true. Default true.
 * `grace-period` - NFS Ganesha grace period to use in seconds, from 0-180. If the server is not expected to survive restarts, i.e. it is running as a pod & its export directory is not persisted, this can be set to 0. Can only be set if both run-server and use-ganesha are true. Default 90.
-* `root-squash` - If the provisioner will squash root users by adding the NFS Ganesha root_id_squash or kernel root_squash option to each export. Default false.
 * `enable-xfs-quota` - If the provisioner will set xfs quotas for each volume it provisions. Requires that the directory it creates volumes in ('/export') is xfs mounted with option prjquota/pquota, and that it has the privilege to run xfs_quota. Default false.
 * `failed-retry-threshold` - If the number of retries on provisioning failure need to be limited to a set number of attempts. Default 10
 * `server-hostname` - The hostname for the NFS server to export from. Only applicable when running out-of-cluster i.e. it can only be set if either master or kubeconfig are set. If unset, the first IP output by `hostname -i` is used.

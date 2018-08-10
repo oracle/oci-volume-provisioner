@@ -75,7 +75,7 @@ func (t *awsTagging) init(legacyClusterID string, clusterID string) error {
 	if clusterID != "" {
 		glog.Infof("AWS cloud filtering on ClusterID: %v", clusterID)
 	} else {
-		glog.Infof("AWS cloud - no clusterID filtering")
+		return fmt.Errorf("AWS cloud failed to find ClusterID")
 	}
 
 	return nil
@@ -138,10 +138,10 @@ func (t *awsTagging) hasClusterTag(tags []*ec2.Tag) bool {
 	for _, tag := range tags {
 		tagKey := aws.StringValue(tag.Key)
 		// For 1.6, we continue to recognize the legacy tags, for the 1.5 -> 1.6 upgrade
-		if tagKey == TagNameKubernetesClusterLegacy {
-			return aws.StringValue(tag.Value) == t.ClusterID
+		// Note that we want to continue traversing tag list if we see a legacy tag with value != ClusterID
+		if (tagKey == TagNameKubernetesClusterLegacy) && (aws.StringValue(tag.Value) == t.ClusterID) {
+			return true
 		}
-
 		if tagKey == clusterTagKey {
 			return true
 		}
@@ -174,8 +174,12 @@ func (c *awsTagging) readRepairClusterTags(client EC2, resourceID string, lifecy
 		}
 	}
 
-	if err := c.createTags(client, resourceID, lifecycle, additionalTags); err != nil {
-		return fmt.Errorf("error adding missing tags to resource %q: %v", resourceID, err)
+	if len(addTags) == 0 {
+		return nil
+	}
+
+	if err := c.createTags(client, resourceID, lifecycle, addTags); err != nil {
+		return fmt.Errorf("error adding missing tags to resource %q: %q", resourceID, err)
 	}
 
 	return nil
@@ -218,7 +222,7 @@ func (t *awsTagging) createTags(client EC2, resourceID string, lifecycle Resourc
 
 		// We could check that the error is retryable, but the error code changes based on what we are tagging
 		// SecurityGroup: InvalidGroup.NotFound
-		glog.V(2).Infof("Failed to create tags; will retry.  Error was %v", err)
+		glog.V(2).Infof("Failed to create tags; will retry.  Error was %q", err)
 		lastErr = err
 		return false, nil
 	})
@@ -271,4 +275,8 @@ func (t *awsTagging) buildTags(lifecycle ResourceLifecycle, additionalTags map[s
 	tags[t.clusterTagKey()] = string(lifecycle)
 
 	return tags
+}
+
+func (t *awsTagging) clusterID() string {
+	return t.ClusterID
 }
