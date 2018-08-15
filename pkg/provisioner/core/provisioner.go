@@ -15,14 +15,14 @@
 package core
 
 import (
-	"errors"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/golang/glog"
-
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
+	"github.com/pkg/errors"
+
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	informersv1 "k8s.io/client-go/informers/core/v1"
@@ -34,10 +34,17 @@ import (
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/block"
+	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/fss"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/plugin"
 )
 
 const (
+	// ProvisionerNameDefault is the name of the default OCI volume provisioner (block)
+	ProvisionerNameDefault = "oracle.com/oci"
+	// ProvisionerNameBlock is the name of the OCI block volume provisioner
+	ProvisionerNameBlock = "oracle.com/oci-block"
+	// ProvisionerNameFss is the name of the OCI FSS dedicated storage provisioner
+	ProvisionerNameFss     = "oracle.com/oci-fss"
 	ociProvisionerIdentity = "ociProvisionerIdentity"
 	ociAvailabilityDomain  = "ociAvailabilityDomain"
 	ociCompartment         = "ociCompartment"
@@ -56,7 +63,7 @@ type OCIProvisioner struct {
 }
 
 // NewOCIProvisioner creates a new OCI provisioner.
-func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1.NodeInformer, nodeName string, volumeRoundingEnabled bool, minVolumeSize resource.Quantity) *OCIProvisioner {
+func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1.NodeInformer, provisionerType string, nodeName string, volumeRoundingEnabled bool, minVolumeSize resource.Quantity) (*OCIProvisioner, error) {
 	configPath, ok := os.LookupEnv("CONFIG_YAML_FILENAME")
 	if !ok {
 		configPath = configFilePath
@@ -77,19 +84,24 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1
 	if err != nil {
 		glog.Fatalf("Unable to create volume provisioner client: %v", err)
 	}
-
-	blockProvisioner := block.NewBlockProvisioner(client, instancemeta.New(),
-		volumeRoundingEnabled,
-		minVolumeSize,
-		time.Minute*3)
-
+	var provisioner plugin.ProvisionerPlugin
+	switch provisionerType {
+	case ProvisionerNameDefault:
+		provisioner = block.NewBlockProvisioner(client, instancemeta.New(), volumeRoundingEnabled, minVolumeSize, time.Minute*3)
+	case ProvisionerNameBlock:
+		provisioner = block.NewBlockProvisioner(client, instancemeta.New(), volumeRoundingEnabled, minVolumeSize, time.Minute*3)
+	case ProvisionerNameFss:
+		provisioner = fss.NewFilesystemProvisioner(client)
+	default:
+		return nil, errors.Errorf("invalid provisioner type %q", provisionerType)
+	}
 	return &OCIProvisioner{
 		client:           client,
 		kubeClient:       kubeClient,
 		nodeLister:       nodeInformer.Lister(),
 		nodeListerSynced: nodeInformer.Informer().HasSynced,
-		provisioner:      blockProvisioner,
-	}
+		provisioner:      provisioner,
+	}, nil
 }
 
 var _ controller.Provisioner = &OCIProvisioner{}

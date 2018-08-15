@@ -1,0 +1,14 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: demooci-fss-{{TEST_ID}}
+spec:
+  storageClassName: "oci-fss"
+  selector:
+    matchLabels:
+      oci-availability-domain: "{{REGION}}"
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi # Required by Kubernetes but not used by FSS

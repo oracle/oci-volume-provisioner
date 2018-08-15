@@ -1,0 +1,9 @@
+
+# Storage class with subnet OCID to create mount target on
+kind: StorageClass
+apiVersion: storage.k8s.io/v1beta1
+metadata:
+  name: oci-fss
+provisioner: oracle.com/oci-fss
+parameters:
+  subnetId: {{SUBNET_OCID}}

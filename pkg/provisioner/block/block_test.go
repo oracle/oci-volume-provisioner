@@ -15,18 +15,18 @@
 package block
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
 
-	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
+	"github.com/oracle/oci-volume-provisioner/pkg/provisioner"
 
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-go-sdk/identity"
+
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,6 +35,10 @@ import (
 var (
 	volumeBackupID = "dummyVolumeBackupId"
 	defaultAD      = identity.AvailabilityDomain{Name: common.String("PHX-AD-1"), CompartmentId: common.String("ocid1.compartment.oc1")}
+	fileSystemID   = "dummyFileSystemId"
+	exportID       = "dummyExportID"
+	serverIPs      = []string{"dummyServerIP"}
+	privateIP      = "127.0.0.1"
 )
 
 func TestResolveFSTypeWhenNotConfigured(t *testing.T) {
@@ -53,65 +57,6 @@ func TestResolveFSTypeWhenConfigured(t *testing.T) {
 	if fst != "ext3" {
 		t.Fatalf("Unexpected filesystem type: '%s'.", fst)
 	}
-}
-
-type mockBlockStorageClient struct {
-	volumeState core.VolumeLifecycleStateEnum
-}
-
-func (c *mockBlockStorageClient) CreateVolume(ctx context.Context, request core.CreateVolumeRequest) (response core.CreateVolumeResponse, err error) {
-	return core.CreateVolumeResponse{Volume: core.Volume{Id: common.String(volumeBackupID)}}, nil
-}
-
-func (c *mockBlockStorageClient) DeleteVolume(ctx context.Context, request core.DeleteVolumeRequest) (response core.DeleteVolumeResponse, err error) {
-	return core.DeleteVolumeResponse{}, nil
-}
-
-func (c *mockBlockStorageClient) GetVolume(ctx context.Context, request core.GetVolumeRequest) (response core.GetVolumeResponse, err error) {
-	return core.GetVolumeResponse{Volume: core.Volume{LifecycleState: c.volumeState}}, nil
-}
-
-type mockIdentityClient struct {
-	common.BaseClient
-}
-
-func (client mockIdentityClient) ListAvailabilityDomains(ctx context.Context, request identity.ListAvailabilityDomainsRequest) (response identity.ListAvailabilityDomainsResponse, err error) {
-	return
-}
-
-type mockProvisionerClient struct {
-	storage *mockBlockStorageClient
-}
-
-func (p *mockProvisionerClient) BlockStorage() client.BlockStorage {
-	return p.storage
-}
-
-func (p *mockProvisionerClient) Identity() client.Identity {
-	return &mockIdentityClient{}
-}
-
-func (p *mockProvisionerClient) Context() context.Context {
-	return context.Background()
-}
-
-func (p *mockProvisionerClient) Timeout() time.Duration {
-	return 30 * time.Second
-}
-
-func (p *mockProvisionerClient) CompartmentOCID() (compartmentOCID string) {
-	return ""
-}
-
-func (p *mockProvisionerClient) TenancyOCID() string {
-	return "ocid1.tenancy.oc1..aaaaaaaatyn7scrtwtqedvgrxgr2xunzeo6uanvyhzxqblctwkrpisvke4kq"
-}
-
-// NewClientProvisioner creates an OCI client from the given configuration.
-func NewClientProvisioner(pcData client.ProvisionerClient,
-	storage *mockBlockStorageClient,
-) client.ProvisionerClient {
-	return &mockProvisionerClient{storage: storage}
 }
 
 func TestCreateVolumeFromBackup(t *testing.T) {
@@ -135,7 +80,7 @@ func TestCreateVolumeFromBackup(t *testing.T) {
 		}}
 
 	block := NewBlockProvisioner(
-		NewClientProvisioner(nil, &mockBlockStorageClient{volumeState: core.VolumeLifecycleStateAvailable}),
+		provisioner.NewClientProvisioner(nil, &provisioner.MockBlockStorageClient{VolumeState: core.VolumeLifecycleStateAvailable}),
 		instancemeta.NewMock(&instancemeta.InstanceMetadata{
 			CompartmentOCID: "",
 			Region:          "phx",
@@ -181,7 +126,7 @@ func TestCreateVolumeFailure(t *testing.T) {
 					},
 				}}
 
-			block := NewBlockProvisioner(NewClientProvisioner(nil, &mockBlockStorageClient{volumeState: tt.state}),
+			block := NewBlockProvisioner(provisioner.NewClientProvisioner(nil, &provisioner.MockBlockStorageClient{VolumeState: tt.state}),
 				instancemeta.NewMock(&instancemeta.InstanceMetadata{
 					CompartmentOCID: "",
 					Region:          "phx",
@@ -221,7 +166,7 @@ func TestVolumeRoundingLogic(t *testing.T) {
 				CompartmentOCID: "",
 				Region:          "phx",
 			})
-			block := NewBlockProvisioner(NewClientProvisioner(nil, &mockBlockStorageClient{volumeState: core.VolumeLifecycleStateAvailable}),
+			block := NewBlockProvisioner(provisioner.NewClientProvisioner(nil, &provisioner.MockBlockStorageClient{VolumeState: core.VolumeLifecycleStateAvailable}),
 				metadata,
 				tt.enabled,
 				tt.minVolumeSize,
