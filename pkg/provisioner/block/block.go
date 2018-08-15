@@ -92,9 +92,9 @@ func roundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
 	return (volumeSizeBytes + allocationUnitBytes - 1) / allocationUnitBytes
 }
 
-func (block *blockProvisioner) waitForVolumeAvailable(volumeID *string, timeout time.Duration) error {
+func (block *blockProvisioner) waitForVolumeAvailable(ctx context.Context, volumeID *string, timeout time.Duration) error {
 	isVolumeReady := func() (bool, error) {
-		ctx, cancel := context.WithTimeout(block.client.Context(), block.client.Timeout())
+		ctx, cancel := context.WithTimeout(ctx, block.client.Timeout())
 		defer cancel()
 
 		getVolumeResponse, err := block.client.BlockStorage().GetVolume(ctx,
@@ -136,6 +136,7 @@ func volumeRoundingEnabled(param map[string]string) bool {
 
 // Provision creates an OCI block volume
 func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *identity.AvailabilityDomain) (*v1.PersistentVolume, error) {
+	ctx := context.Background()
 	for _, accessMode := range options.PVC.Spec.AccessModes {
 		if accessMode != v1.ReadWriteOnce {
 			return nil, fmt.Errorf("invalid access mode %v specified. Only %v is supported", accessMode, v1.ReadWriteOnce)
@@ -174,7 +175,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 		volumeDetails.SourceDetails = &core.VolumeSourceFromVolumeBackupDetails{Id: &value}
 	}
 
-	ctx, cancel := context.WithTimeout(block.client.Context(), block.client.Timeout())
+	ctx, cancel := context.WithTimeout(ctx, block.client.Timeout())
 	defer cancel()
 	prefix := strings.TrimSpace(os.Getenv(volumePrefixEnvVarName))
 	if prefix != "" && !strings.HasSuffix(prefix, "-") {
@@ -188,10 +189,10 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 		return nil, err
 	}
 
-	err = block.waitForVolumeAvailable(newVolume.Id, block.timeout)
+	err = block.waitForVolumeAvailable(ctx, newVolume.Id, block.timeout)
 	if err != nil {
 		// Delete the volume if it failed to get in a good state for us
-		ctx, cancel := context.WithTimeout(block.client.Context(), block.client.Timeout())
+		ctx, cancel := context.WithTimeout(ctx, block.client.Timeout())
 		defer cancel()
 
 		_, _ = block.client.BlockStorage().DeleteVolume(ctx,
@@ -242,6 +243,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 
 // Delete destroys a OCI volume created by Provision
 func (block *blockProvisioner) Delete(volume *v1.PersistentVolume) error {
+	ctx := context.Background()
 	volID, ok := volume.Annotations[ociVolumeID]
 	if !ok {
 		return errors.New("volumeid annotation not found on PV")
@@ -249,7 +251,7 @@ func (block *blockProvisioner) Delete(volume *v1.PersistentVolume) error {
 	glog.Infof("Deleting volume %v with volumeId %v", volume, volID)
 
 	request := core.DeleteVolumeRequest{VolumeId: common.String(volID)}
-	ctx, cancel := context.WithTimeout(block.client.Context(), block.client.Timeout())
+	ctx, cancel := context.WithTimeout(ctx, block.client.Timeout())
 	defer cancel()
 
 	response, err := block.client.BlockStorage().DeleteVolume(ctx, request)

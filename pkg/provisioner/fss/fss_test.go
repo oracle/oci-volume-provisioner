@@ -15,6 +15,7 @@
 package fss
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -30,8 +31,9 @@ import (
 
 func TestGetMountTargetFromID(t *testing.T) {
 	// test retrieving a mount target from given ID
+	var ctx = context.Background()
 	fss := filesystemProvisioner{client: provisioner.NewClientProvisioner(nil, nil)}
-	resp, err := fss.getMountTargetFromID("mtOCID")
+	resp, err := fss.getMountTargetFromID(ctx, "mtOCID")
 	if err != nil {
 		t.Fatalf("Failed to retrieve mount target from ID: %v", err)
 	}
@@ -42,8 +44,9 @@ func TestGetMountTargetFromID(t *testing.T) {
 
 func TestListAllMountTargets(t *testing.T) {
 	// test listing all mount targets
+	var ctx = context.Background()
 	fss := filesystemProvisioner{client: provisioner.NewClientProvisioner(nil, nil)}
-	resp, err := fss.listAllMountTargets("adOCID")
+	resp, err := fss.listAllMountTargets(ctx, "adOCID")
 	if err != nil {
 		t.Fatalf("Failed to retrieve list mount targets: %v", err)
 	}
@@ -54,8 +57,9 @@ func TestListAllMountTargets(t *testing.T) {
 
 func TestGetOrCreateMountTarget(t *testing.T) {
 	// test get or create mount target
+	var ctx = context.Background()
 	fss := filesystemProvisioner{client: provisioner.NewClientProvisioner(nil, nil)}
-	resp, err := fss.getOrCreateMountTarget("", provisioner.NilListMountTargetsADID, "subnetID")
+	resp, err := fss.getOrCreateMountTarget(ctx, "", provisioner.NilListMountTargetsADID, "subnetID")
 	if err != nil {
 		t.Fatalf("Failed to retrieve or create mount target: %v", err)
 	}

@@ -30,9 +30,9 @@ import (
 	"github.com/oracle/oci-go-sdk/identity"
 )
 
-func (p *OCIProvisioner) findADByName(name string) (*identity.AvailabilityDomain, error) {
+func (p *OCIProvisioner) findADByName(ctx context.Context, name string) (*identity.AvailabilityDomain, error) {
 	request := identity.ListAvailabilityDomainsRequest{CompartmentId: common.String(p.client.CompartmentOCID())}
-	ctx, cancel := context.WithTimeout(p.client.Context(), p.client.Timeout())
+	ctx, cancel := context.WithTimeout(ctx, p.client.Timeout())
 	defer cancel()
 	response, err := p.client.Identity().ListAvailabilityDomains(ctx, request)
 	if err != nil {
@@ -49,7 +49,7 @@ func (p *OCIProvisioner) findADByName(name string) (*identity.AvailabilityDomain
 
 // chooseAvailabilityDomain selects the availability zone using the ZoneFailureDomain labels
 // on the nodes. This only works if the nodes have been labeled by either the CCM or some other method.
-func (p *OCIProvisioner) chooseAvailabilityDomain(pvc *v1.PersistentVolumeClaim) (string, *identity.AvailabilityDomain, error) {
+func (p *OCIProvisioner) chooseAvailabilityDomain(ctx context.Context, pvc *v1.PersistentVolumeClaim) (string, *identity.AvailabilityDomain, error) {
 	var (
 		availabilityDomainName string
 		ok                     bool
@@ -83,7 +83,7 @@ func (p *OCIProvisioner) chooseAvailabilityDomain(pvc *v1.PersistentVolumeClaim)
 		glog.Infof("Zone not specified so %s selected", availabilityDomainName)
 	}
 
-	availabilityDomain, err := p.findADByName(availabilityDomainName)
+	availabilityDomain, err := p.findADByName(ctx, availabilityDomainName)
 	if err != nil {
 		return "", nil, err
 	}

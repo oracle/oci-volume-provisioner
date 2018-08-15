@@ -45,7 +45,6 @@ type provisionerClient struct {
 	identity       *identity.IdentityClient
 	fileStorage    *filestorage.FileStorageClient
 	virtualNetwork *core.VirtualNetworkClient
-	context        context.Context
 	timeout        time.Duration
 	metadata       *instancemeta.InstanceMetadata
 }
@@ -84,7 +83,6 @@ type ProvisionerClient interface {
 	Identity() Identity
 	FSS() FSS
 	VCN() VCN
-	Context() context.Context
 	Timeout() time.Duration
 	CompartmentOCID() string
 	TenancyOCID() string
@@ -104,10 +102,6 @@ func (p *provisionerClient) FSS() FSS {
 
 func (p *provisionerClient) VCN() VCN {
 	return p.virtualNetwork
-}
-
-func (p *provisionerClient) Context() context.Context {
-	return p.context
 }
 
 func (p *provisionerClient) Timeout() time.Duration {
@@ -179,7 +173,6 @@ func FromConfig(cfg *Config) (ProvisionerClient, error) {
 		fileStorage:    &fileStorage,
 		virtualNetwork: &virtualNetwork,
 		timeout:        3 * time.Minute,
-		context:        context.Background(),
 		metadata:       metadata,
 	}, nil
 }
