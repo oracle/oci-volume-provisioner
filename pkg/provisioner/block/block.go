@@ -32,6 +32,7 @@ import (
 
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
+	"github.com/oracle/oci-volume-provisioner/pkg/provisioner"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/plugin"
 
 	"k8s.io/api/core/v1"
@@ -252,10 +253,14 @@ func (block *blockProvisioner) Delete(volume *v1.PersistentVolume) error {
 	defer cancel()
 
 	response, err := block.client.BlockStorage().DeleteVolume(ctx, request)
-	// If the volume does not exists (perhaps a user deleted it) then stop retrying the delete
+	// If the volume does not exist (perhaps a user deleted it) then stop retrying the delete
 	// Note that we cannot differentiate between a volume that no longer exists and an authentication failure.
 	// bl - bug, doesnt stop retrying delete
 	if response.RawResponse != nil && response.RawResponse.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if provisioner.IsNotFound(err) {
+		glog.Infof("VolumeID %q was not found. Unable to delete it: %v", volID, err)
 		return nil
 	}
 
