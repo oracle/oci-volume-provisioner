@@ -255,7 +255,6 @@ func (block *blockProvisioner) Delete(volume *v1.PersistentVolume) error {
 	response, err := block.client.BlockStorage().DeleteVolume(ctx, request)
 	// If the volume does not exist (perhaps a user deleted it) then stop retrying the delete
 	// Note that we cannot differentiate between a volume that no longer exists and an authentication failure.
-	// bl - bug, doesnt stop retrying delete
 	if response.RawResponse != nil && response.RawResponse.StatusCode == http.StatusNotFound {
 		return nil
 	}
