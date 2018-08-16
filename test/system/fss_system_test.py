@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import os
+import time
 import utils
 from yaml_utils import PopulateYaml
 from vol_provisioner_system_test import VolumeProvisionerSystemTestInterface
@@ -29,7 +30,7 @@ class FSSSystemTests(VolumeProvisionerSystemTestInterface):
     SUBNET_OCID = "SUBNET_OCID"
     KUBERNETES_RESOURCES = ["../../dist/oci-volume-provisioner-fss.yaml",
                             "../../dist/oci-volume-provisioner-rbac.yaml"]
-    TEST_SC_FILES = [STORAGE_CLAIM_WITH_MNT_ID, STORAGE_CLAIM_EMPTY]
+    TEST_SC_FILES = {"mntid": STORAGE_CLAIM_WITH_MNT_ID, "empty": STORAGE_CLAIM_EMPTY}
     CM_FSS = ""
 
     def __init__(self, subnet_ocid=None, mnt_target_ocid=None, test_id=None, setup=False, check_oci=False, canaryMetrics=None):
@@ -43,10 +44,12 @@ class FSSSystemTests(VolumeProvisionerSystemTestInterface):
         super(FSSSystemTests, self).run()
         if self._check_oci: # Do not run tests in the validate-test-image stage
             utils.log("Running system test: Create volume with FSS", as_banner=True)
-            for _testSc in self.TEST_SC_FILES:
+            for _testScName, _testScFile in self.TEST_SC_FILES.iteritems():
                 # Not testing the creation of a mount target, as all mount targets on the system will have
                 # to be removed
-                self._testCreateVolumeFromStorageClass(_testSc)
+                self._testCreateVolumeFromStorageClass(_testScFile)
+                # Wait for 5 seconds to allow the previous pod to be deleted
+                time.sleep(5)
 
     def _testCreateVolumeFromStorageClass(self, scFile):
         '''Test creating a volume based on provided storage class
