@@ -226,6 +226,7 @@ func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad
 					ReadOnly: false,
 				},
 			},
+			MountOptions: options.MountOptions,
 		},
 	}, nil
 }

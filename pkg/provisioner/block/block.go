@@ -235,6 +235,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 					FSType: filesystemType,
 				},
 			},
+			MountOptions: options.MountOptions,
 		},
 	}
 
