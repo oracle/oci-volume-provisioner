@@ -20,7 +20,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
+	"go.uber.org/zap"
+
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/pkg/errors"
 
@@ -61,10 +62,12 @@ type OCIProvisioner struct {
 	nodeLister       listersv1.NodeLister
 	nodeListerSynced cache.InformerSynced
 	provisioner      plugin.ProvisionerPlugin
+
+	logger *zap.SugaredLogger
 }
 
 // NewOCIProvisioner creates a new OCI provisioner.
-func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1.NodeInformer, provisionerType string, nodeName string, volumeRoundingEnabled bool, minVolumeSize resource.Quantity) (*OCIProvisioner, error) {
+func NewOCIProvisioner(logger *zap.SugaredLogger, kubeClient kubernetes.Interface, nodeInformer informersv1.NodeInformer, provisionerType string, nodeName string, volumeRoundingEnabled bool, minVolumeSize resource.Quantity) (*OCIProvisioner, error) {
 	configPath, ok := os.LookupEnv("CONFIG_YAML_FILENAME")
 	if !ok {
 		configPath = configFilePath
@@ -72,18 +75,18 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1
 
 	f, err := os.Open(configPath)
 	if err != nil {
-		glog.Fatalf("Unable to load volume provisioner configuration file: %v", configPath)
+		logger.Fatalf("Unable to load volume provisioner configuration file: %v", configPath)
 	}
 	defer f.Close()
 
 	cfg, err := client.LoadConfig(f)
 	if err != nil {
-		glog.Fatalf("Unable to load volume provisioner client: %v", err)
+		logger.Fatalf("Unable to load volume provisioner client: %v", err)
 	}
 
-	client, err := client.FromConfig(cfg)
+	client, err := client.FromConfig(logger, cfg)
 	if err != nil {
-		glog.Fatalf("Unable to create volume provisioner client: %v", err)
+		logger.Fatalf("Unable to create volume provisioner client: %v", err)
 	}
 	var provisioner plugin.ProvisionerPlugin
 	switch provisionerType {
