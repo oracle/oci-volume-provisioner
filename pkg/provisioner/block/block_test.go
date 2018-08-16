@@ -84,8 +84,8 @@ func TestCreateVolumeFromBackup(t *testing.T) {
 			},
 		}}
 
-	block := NewBlockProvisioner(
-		provisioner.NewClientProvisioner(logger, nil, &provisioner.MockBlockStorageClient{VolumeState: core.VolumeLifecycleStateAvailable}),
+	block := NewBlockProvisioner(logger,
+		provisioner.NewClientProvisioner(nil, &provisioner.MockBlockStorageClient{VolumeState: core.VolumeLifecycleStateAvailable}),
 		instancemeta.NewMock(&instancemeta.InstanceMetadata{
 			CompartmentOCID: "",
 			Region:          "phx",

@@ -75,27 +75,27 @@ func NewOCIProvisioner(logger *zap.SugaredLogger, kubeClient kubernetes.Interfac
 
 	f, err := os.Open(configPath)
 	if err != nil {
-		logger.Fatalf("Unable to load volume provisioner configuration file: %v", configPath)
+		logger.With("configPath", configPath).Fatal("Unable to load volume provisioner configuration file.")
 	}
 	defer f.Close()
 
 	cfg, err := client.LoadConfig(f)
 	if err != nil {
-		logger.Fatalf("Unable to load volume provisioner client: %v", err)
+		logger.With(zap.Error(err)).Fatal("Unable to load volume provisioner client.")
 	}
 
 	client, err := client.FromConfig(logger, cfg)
 	if err != nil {
-		logger.Fatalf("Unable to create volume provisioner client: %v", err)
+		logger.With(zap.Error(err)).Fatal("Unable to create volume provisioner client.")
 	}
 	var provisioner plugin.ProvisionerPlugin
 	switch provisionerType {
 	case ProvisionerNameDefault:
-		provisioner = block.NewBlockProvisioner(client, instancemeta.New(), volumeRoundingEnabled, minVolumeSize, time.Minute*3)
+		provisioner = block.NewBlockProvisioner(logger, client, instancemeta.New(), volumeRoundingEnabled, minVolumeSize, time.Minute*3)
 	case ProvisionerNameBlock:
-		provisioner = block.NewBlockProvisioner(client, instancemeta.New(), volumeRoundingEnabled, minVolumeSize, time.Minute*3)
+		provisioner = block.NewBlockProvisioner(logger, client, instancemeta.New(), volumeRoundingEnabled, minVolumeSize, time.Minute*3)
 	case ProvisionerNameFss:
-		provisioner = fss.NewFilesystemProvisioner(client, instancemeta.New())
+		provisioner = fss.NewFilesystemProvisioner(logger, client, instancemeta.New())
 	default:
 		return nil, errors.Errorf("invalid provisioner type %q", provisionerType)
 	}

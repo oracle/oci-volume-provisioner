@@ -113,10 +113,10 @@ func (p *provisionerClient) Timeout() time.Duration {
 func (p *provisionerClient) CompartmentOCID() (compartmentOCID string) {
 	if p.cfg.CompartmentOCID == "" {
 		if p.metadata == nil {
-			p.logger.Fatal("Unable to get compartment OCID. Please provide this via config")
+			p.logger.Fatal("Unable to get compartment OCID. Please provide this via config.")
 			return
 		}
-		p.logger.Infof("'CompartmentID' not given. Using compartment OCID %s from instance metadata", p.metadata.CompartmentOCID)
+		p.logger.With("compartmentOCID", p.metadata.CompartmentOCID).Infof("'CompartmentID' not given. Using compartment OCID from instance metadata.")
 		compartmentOCID = p.metadata.CompartmentOCID
 	} else {
 		compartmentOCID = p.cfg.CompartmentOCID
@@ -166,7 +166,7 @@ func FromConfig(logger *zap.SugaredLogger, cfg *Config) (ProvisionerClient, erro
 
 	metadata, err := instancemeta.New().Get()
 	if err != nil {
-		logger.Warnf("Unable to retrieve instance metadata: %s", err)
+		logger.With(zap.Error(err)).Warnf("Unable to retrieve instance metadata.")
 	}
 
 	return &provisionerClient{
@@ -190,14 +190,14 @@ func newConfigurationProvider(logger *zap.SugaredLogger, cfg *Config) (common.Co
 			return nil, errors.Wrap(err, "invalid client config")
 		}
 		if cfg.UseInstancePrincipals {
-			logger.Info("Using instance principals configuration provider")
+			logger.Info("Using instance principals configuration provider.")
 			cp, err := auth.InstancePrincipalConfigurationProvider()
 			if err != nil {
 				return nil, errors.Wrap(err, "InstancePrincipalConfigurationProvider")
 			}
 			return cp, nil
 		}
-		logger.Info("Using raw configuration provider")
+		logger.Info("Using raw configuration provider.")
 		conf = common.NewRawConfigurationProvider(
 			cfg.Auth.TenancyOCID,
 			cfg.Auth.UserOCID,
@@ -245,7 +245,7 @@ func configureCustomTransport(logger *zap.SugaredLogger, baseClient *common.Base
 
 	trustedCACertPath := os.Getenv("TRUSTED_CA_CERT_PATH")
 	if trustedCACertPath != "" {
-		logger.Infof("configuring OCI client with a new trusted ca: %s", trustedCACertPath)
+		logger.With("trustedCACertPath", trustedCACertPath).Info("Configuring OCI client with a new trusted ca.")
 		trustedCACert, err := ioutil.ReadFile(trustedCACertPath)
 		if err != nil {
 			return fmt.Errorf("failed to read root certificate: %s, err: %v", trustedCACertPath, err)

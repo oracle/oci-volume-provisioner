@@ -25,6 +25,7 @@ import (
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/identity"
+	"go.uber.org/zap"
 
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner"
@@ -69,6 +70,7 @@ func TestGetOrCreateMountTarget(t *testing.T) {
 	}
 
 }
+
 func TestCreateVolumeWithFSS(t *testing.T) {
 	// test creating a volume on a file system storage
 	options := controller.VolumeOptions{
@@ -77,7 +79,9 @@ func TestCreateVolumeWithFSS(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{},
 		}}
 	ad := identity.AvailabilityDomain{Name: common.String("dummyAdName"), CompartmentId: common.String("dummyCompartmentId")}
-	fss := filesystemProvisioner{client: provisioner.NewClientProvisioner(nil, nil),
+	fss := filesystemProvisioner{
+		client: provisioner.NewClientProvisioner(nil, nil),
+		logger: zap.S(),
 		metadata: instancemeta.NewMock(&instancemeta.InstanceMetadata{
 			CompartmentOCID: "",
 			Region:          "phx",

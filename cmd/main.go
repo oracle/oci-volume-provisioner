@@ -21,7 +21,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/oracle/oci-volume-provisioner/pkg/logging"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/core"
@@ -57,9 +56,9 @@ func informerResyncPeriod(minResyncPeriod time.Duration) func() time.Duration {
 func main() {
 	syscall.Umask(0)
 
-	logger := logging.Logger()
-	defer logger.Sync()
-	zap.ReplaceGlobals(logger)
+	log := logging.Logger()
+	defer log.Sync()
+	zap.ReplaceGlobals(log)
 
 	kubeconfig := flag.String("kubeconfig", "", "Path to Kubeconfig file with authorization and master location information.")
 	volumeRoundingEnabled := flag.Bool("rounding-enabled", true, "When enabled volumes will be rounded up if less than 'minVolumeSizeMB'")
@@ -68,7 +67,9 @@ func main() {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
-	logger.Sugar().Infof("logtostderr is set to %b", flag.Lookup("logtostderr").Value.(flag.Getter).Get().(bool))
+	logger := log.Sugar()
+
+	logger.Infof("logtostderr is set to %b", flag.Lookup("logtostderr").Value.(flag.Getter).Get().(bool))
 
 	//logger.Sugar().With("version", version, "build", build).Info("oci-volume-provisioner")
 
@@ -79,25 +80,25 @@ func main() {
 	// to use to communicate with Kubernetes
 	config, err := clientcmd.BuildConfigFromFlags(*master, *kubeconfig)
 	if err != nil {
-		logger.Sugar().Fatalf("Failed to load config: %v", err)
+		logger.Fatalf("Failed to load config: %v", err)
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		logger.Sugar().Fatalf("Failed to create client: %v", err)
+		logger.Fatalf("Failed to create client: %v", err)
 	}
 
 	// The controller needs to know what the server version is because out-of-tree
 	// provisioners aren't officially supported until 1.5
 	serverVersion, err := clientset.Discovery().ServerVersion()
 	if err != nil {
-		logger.Sugar().Fatalf("Error getting server version: %v", err)
+		logger.Fatalf("Error getting server version: %v", err)
 	}
 
 	// TODO (owainlewis) ensure this is clearly documented
 	nodeName := os.Getenv("NODE_NAME")
 	if nodeName == "" {
-		logger.Sugar().Fatal("env variable NODE_NAME must be set so that this provisioner can identify itself")
+		logger.Fatal("env variable NODE_NAME must be set so that this provisioner can identify itself")
 	}
 
 	// Decides what type of provider to deploy, either block or fss
@@ -106,20 +107,20 @@ func main() {
 		provisionerType = core.ProvisionerNameDefault
 	}
 
-	glog.Infof("Starting volume provisioner in %s mode", provisionerType)
+	logger.With("provisionerType", provisionerType).Info("Starting volume provisioner in %s mode", provisionerType)
 
 	sharedInformerFactory := informers.NewSharedInformerFactory(clientset, informerResyncPeriod(minResyncPeriod)())
 
 	volumeSizeLowerBound, err := resource.ParseQuantity(*minVolumeSize)
 	if err != nil {
-		logger.Sugar().Fatalf("Cannot parse volume size %s", *minVolumeSize)
+		logger.Fatalf("Cannot parse volume size %s", *minVolumeSize)
 	}
 
 	// Create the provisioner: it implements the Provisioner interface expected by
 	// the controller
-	ociProvisioner, err := core.NewOCIProvisioner(logger.Sugar(), clientset, sharedInformerFactory.Core().V1().Nodes(), nodeName, *volumeRoundingEnabled, volumeSizeLowerBound)
+	ociProvisioner, err := core.NewOCIProvisioner(logger, clientset, sharedInformerFactory.Core().V1().Nodes(), provisionerType, nodeName, *volumeRoundingEnabled, volumeSizeLowerBound)
 	if err != nil {
-		logger.With(err).Fatal("Cannot create volume provisioner.")
+		logger.With(zap.Error(err)).Fatal("Cannot create volume provisioner.")
 	}
 
 	// Start the provision controller which will dynamically provision oci
@@ -143,7 +144,7 @@ func main() {
 	// We block waiting for Ready() after the shared informer factory has
 	// started so we don't deadlock waiting for caches to sync.
 	if err := ociProvisioner.Ready(stopCh); err != nil {
-		logger.Sugar().Fatalf("Failed to start volume provisioner: %v", err)
+		logger.Fatalf("Failed to start volume provisioner: %v", err)
 	}
 
 	pc.Run(stopCh)
