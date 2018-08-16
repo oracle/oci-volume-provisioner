@@ -21,7 +21,9 @@
 
 ignored = ["k8s.io/client-go/pkg/api/v1"]
 [[constraint]]
+ revision = "ad18aa91a01e5a7a4d312d16528a181979a23c62"
  name = "github.com/golang/glog"
+ source = "github.com/prydie/glog"
 
 [[constraint]]
  name = "github.com/kubernetes-incubator/external-storage"

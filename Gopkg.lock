@@ -37,10 +37,10 @@
   version = "v1.1.1"
 
 [[projects]]
-  branch = "master"
   name = "github.com/golang/glog"
   packages = ["."]
-  revision = "23def4e6c14b4da8ac2ed8007337bc5eb5007998"
+  revision = "ad18aa91a01e5a7a4d312d16528a181979a23c62"
+  source = "github.com/prydie/glog"
 
 [[projects]]
   branch = "master"
@@ -226,6 +226,31 @@
   version = "v1.0.1"
 
 [[projects]]
+  name = "go.uber.org/atomic"
+  packages = ["."]
+  revision = "1ea20fb1cbb1cc08cbd0d913a96dead89aa18289"
+  version = "v1.3.2"
+
+[[projects]]
+  name = "go.uber.org/multierr"
+  packages = ["."]
+  revision = "3c4937480c32f4c13a875a1829af76c98ca3d40a"
+  version = "v1.1.0"
+
+[[projects]]
+  name = "go.uber.org/zap"
+  packages = [
+    ".",
+    "buffer",
+    "internal/bufferpool",
+    "internal/color",
+    "internal/exit",
+    "zapcore"
+  ]
+  revision = "ff33455a0e382e8a81d14dd7c922020b6b5e7982"
+  version = "v1.9.1"
+
+[[projects]]
   branch = "master"
   name = "golang.org/x/crypto"
   packages = [
@@ -288,6 +313,12 @@
   packages = ["."]
   revision = "d2d2541c53f18d2a059457998ce2876cc8e67cbf"
   version = "v0.9.1"
+
+[[projects]]
+  name = "gopkg.in/natefinch/lumberjack.v2"
+  packages = ["."]
+  revision = "a96e63847dc3c67d17befa69c303767e2f84e54f"
+  version = "v2.1"
 
 [[projects]]
   name = "gopkg.in/square/go-jose.v2"
@@ -611,6 +642,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "08efd921695ce4428fe82fa642823d13d1b4835b7e10e95e182a9302e57f3e47"
+  inputs-digest = "4c221b4477290355fccbd9063778755e0e0c7cf9f4da07e958ebfe2b5d5267bd"
   solver-name = "gps-cdcl"
   solver-version = 1
