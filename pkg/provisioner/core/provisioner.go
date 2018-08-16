@@ -15,6 +15,7 @@
 package core
 
 import (
+	"context"
 	"os"
 	"strings"
 	"time"
@@ -122,11 +123,10 @@ func mapAvailabilityDomainToFailureDomain(AD string) string {
 
 // Provision creates a storage asset and returns a PV object representing it.
 func (p *OCIProvisioner) Provision(options controller.VolumeOptions) (*v1.PersistentVolume, error) {
-	availabilityDomainName, availabilityDomain, err := p.chooseAvailabilityDomain(options.PVC)
+	availabilityDomainName, availabilityDomain, err := p.chooseAvailabilityDomain(context.Background(), options.PVC)
 	if err != nil {
 		return nil, err
 	}
-
 	persistentVolume, err := p.provisioner.Provision(options, availabilityDomain)
 	if err == nil {
 		persistentVolume.ObjectMeta.Annotations[ociProvisionerIdentity] = ociProvisionerIdentity
@@ -147,7 +147,6 @@ func (p *OCIProvisioner) Delete(volume *v1.PersistentVolume) error {
 	if identity != ociProvisionerIdentity {
 		return &controller.IgnoredError{Reason: "identity annotation on PV does not match ours"}
 	}
-
 	return p.provisioner.Delete(volume)
 }
 

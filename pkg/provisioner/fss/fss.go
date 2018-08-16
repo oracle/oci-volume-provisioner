@@ -61,8 +61,8 @@ func NewFilesystemProvisioner(client client.ProvisionerClient) plugin.Provisione
 }
 
 // getMountTargetFromID retrieves mountTarget from given mountTargetID
-func (fsp *filesystemProvisioner) getMountTargetFromID(mountTargetID string) (*filestorage.MountTarget, error) {
-	ctx, cancel := context.WithTimeout(fsp.client.Context(), fsp.client.Timeout())
+func (fsp *filesystemProvisioner) getMountTargetFromID(ctx context.Context, mountTargetID string) (*filestorage.MountTarget, error) {
+	ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
 	defer cancel()
 
 	resp, err := fsp.client.FSS().GetMountTarget(ctx, filestorage.GetMountTargetRequest{
@@ -76,14 +76,14 @@ func (fsp *filesystemProvisioner) getMountTargetFromID(mountTargetID string) (*f
 }
 
 // listAllMountTargets retrieves all available mount targets
-func (fsp *filesystemProvisioner) listAllMountTargets(ad string) ([]filestorage.MountTargetSummary, error) {
+func (fsp *filesystemProvisioner) listAllMountTargets(ctx context.Context, ad string) ([]filestorage.MountTargetSummary, error) {
 	var (
 		page         *string
 		mountTargets []filestorage.MountTargetSummary
 	)
 	// Check if there already is a mount target in the existing compartment
 	for {
-		ctx, cancel := context.WithTimeout(fsp.client.Context(), fsp.client.Timeout())
+		ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
 		defer cancel()
 		resp, err := fsp.client.FSS().ListMountTargets(ctx, filestorage.ListMountTargetsRequest{
 			AvailabilityDomain: &ad,
@@ -101,22 +101,22 @@ func (fsp *filesystemProvisioner) listAllMountTargets(ad string) ([]filestorage.
 	return mountTargets, nil
 }
 
-func (fsp *filesystemProvisioner) getOrCreateMountTarget(mtID string, ad string, subnetID string) (*filestorage.MountTarget, error) {
+func (fsp *filesystemProvisioner) getOrCreateMountTarget(ctx context.Context, mtID string, ad string, subnetID string) (*filestorage.MountTarget, error) {
 	if mtID != "" {
 		// Mount target already specified in the configuration file, find it in the list of mount targets
-		return fsp.getMountTargetFromID(mtID)
+		return fsp.getMountTargetFromID(ctx, mtID)
 	}
-	mountTargets, err := fsp.listAllMountTargets(ad)
+	mountTargets, err := fsp.listAllMountTargets(ctx, ad)
 	if err != nil {
 		return nil, err
 	}
 	if len(mountTargets) != 0 {
 		glog.V(4).Infof("Found mount targets to use")
 		mntTargetSummary := mountTargets[rand.Int()%len(mountTargets)]
-		target, err := fsp.getMountTargetFromID(*mntTargetSummary.Id)
+		target, err := fsp.getMountTargetFromID(ctx, *mntTargetSummary.Id)
 		return target, err
 	}
-	ctx, cancel := context.WithTimeout(fsp.client.Context(), fsp.client.Timeout())
+	ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
 	defer cancel()
 	// Mount target not created, create a new one
 	resp, err := fsp.client.FSS().CreateMountTarget(ctx, filestorage.CreateMountTargetRequest{
@@ -134,10 +134,11 @@ func (fsp *filesystemProvisioner) getOrCreateMountTarget(mtID string, ad string,
 }
 
 func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad *identity.AvailabilityDomain) (*v1.PersistentVolume, error) {
+	ctx := context.Background()
 	// Create the FileSystem.
 	var fsID string
 	{
-		ctx, cancel := context.WithTimeout(fsp.client.Context(), fsp.client.Timeout())
+		ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
 		defer cancel()
 		resp, err := fsp.client.FSS().CreateFileSystem(ctx, filestorage.CreateFileSystemRequest{
 			CreateFileSystemDetails: filestorage.CreateFileSystemDetails{
@@ -153,7 +154,7 @@ func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad
 		fsID = *resp.FileSystem.Id
 	}
 
-	target, err := fsp.getOrCreateMountTarget(options.Parameters[mntTargetID], *ad.Name, options.Parameters[subnetID])
+	target, err := fsp.getOrCreateMountTarget(ctx, options.Parameters[mntTargetID], *ad.Name, options.Parameters[subnetID])
 	if err != nil {
 		glog.Errorf("Failed to retrieve mount target: %s", err)
 		return nil, err
@@ -163,7 +164,7 @@ func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad
 	// Create the ExportSet.
 	var exportSetID string
 	{
-		ctx, cancel := context.WithTimeout(fsp.client.Context(), fsp.client.Timeout())
+		ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
 		defer cancel()
 		resp, err := fsp.client.FSS().CreateExport(ctx, filestorage.CreateExportRequest{
 			CreateExportDetails: filestorage.CreateExportDetails{
@@ -187,7 +188,7 @@ func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad
 	// Get PrivateIP.
 	var serverIP string
 	{
-		ctx, cancel := context.WithTimeout(fsp.client.Context(), fsp.client.Timeout())
+		ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
 		defer cancel()
 		id := target.PrivateIpIds[rand.Int()%len(target.PrivateIpIds)]
 		getPrivateIPResponse, err := fsp.client.VCN().GetPrivateIp(ctx, core.GetPrivateIpRequest{
@@ -231,6 +232,7 @@ func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad
 
 // Delete destroys a OCI volume created by Provision
 func (fsp *filesystemProvisioner) Delete(volume *v1.PersistentVolume) error {
+	ctx := context.Background()
 	exportID, ok := volume.Annotations[ociExportID]
 	if !ok {
 		return errors.Errorf("%q annotation not found on PV", ociExportID)
@@ -242,7 +244,7 @@ func (fsp *filesystemProvisioner) Delete(volume *v1.PersistentVolume) error {
 	}
 
 	glog.Infof("Deleting export for filesystemID %v", filesystemID)
-	ctx, cancel := context.WithTimeout(fsp.client.Context(), fsp.client.Timeout())
+	ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
 	defer cancel()
 	if _, err := fsp.client.FSS().DeleteExport(ctx, filestorage.DeleteExportRequest{
 		ExportId: &exportID,
@@ -254,7 +256,7 @@ func (fsp *filesystemProvisioner) Delete(volume *v1.PersistentVolume) error {
 		glog.Infof("ExportID %q was not found. Unable to delete it: %v", exportID, err)
 	}
 
-	ctx, cancel = context.WithTimeout(fsp.client.Context(), fsp.client.Timeout())
+	ctx, cancel = context.WithTimeout(ctx, fsp.client.Timeout())
 	defer cancel()
 
 	glog.Infof("Deleting volume %v with FileSystemID %v", volume, filesystemID)
