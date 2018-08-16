@@ -113,7 +113,7 @@ class BackupVolumeSystemTest(VolumeProvisionerSystemTestInterface):
         atexit.register(_destroy_test_volume_atexit)
         self._delete_backup(backup_ocid)
 
-    def _volume_from_backup_check(self, test_id, availability_domain, volume, file_name='hello.txt'):
+    def _volume_from_backup_check(self, test_id, availability_domain, volume, file_name='hello.txt',):
         '''Verify whether the volume created from the backup is in a healthy state
         @param test_id: Test id to use for creating components
         @type test_id: C{Str}
