@@ -93,7 +93,7 @@ func main() {
 	// Decides what type of provider to deploy, either block or fss
 	provisionerType := os.Getenv("PROVISIONER_TYPE")
 	if provisionerType == "" {
-		provisionerType = core.ProvisionerNameBlock
+		provisionerType = core.ProvisionerNameDefault
 	}
 
 	glog.Infof("Starting volume provisioner in %s mode", provisionerType)
