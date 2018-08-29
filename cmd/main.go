@@ -69,7 +69,7 @@ func main() {
 
 	logger := log.Sugar()
 
-	logger.Infof("logtostderr is set to %b", flag.Lookup("logtostderr").Value.(flag.Getter).Get().(bool))
+	//logger.Infof("logtostderr is set to %b", flag.Lookup("logtostderr").Value.(flag.Getter).Get().(bool))
 
 	//logger.Sugar().With("version", version, "build", build).Info("oci-volume-provisioner")
 

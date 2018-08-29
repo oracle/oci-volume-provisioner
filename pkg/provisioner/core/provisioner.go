@@ -105,6 +105,7 @@ func NewOCIProvisioner(logger *zap.SugaredLogger, kubeClient kubernetes.Interfac
 		nodeLister:       nodeInformer.Lister(),
 		nodeListerSynced: nodeInformer.Informer().HasSynced,
 		provisioner:      provisioner,
+		logger:           logger,
 	}, nil
 }
 
