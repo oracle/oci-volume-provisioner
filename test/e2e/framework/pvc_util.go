@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 
@@ -37,14 +38,15 @@ type PVCTestJig struct {
 	Name   string
 	Labels map[string]string
 
-	StorageClass *storagev1beta1.StorageClass
+	CustomStorageClass bool
+	StorageClassName   string
 
 	KubeClient clientset.Interface
 }
 
 // NewPVCTestJig allocates and inits a new PVCTestJig.
-func NewPVCTestJig(kubeClient clientset.Interface, storageClass *storagev1beta1.StorageClass, name string) *PVCTestJig {
-	id := storageClass.Labels["testID"]
+func NewPVCTestJig(kubeClient clientset.Interface, name string) *PVCTestJig {
+	id := string(uuid.NewUUID())
 	return &PVCTestJig{
 		ID:   id,
 		Name: name,
@@ -52,48 +54,86 @@ func NewPVCTestJig(kubeClient clientset.Interface, storageClass *storagev1beta1.
 			"testID":   id,
 			"testName": name,
 		},
-		StorageClass: storageClass,
-		KubeClient:   kubeClient,
+		CustomStorageClass: false,
+		KubeClient:         kubeClient,
 	}
 }
 
 // newPVCTemplate returns the default template for this jig, but
 // does not actually create the PVC.  The default PVC has the same name
 // as the jig
-func (j *PVCTestJig) newPVCTemplate(namespace string, annotations map[string]string, selectorLabel map[string]string, volumeSize string, accessMode []v1.PersistentVolumeAccessMode) *v1.PersistentVolumeClaim {
-	if len(accessMode) == 0 {
-		Logf("AccessModes unspecified, default: RWO.")
-		accessMode = append(accessMode, v1.ReadWriteOnce)
-	}
-
+func (j *PVCTestJig) newPVCTemplate(namespace string, volumeSize string) *v1.PersistentVolumeClaim {
 	return &v1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace:   namespace,
-			Name:        j.Name + "-" + j.ID,
-			Labels:      j.Labels,
-			Annotations: annotations,
+			Namespace: namespace,
+			Name:      j.Name + "-" + j.ID,
+			Labels:    j.Labels,
 		},
 		Spec: v1.PersistentVolumeClaimSpec{
-			// TODO (bl) - refer to oci-config
-			Selector: &metav1.LabelSelector{
-				MatchLabels: selectorLabel,
+			AccessModes: []v1.PersistentVolumeAccessMode{
+				v1.ReadWriteOnce,
 			},
-			AccessModes: accessMode,
 			Resources: v1.ResourceRequirements{
 				Requests: v1.ResourceList{
 					v1.ResourceName(v1.ResourceStorage): resource.MustParse(volumeSize),
 				},
 			},
-			StorageClassName: &j.StorageClass.Name,
 		},
 	}
+}
+
+// CheckStorageClass verifies the storage class exists, if not creates a storage class
+func (j *PVCTestJig) CheckStorageClass(name string) bool {
+	list, err := j.KubeClient.StorageV1beta1().StorageClasses().List(metav1.ListOptions{})
+	if err != nil {
+		Failf("Error listing storage classes: %v", err)
+	}
+
+	for _, sc := range list.Items {
+		if sc.Name == name {
+			Logf("Storage class %q found", sc.Name)
+			return true
+		}
+	}
+
+	return false
+}
+
+// NewStorageClassTemplate returns the default template for this jig, but
+// does not actually create the storage class. The default storage class has the same name
+// as the jig
+func (j *PVCTestJig) newStorageClassTemplate(name string, provisionerType string, parameters map[string]string) *storagev1beta1.StorageClass {
+	return &storagev1beta1.StorageClass{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "StorageClass",
+			APIVersion: "storage.k8s.io/v1beta1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   name,
+			Labels: j.Labels,
+		},
+		Provisioner: provisionerType,
+		Parameters:  parameters,
+	}
+}
+
+// CreateStorageClassOrFail creates a new storage class based on the jig's defaults.
+func (j *PVCTestJig) CreateStorageClassOrFail(name string, provisionerType string, parameters map[string]string) string {
+	class := j.newStorageClassTemplate(name, provisionerType, parameters)
+
+	result, err := j.KubeClient.StorageV1beta1().StorageClasses().Create(class)
+	if err != nil {
+		Failf("Failed to create storage class %q: %v", j.Name, err)
+	}
+	j.CustomStorageClass = true
+	return result.Name
 }
 
 // CreatePVCorFail creates a new claim based on the jig's
 // defaults. Callers can provide a function to tweak the claim object
 // before it is created.
-func (j *PVCTestJig) CreatePVCorFail(namespace string, volumeSize string, selectorLabel map[string]string, tweak func(pvc *v1.PersistentVolumeClaim)) *v1.PersistentVolumeClaim {
-	pvc := j.newPVCTemplate(namespace, nil, selectorLabel, volumeSize, nil)
+func (j *PVCTestJig) CreatePVCorFail(namespace string, volumeSize string, tweak func(pvc *v1.PersistentVolumeClaim)) *v1.PersistentVolumeClaim {
+	pvc := j.newPVCTemplate(namespace, volumeSize)
 	if tweak != nil {
 		tweak(pvc)
 	}
@@ -113,8 +153,8 @@ func (j *PVCTestJig) CreatePVCorFail(namespace string, volumeSize string, select
 // jig's defaults, waits for it to become ready, and then sanity checks it and
 // its dependant resources. Callers can provide a function to tweak the
 // PVC object before it is created.
-func (j *PVCTestJig) CreateAndAwaitPVCOrFail(namespace string, volumeSize string, selectorLabel map[string]string, tweak func(cluster *v1.PersistentVolumeClaim)) *v1.PersistentVolumeClaim {
-	pvc := j.CreatePVCorFail(namespace, volumeSize, selectorLabel, tweak)
+func (j *PVCTestJig) CreateAndAwaitPVCOrFail(namespace string, volumeSize string, tweak func(pvc *v1.PersistentVolumeClaim)) *v1.PersistentVolumeClaim {
+	pvc := j.CreatePVCorFail(namespace, volumeSize, tweak)
 	pvc = j.waitForConditionOrFail(namespace, pvc.Name, DefaultTimeout, "to be dynamically provisioned", func(pvc *v1.PersistentVolumeClaim) bool {
 		err := j.WaitForPVCPhase(v1.ClaimBound, namespace, pvc.Name)
 		if err != nil {
@@ -207,7 +247,7 @@ func (j *PVCTestJig) waitForConditionOrFail(namespace, name string, timeout time
 
 // TestCleanup - Clean up a pv and pvc in a single pv/pvc test case.
 // Note: delete errors are appended to []error so that we can attempt to delete both the pvc and pv.
-func (j *PVCTestJig) TestCleanup(ns string, pvc *v1.PersistentVolumeClaim, sc *storagev1beta1.StorageClass) []error {
+func (j *PVCTestJig) TestCleanup(ns string, pvc *v1.PersistentVolumeClaim) []error {
 	var errs []error
 
 	if pvc != nil {
@@ -230,10 +270,11 @@ func (j *PVCTestJig) TestCleanup(ns string, pvc *v1.PersistentVolumeClaim, sc *s
 	} else {
 		Logf("pv is nil")
 	}
-	if sc != nil {
-		err := j.DeleteStorageClass(sc.Name)
+
+	if len(j.StorageClassName) != 0 {
+		err := j.DeleteStorageClass(j.StorageClassName)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to delete Storage Class %q: %v", sc.Name, err))
+			errs = append(errs, fmt.Errorf("failed to delete Storage Class %q: %v", j.StorageClassName, err))
 		}
 	} else {
 		Logf("sc is nil")
