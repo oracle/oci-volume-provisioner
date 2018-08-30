@@ -27,8 +27,8 @@ import (
 )
 
 // CreateAndAwaitNginxPodOrFail creates a pod with a dymincally provisioned volume
-func CreateAndAwaitNginxPodOrFail(client clientset.Interface, namespace string, nodeSelector map[string]string, pvc *v1.PersistentVolumeClaim) {
-	pod := MakeNginxPod(namespace, nodeSelector, pvc)
+func CreateAndAwaitNginxPodOrFail(client clientset.Interface, namespace string, pvc *v1.PersistentVolumeClaim) {
+	pod := MakeNginxPod(namespace, pvc)
 	By("Creating a pod with the dynmically provisioned volume")
 	pod, err := client.CoreV1().Pods(namespace).Create(pod)
 	if err != nil {
@@ -44,10 +44,11 @@ func CreateAndAwaitNginxPodOrFail(client clientset.Interface, namespace string, 
 	if err != nil {
 		Failf("pod Get API error: %v", err)
 	}
+	// TO-DO (bl) - check read write
 }
 
 // MakeNginxPod returns a pod definition based on the namespace using nginx image
-func MakeNginxPod(ns string, nodeSelector map[string]string, pvc *v1.PersistentVolumeClaim) *v1.Pod {
+func MakeNginxPod(ns string, pvc *v1.PersistentVolumeClaim) *v1.Pod {
 	podSpec := &v1.Pod{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Pod",
@@ -87,10 +88,6 @@ func MakeNginxPod(ns string, nodeSelector map[string]string, pvc *v1.PersistentV
 				},
 			},
 		},
-	}
-
-	if nodeSelector != nil {
-		podSpec.Spec.NodeSelector = nodeSelector
 	}
 	return podSpec
 }
