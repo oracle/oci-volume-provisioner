@@ -17,6 +17,9 @@ package e2e
 import (
 	. "github.com/onsi/ginkgo"
 
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"github.com/oracle/oci-volume-provisioner/test/e2e/framework"
 )
 
@@ -24,56 +27,61 @@ var _ = Describe("Block Volume Creation", func() {
 	f := framework.NewDefaultFramework("block-volume")
 
 	It("Should be possible to create a persistent volume claim for a block storage (PVC)", func() {
-		classJig := framework.NewStorageClassTestJig(f.ClientSet, "oci-storageclass")
-		storageClass := classJig.CreateStorageClassOrFail(f.Namespace.Name, "oracle.com/oci", nil)
-
-		pvcJig := framework.NewPVCTestJig(f.ClientSet, storageClass, "volume-provisioner-e2e-tests-pvc")
+		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
 		// TO-DO (bl) - refer to config yaml for specific ad, or specify somewhere in framework
-		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "50Gi", map[string]string{
-			"failure-domain.beta.kubernetes.io/zone": "PHX-AD-1"}, nil)
+		_ = pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "50Gi", func(pvc *v1.PersistentVolumeClaim) {
+			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
+				"failure-domain.beta.kubernetes.io/zone": "PHX-AD-1"}}
+			pvcJig.StorageClassName = "oci"
+			if !pvcJig.CheckStorageClass(pvcJig.StorageClassName) {
+				pvcJig.StorageClassName = pvcJig.CreateStorageClassOrFail(pvcJig.StorageClassName, "oracle.com/oci", nil)
+			}
+			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
+		})
 
-		if framework.DeleteNamespaceRegisterFlag() {
-			pvcJig.TestCleanup(f.Namespace.Name, pvc, storageClass)
-			// TO-DO (bl) - or only since pvc and pv cleaned by namespace deletion
-			// TO-DO (bl) - pvcJig.DeleteStorageClass(storageClass.Name)
-			// TO-DO (bl) - still need to think about secret/service account and provisioner/pod cleanup --> should be namespaced
+		if pvcJig.CustomStorageClass && framework.DeleteNamespaceRegisterFlag() {
+			// TO-DO (bl) - look at deletenamespaceonfailure case
+			pvcJig.DeleteStorageClass(pvcJig.StorageClassName)
 		}
 		// TO-DO (bl) - compare expected and actual
 
 	})
 	It("Should be possible to create a persistent volume claim (PVC) for a block storage of Ext3 file system ", func() {
-		classJig := framework.NewStorageClassTestJig(f.ClientSet, "oci-storageclass-ext3")
-		storageClass := classJig.CreateStorageClassOrFail(f.Namespace.Name, "oracle.com/oci", map[string]string{
-			"fsType": "ext3",
+		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
+		// TO-DO (bl) - refer to config yaml for specific ad, or specify somewhere in framework
+		_ = pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "50Gi", func(pvc *v1.PersistentVolumeClaim) {
+			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
+				"failure-domain.beta.kubernetes.io/zone": "PHX-AD-1"}}
+			pvcJig.StorageClassName = "oci-ext3"
+			if !pvcJig.CheckStorageClass(pvcJig.StorageClassName) {
+				pvcJig.StorageClassName = pvcJig.CreateStorageClassOrFail(pvcJig.StorageClassName, "oracle.com/oci", nil)
+			}
+			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
 		})
 
-		pvcJig := framework.NewPVCTestJig(f.ClientSet, storageClass, "volume-provisioner-e2e-tests-pvc")
-		// TO-DO (bl) - refer to config yaml for specific ad, or specify somewhere in framework
-		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "50Gi", map[string]string{
-			"failure-domain.beta.kubernetes.io/zone": "PHX-AD-1"}, nil)
-
-		if framework.DeleteNamespaceRegisterFlag() {
-			pvcJig.TestCleanup(f.Namespace.Name, pvc, storageClass)
-			// TO-DO (bl) - or only since pvc and pv cleaned by namespace deletion
-			// TO-DO (bl) - pvcJig.DeleteStorageClass(storageClass.Name)
-			// TO-DO (bl) - still need to think about secret/service account and provisioner/pod cleanup --> should be namespaced
+		if pvcJig.CustomStorageClass && framework.DeleteNamespaceRegisterFlag() {
+			// TO-DO (bl) - look at deletenamespaceonfailure case
+			pvcJig.DeleteStorageClass(pvcJig.StorageClassName)
 		}
+		// TO-DO (bl) - compare expected and actual
 	})
 
 	It("Should be possible to create a persistent volume claim (PVC) for a block storage with no AD specified ", func() {
-		classJig := framework.NewStorageClassTestJig(f.ClientSet, "oci-storageclass-no-ad")
-		storageClass := classJig.CreateStorageClassOrFail(f.Namespace.Name, "oracle.com/oci", nil)
+		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
+		// TO-DO (bl) - refer to config yaml for specific ad, or specify somewhere in framework
+		_ = pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "50Gi", func(pvc *v1.PersistentVolumeClaim) {
+			pvcJig.StorageClassName = "oci-ext3"
+			if !pvcJig.CheckStorageClass(pvcJig.StorageClassName) {
+				pvcJig.StorageClassName = pvcJig.CreateStorageClassOrFail(pvcJig.StorageClassName, "oracle.com/oci", nil)
+			}
+			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
+		})
 
-		pvcJig := framework.NewPVCTestJig(f.ClientSet, storageClass, "volume-provisioner-e2e-tests-pvc")
-		//maybe refer to config yaml for specific ad, or specify somewhere in framework
-		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "50Gi", nil, nil)
-
-		if framework.DeleteNamespaceRegisterFlag() {
-			pvcJig.TestCleanup(f.Namespace.Name, pvc, storageClass)
-			// TO-DO (bl) - or only since pvc and pv cleaned by namespace deletion
-			// TO-DO (bl) - pvcJig.DeleteStorageClass(storageClass.Name)
-			// TO-DO (bl) - still need to think about secret/service account and provisioner/pod cleanup --> should be namespaced
+		if pvcJig.CustomStorageClass && framework.DeleteNamespaceRegisterFlag() {
+			// TO-DO (bl) - look at deletenamespaceonfailure case
+			pvcJig.DeleteStorageClass(pvcJig.StorageClassName)
 		}
+		// TO-DO (bl) - compare expected and actual
 	})
 
 })
