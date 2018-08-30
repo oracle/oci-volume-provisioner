@@ -16,11 +16,14 @@ package framework
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/golang/glog"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/pkg/errors"
 
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -28,6 +31,15 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+
+	"github.com/oracle/oci-go-sdk/common"
+	"github.com/oracle/oci-go-sdk/common/auth"
+	coreOCI "github.com/oracle/oci-go-sdk/core"
+	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
+)
+
+const (
+	configFilePath string = "/etc/oci/config.yaml"
 )
 
 // Framework is used in the execution of e2e tests.
@@ -35,7 +47,8 @@ type Framework struct {
 	BaseName             string
 	ProvisionerInstalled bool
 
-	ClientSet clientset.Interface
+	ClientSet          clientset.Interface
+	BlockStorageClient coreOCI.BlockstorageClient
 
 	Namespace          *v1.Namespace   // Every test has at least one namespace unless creation is skipped
 	namespacesToDelete []*v1.Namespace // Some tests have more than one.
@@ -62,6 +75,13 @@ func NewFramework(baseName string, client clientset.Interface) *Framework {
 	BeforeEach(f.BeforeEach)
 	AfterEach(f.AfterEach)
 
+	return f
+}
+
+// NewBackupFramework constrycts a new e2e test Framework for the backup initialising a storage client to used to create a backup
+func NewBackupFramework(baseName string) *Framework {
+	f := NewFramework(baseName, nil)
+	f.BlockStorageClient = createStorageClient()
 	return f
 }
 
@@ -202,4 +222,73 @@ func (f *Framework) AfterEach() {
 		Failf(strings.Join(messages, ","))
 	}
 	f.ProvisionerInstalled = false
+}
+
+func createStorageClient() coreOCI.BlockstorageClient {
+	By("Creating an OCI block storage client")
+	configPath, ok := os.LookupEnv("OCICONFIG_VAR")
+	if !ok {
+		configPath = "/home/bdour/go/src/github.com/oracle/oci-volume-provisioner/cloud-config.yaml"
+	}
+
+	file, err := os.Open(configPath)
+	if err != nil {
+		glog.Fatalf("Unable to load volume provisioner configuration file: %v", configPath)
+	}
+	defer file.Close()
+	cfg, err := client.LoadConfig(file)
+	if err != nil {
+		glog.Fatalf("Unable to load volume provisioner client: %v", err)
+	}
+	config, err := newConfigurationProvider(cfg)
+	if err != nil {
+		// TO-DO modify error message
+		Logf("config %q, err: %v", config, err)
+	}
+	blockStorageClient, err := coreOCI.NewBlockstorageClientWithConfigurationProvider(config)
+	if err != nil {
+		// TO-DO modify error message
+		Logf("config %q, err: %v", config, err)
+	}
+	/*By("client declared")
+
+		config, err := clientcmd.BuildConfigFromFlags("", TestContext.KubeConfig)
+		Expect(err).NotTo(HaveOccurred())
+		f.BlockStorageClient, err = *coreOCI.NewBlockstorageClientWithConfigurationProvider(config)
+		Expect(err).NotTo(HaveOccurred())
+
+	conf := common.DefaultConfigProvider()
+	blockStorageClient, err := coreOCI.NewBlockstorageClientWithConfigurationProvider(conf)
+	Expect(err).NotTo(HaveOccurred())
+	*/
+	return blockStorageClient
+}
+
+func newConfigurationProvider(cfg *client.Config) (common.ConfigurationProvider, error) {
+	var conf common.ConfigurationProvider
+	if cfg != nil {
+		err := cfg.Validate()
+		if err != nil {
+			return nil, errors.Wrap(err, "invalid client config")
+		}
+		if cfg.UseInstancePrincipals {
+			glog.V(2).Info("Using instance principals configuration provider")
+			cp, err := auth.InstancePrincipalConfigurationProvider()
+			if err != nil {
+				return nil, errors.Wrap(err, "InstancePrincipalConfigurationProvider")
+			}
+			return cp, nil
+		}
+		glog.V(2).Info("Using raw configuration provider")
+		conf = common.NewRawConfigurationProvider(
+			cfg.Auth.TenancyOCID,
+			cfg.Auth.UserOCID,
+			cfg.Auth.Region,
+			cfg.Auth.Fingerprint,
+			cfg.Auth.PrivateKey,
+			common.String(cfg.Auth.PrivateKeyPassphrase))
+	} else {
+		conf = common.DefaultConfigProvider()
+	}
+	return conf, nil
 }
