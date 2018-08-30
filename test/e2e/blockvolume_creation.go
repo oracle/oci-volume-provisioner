@@ -29,7 +29,7 @@ var _ = Describe("Block Volume Creation", func() {
 	It("Should be possible to create a persistent volume claim for a block storage (PVC)", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
 		// TO-DO (bl) - refer to config yaml for specific ad, or specify somewhere in framework
-		_ = pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "50Gi", func(pvc *v1.PersistentVolumeClaim) {
+		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "50Gi", func(pvc *v1.PersistentVolumeClaim) {
 			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
 				"failure-domain.beta.kubernetes.io/zone": "PHX-AD-1"}}
 			pvcJig.StorageClassName = "oci"
@@ -49,7 +49,7 @@ var _ = Describe("Block Volume Creation", func() {
 	It("Should be possible to create a persistent volume claim (PVC) for a block storage of Ext3 file system ", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
 		// TO-DO (bl) - refer to config yaml for specific ad, or specify somewhere in framework
-		_ = pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "50Gi", func(pvc *v1.PersistentVolumeClaim) {
+		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "50Gi", func(pvc *v1.PersistentVolumeClaim) {
 			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
 				"failure-domain.beta.kubernetes.io/zone": "PHX-AD-1"}}
 			pvcJig.StorageClassName = "oci-ext3"
@@ -69,8 +69,8 @@ var _ = Describe("Block Volume Creation", func() {
 	It("Should be possible to create a persistent volume claim (PVC) for a block storage with no AD specified ", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
 		// TO-DO (bl) - refer to config yaml for specific ad, or specify somewhere in framework
-		_ = pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "50Gi", func(pvc *v1.PersistentVolumeClaim) {
-			pvcJig.StorageClassName = "oci-ext3"
+		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "50Gi", func(pvc *v1.PersistentVolumeClaim) {
+			pvcJig.StorageClassName = "oci"
 			if !pvcJig.CheckStorageClass(pvcJig.StorageClassName) {
 				pvcJig.StorageClassName = pvcJig.CreateStorageClassOrFail(pvcJig.StorageClassName, "oracle.com/oci", nil)
 			}

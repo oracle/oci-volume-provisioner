@@ -14,6 +14,7 @@
 
 package e2e
 
+/*
 import (
 	. "github.com/onsi/ginkgo"
 	v1 "k8s.io/api/core/v1"
@@ -74,3 +75,4 @@ var _ = Describe("FSS Volume Creation", func() {
 		// TO-DO (bl) - compare expected and actual
 	})
 })
+*/
