@@ -79,7 +79,7 @@ func (p *OCIProvisioner) chooseAvailabilityDomain(ctx context.Context, pvc *v1.P
 			return "", nil, fmt.Errorf("failed to choose availability domain; no zone labels (%q) on nodes", metav1.LabelZoneFailureDomain)
 		}
 		availabilityDomainName = util.ChooseZoneForVolume(validADs, pvc.Name)
-		p.logger.With("zone", availabilityDomainName).Info("Zone not specified, selected alternative zone.")
+		p.logger.With("availabilityDomain", availabilityDomainName).Info("No availability domain provided. Selecting one automatically.")
 	}
 
 	availabilityDomain, err := p.findADByName(ctx, availabilityDomainName)

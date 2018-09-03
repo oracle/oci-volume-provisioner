@@ -75,7 +75,7 @@ func NewOCIProvisioner(logger *zap.SugaredLogger, kubeClient kubernetes.Interfac
 
 	f, err := os.Open(configPath)
 	if err != nil {
-		logger.With("configPath", configPath).Fatal("Unable to load volume provisioner configuration file.")
+		logger.With(zap.Error(err), "configPath", configPath).Fatal("Unable to load volume provisioner configuration file.")
 	}
 	defer f.Close()
 

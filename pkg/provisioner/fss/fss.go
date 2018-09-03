@@ -75,7 +75,7 @@ func (fsp *filesystemProvisioner) getMountTargetFromID(ctx context.Context, moun
 		MountTargetId: &mountTargetID,
 	})
 	if err != nil {
-		fsp.logger.With("mountTargetOCID", mountTargetID).With(zap.Error(err)).Error("Failed to retrieve mount point mount target.")
+		fsp.logger.With(zap.Error(err), "mountTargetOCID", mountTargetID).Error("Failed to retrieve mount point mount target.")
 		return nil, err
 	}
 	return &resp.MountTarget, nil
@@ -154,7 +154,8 @@ func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad
 			},
 		})
 		if err != nil {
-			fsp.logger.With("options", options).With(zap.Error(err)).Error("Failed to create a file system options.")
+
+			fsp.logger.With(zap.Error(err), "options", options).Error("Failed to create a file system options.")
 			return nil, err
 		}
 		fsID = *resp.FileSystem.Id
@@ -261,23 +262,28 @@ func (fsp *filesystemProvisioner) Delete(volume *v1.PersistentVolume) error {
 		return errors.Errorf("%q annotation not found on PV", ociVolumeID)
 	}
 
-	fsp.logger.With("fileSystemOCID", filesystemID).Info("Deleting export for filesystemID.")
+	logger := fsp.logger.With(
+		"fileSystemOCID", filesystemID,
+		"volumeOCID", volume,
+	)
+
+	logger.Info("Deleting export.")
 	ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
 	defer cancel()
 	if _, err := fsp.client.FSS().DeleteExport(ctx, filestorage.DeleteExportRequest{
 		ExportId: &exportID,
 	}); err != nil {
 		if !provisioner.IsNotFound(err) {
-			fsp.logger.With("exportOCID", exportID).With(zap.Error(err)).Error("Failed to delete export.")
+			logger.With(zap.Error(err), "exportOCID", exportID).Error("Failed to delete export.")
 			return err
 		}
-		fsp.logger.With("exportOCID", exportID).With(zap.Error(err)).Info("ExportID not found. Unable to delete it.")
+		logger.With(zap.Error(err), "exportOCID", exportID).Info("ExportID not found. Unable to delete it.")
 	}
 
 	ctx, cancel = context.WithTimeout(ctx, fsp.client.Timeout())
 	defer cancel()
 
-	fsp.logger.With("volumeOCID", volume).With("fileSystemOCID", filesystemID).Info("Deleting file system volume.")
+	logger.Info("Deleting file system volume.")
 	_, err := fsp.client.FSS().DeleteFileSystem(ctx, filestorage.DeleteFileSystemRequest{
 		FileSystemId: &filesystemID,
 	})
@@ -285,7 +291,7 @@ func (fsp *filesystemProvisioner) Delete(volume *v1.PersistentVolume) error {
 		if !provisioner.IsNotFound(err) {
 			return err
 		}
-		fsp.logger.With("volumeOCID", volume).With("fileSystemOCID", filesystemID).Info("FileSystemID was not found. Unable to delete it.")
+		logger.Info("FileSystemID was not found. Unable to delete it.")
 	}
 	return nil
 }

@@ -130,7 +130,6 @@ func (p *provisionerClient) TenancyOCID() string {
 
 // FromConfig creates an OCI client from the given configuration.
 func FromConfig(logger *zap.SugaredLogger, cfg *Config) (ProvisionerClient, error) {
-
 	config, err := newConfigurationProvider(logger, cfg)
 	if err != nil {
 		return nil, err

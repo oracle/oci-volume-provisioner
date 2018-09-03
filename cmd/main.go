@@ -80,19 +80,19 @@ func main() {
 	// to use to communicate with Kubernetes
 	config, err := clientcmd.BuildConfigFromFlags(*master, *kubeconfig)
 	if err != nil {
-		logger.Fatalf("Failed to load config: %v", err)
+		logger.With(zap.Error(err)).Fatal("Failed to load config")
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		logger.Fatalf("Failed to create client: %v", err)
+		logger.With(zap.Error(err)).Fatal("Failed to create Kubernetes client")
 	}
 
 	// The controller needs to know what the server version is because out-of-tree
 	// provisioners aren't officially supported until 1.5
 	serverVersion, err := clientset.Discovery().ServerVersion()
 	if err != nil {
-		logger.Fatalf("Error getting server version: %v", err)
+		logger.With(zap.Error(err)).Fatal("Failed to get kube-apiserver version")
 	}
 
 	// TODO (owainlewis) ensure this is clearly documented
@@ -107,13 +107,14 @@ func main() {
 		provisionerType = core.ProvisionerNameDefault
 	}
 
-	logger.With("provisionerType", provisionerType).Info("Starting volume provisioner in %s mode", provisionerType)
+	logger = logger.With("provisionerType", provisionerType)
+	logger.Info("Starting volume provisioner in %q mode", provisionerType)
 
 	sharedInformerFactory := informers.NewSharedInformerFactory(clientset, informerResyncPeriod(minResyncPeriod)())
 
 	volumeSizeLowerBound, err := resource.ParseQuantity(*minVolumeSize)
 	if err != nil {
-		logger.Fatalf("Cannot parse volume size %s", *minVolumeSize)
+		logger.With(zap.Error(err), "minimumVolumeSize", *minVolumeSize).Fatal("Failed to parse minimum volume size")
 	}
 
 	// Create the provisioner: it implements the Provisioner interface expected by
@@ -144,7 +145,7 @@ func main() {
 	// We block waiting for Ready() after the shared informer factory has
 	// started so we don't deadlock waiting for caches to sync.
 	if err := ociProvisioner.Ready(stopCh); err != nil {
-		logger.Fatalf("Failed to start volume provisioner: %v", err)
+		logger.With(zap.Error(err)).Fatal("Failed to start volume provisioner")
 	}
 
 	pc.Run(stopCh)

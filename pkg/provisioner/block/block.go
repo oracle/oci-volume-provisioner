@@ -152,18 +152,22 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 	}
 
 	volSizeMB := int(roundUpSize(capacity.Value(), 1024*1024))
-	block.logger.With("volumeSize", volSizeMB).Info("Volume size.")
+
+	logger := block.logger.With(
+		"compartmentID", block.client.CompartmentOCID(),
+		"tenancyID", block.client.TenancyOCID(),
+		"availabilityDomain", *ad.Name,
+		"volumeSize", volSizeMB,
+	)
+	logger.Info("Provisioning volume")
 
 	if volumeRoundingEnabled(options.Parameters) {
 		if block.volumeRoundingEnabled && block.minVolumeSize.Cmp(capacity) == 1 {
-			block.logger.Warnf("PVC requested storage less than %s. Rounding up to ensure volume creation.", block.minVolumeSize.String())
-
+			logger.Warn("Attempted to provision volume with a capacity less than the minimum. Rounding up to ensure volume creation.")
 			volSizeMB = int(roundUpSize(block.minVolumeSize.Value(), 1024*1024))
 			capacity = block.minVolumeSize
 		}
 	}
-
-	block.logger.With("volumeSize", volSizeMB).With("name", *ad.Name).With("compartmentOCID", block.client.CompartmentOCID()).Info("Creating volume.")
 
 	volumeDetails := core.CreateVolumeDetails{
 		AvailabilityDomain: ad.Name,
@@ -173,7 +177,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 	}
 
 	if value, ok := options.PVC.Annotations[ociVolumeBackupID]; ok {
-		block.logger.With("volumeBackupOCID", value).Info("Creating volume from backup.")
+		logger.With("volumeBackupOCID", value).Info("Creating volume from backup.")
 		volumeDetails.SourceDetails = &core.VolumeSourceFromVolumeBackupDetails{Id: &value}
 	}
 
@@ -247,7 +251,12 @@ func (block *blockProvisioner) Delete(volume *v1.PersistentVolume) error {
 	if !ok {
 		return errors.New("volumeid annotation not found on PV")
 	}
-	block.logger.Infof("Deleting volume %v with volumeId %v.", volume, volID)
+
+	logger := block.logger.With(
+		"volumeOCID", volID,
+	)
+
+	logger.Infof("Deleting volume %v with volumeId %v.", volume, volID)
 
 	request := core.DeleteVolumeRequest{VolumeId: common.String(volID)}
 	ctx, cancel := context.WithTimeout(ctx, block.client.Timeout())
@@ -260,7 +269,7 @@ func (block *blockProvisioner) Delete(volume *v1.PersistentVolume) error {
 		return nil
 	}
 	if provisioner.IsNotFound(err) {
-		block.logger.With(zap.Error(err)).With("volumeOCID", volID).Info("VolumeID was not found. Unable to delete it.")
+		logger.With(zap.Error(err)).With("volumeOCID", volID).Info("VolumeID was not found. Unable to delete it.")
 		return nil
 	}
 
