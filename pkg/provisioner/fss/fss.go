@@ -29,6 +29,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
+	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/plugin"
 
@@ -47,16 +48,18 @@ const (
 
 // filesystemProvisioner is the internal provisioner for OCI filesystem volumes
 type filesystemProvisioner struct {
-	client client.ProvisionerClient
+	client   client.ProvisionerClient
+	metadata instancemeta.Interface
 }
 
 var _ plugin.ProvisionerPlugin = &filesystemProvisioner{}
 
 // NewFilesystemProvisioner creates a new file system provisioner that creates
 // filesystems using OCI File System Service.
-func NewFilesystemProvisioner(client client.ProvisionerClient) plugin.ProvisionerPlugin {
+func NewFilesystemProvisioner(client client.ProvisionerClient, metadata instancemeta.Interface) plugin.ProvisionerPlugin {
 	return &filesystemProvisioner{
-		client: client,
+		client:   client,
+		metadata: metadata,
 	}
 }
 
@@ -201,6 +204,15 @@ func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad
 		serverIP = *getPrivateIPResponse.PrivateIp.IpAddress
 	}
 
+	region, ok := os.LookupEnv("OCI_SHORT_REGION")
+	if !ok {
+		metadata, err := fsp.metadata.Get()
+		if err != nil {
+			return nil, err
+		}
+		region = metadata.Region
+	}
+
 	glog.Infof("Creating persistent volume on mount target with private IP address %s", serverIP)
 	return &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
@@ -209,7 +221,9 @@ func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad
 				ociVolumeID: fsID,
 				ociExportID: exportSetID,
 			},
-			Labels: map[string]string{},
+			Labels: map[string]string{
+				plugin.LabelZoneRegion: region,
+			},
 		},
 		Spec: v1.PersistentVolumeSpec{
 			PersistentVolumeReclaimPolicy: options.PersistentVolumeReclaimPolicy,
