@@ -74,7 +74,10 @@ func NewBlockProvisioner(logger *zap.SugaredLogger, client client.ProvisionerCli
 		volumeRoundingEnabled: volumeRoundingEnabled,
 		minVolumeSize:         minVolumeSize,
 		timeout:               timeout,
-		logger:                logger,
+		logger: logger.With(
+			"compartmentID", client.CompartmentOCID(),
+			"tenancyID", client.TenancyOCID(),
+		),
 	}
 }
 
@@ -154,8 +157,6 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 	volSizeMB := int(roundUpSize(capacity.Value(), 1024*1024))
 
 	logger := block.logger.With(
-		"compartmentID", block.client.CompartmentOCID(),
-		"tenancyID", block.client.TenancyOCID(),
 		"availabilityDomain", *ad.Name,
 		"volumeSize", volSizeMB,
 	)
@@ -163,8 +164,8 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 
 	if volumeRoundingEnabled(options.Parameters) {
 		if block.volumeRoundingEnabled && block.minVolumeSize.Cmp(capacity) == 1 {
-			logger.Warn("Attempted to provision volume with a capacity less than the minimum. Rounding up to ensure volume creation.")
 			volSizeMB = int(roundUpSize(block.minVolumeSize.Value(), 1024*1024))
+			logger.With("roundedVolumeSize", volSizeMB).Warn("Attempted to provision volume with a capacity less than the minimum. Rounding up to ensure volume creation.")
 			capacity = block.minVolumeSize
 		}
 	}
@@ -177,7 +178,8 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 	}
 
 	if value, ok := options.PVC.Annotations[ociVolumeBackupID]; ok {
-		logger.With("volumeBackupOCID", value).Info("Creating volume from backup.")
+		logger = logger.With("volumeBackupOCID", value)
+		logger.Info("Creating volume from backup.")
 		volumeDetails.SourceDetails = &core.VolumeSourceFromVolumeBackupDetails{Id: &value}
 	}
 
@@ -190,7 +192,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 	if err != nil {
 		return nil, err
 	}
-
+	logger.With("volumeID", *newVolume.Id).Info("Waiting for volume to become available.")
 	err = block.waitForVolumeAvailable(ctx, newVolume.Id, block.timeout)
 	if err != nil {
 		// Delete the volume if it failed to get in a good state for us
@@ -252,11 +254,9 @@ func (block *blockProvisioner) Delete(volume *v1.PersistentVolume) error {
 		return errors.New("volumeid annotation not found on PV")
 	}
 
-	logger := block.logger.With(
-		"volumeOCID", volID,
-	)
+	logger := block.logger.With("volumeOCID", volID)
 
-	logger.Infof("Deleting volume %v with volumeId %v.", volume, volID)
+	logger.Info("Deleting volume")
 
 	request := core.DeleteVolumeRequest{VolumeId: common.String(volID)}
 	ctx, cancel := context.WithTimeout(ctx, block.client.Timeout())
@@ -269,7 +269,7 @@ func (block *blockProvisioner) Delete(volume *v1.PersistentVolume) error {
 		return nil
 	}
 	if provisioner.IsNotFound(err) {
-		logger.With(zap.Error(err)).With("volumeOCID", volID).Info("VolumeID was not found. Unable to delete it.")
+		logger.With(zap.Error(err)).Info("VolumeID was not found. Unable to delete it.")
 		return nil
 	}
 

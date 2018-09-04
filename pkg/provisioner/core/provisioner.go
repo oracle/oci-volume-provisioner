@@ -20,8 +20,6 @@ import (
 	"strings"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/pkg/errors"
 
@@ -32,6 +30,8 @@ import (
 	listersv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	metav1 "k8s.io/kubernetes/pkg/kubelet/apis"
+
+	"go.uber.org/zap"
 
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"

@@ -26,14 +26,13 @@ import (
 	"os"
 	"time"
 
-	"github.com/pkg/errors"
-	"go.uber.org/zap"
-
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/common/auth"
 	"github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-go-sdk/filestorage"
 	"github.com/oracle/oci-go-sdk/identity"
+	"github.com/pkg/errors"
+	"go.uber.org/zap"
 
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 )
@@ -41,11 +40,11 @@ import (
 // ProvisionerClient wraps the OCI sub-clients required for volume provisioning.
 type provisionerClient struct {
 	cfg            *Config
+	tenancyID      string
 	blockStorage   *core.BlockstorageClient
 	identity       *identity.IdentityClient
 	fileStorage    *filestorage.FileStorageClient
 	virtualNetwork *core.VirtualNetworkClient
-	context        context.Context
 	timeout        time.Duration
 	metadata       *instancemeta.InstanceMetadata
 	logger         *zap.SugaredLogger
@@ -110,27 +109,30 @@ func (p *provisionerClient) Timeout() time.Duration {
 	return p.timeout
 }
 
-func (p *provisionerClient) CompartmentOCID() (compartmentOCID string) {
+func (p *provisionerClient) CompartmentOCID() string {
 	if p.cfg.CompartmentOCID == "" {
 		if p.metadata == nil {
 			p.logger.Fatal("Unable to get compartment OCID. Please provide this via config.")
-			return
+			return ""
 		}
 		p.logger.With("compartmentOCID", p.metadata.CompartmentOCID).Infof("'CompartmentID' not given. Using compartment OCID from instance metadata.")
-		compartmentOCID = p.metadata.CompartmentOCID
-	} else {
-		compartmentOCID = p.cfg.CompartmentOCID
+		p.cfg.CompartmentOCID = p.metadata.CompartmentOCID
 	}
-	return
+	return p.cfg.CompartmentOCID
 }
 
 func (p *provisionerClient) TenancyOCID() string {
-	return p.cfg.Auth.TenancyOCID
+	return p.tenancyID
 }
 
 // FromConfig creates an OCI client from the given configuration.
 func FromConfig(logger *zap.SugaredLogger, cfg *Config) (ProvisionerClient, error) {
 	config, err := newConfigurationProvider(logger, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	tenancyID, err := config.TenancyOCID()
 	if err != nil {
 		return nil, err
 	}
@@ -170,12 +172,12 @@ func FromConfig(logger *zap.SugaredLogger, cfg *Config) (ProvisionerClient, erro
 
 	return &provisionerClient{
 		cfg:            cfg,
+		tenancyID:      tenancyID,
 		blockStorage:   &blockStorage,
 		identity:       &identity,
 		fileStorage:    &fileStorage,
 		virtualNetwork: &virtualNetwork,
 		timeout:        3 * time.Minute,
-		context:        context.Background(),
 		metadata:       metadata,
 		logger:         logger,
 	}, nil
@@ -196,7 +198,6 @@ func newConfigurationProvider(logger *zap.SugaredLogger, cfg *Config) (common.Co
 			}
 			return cp, nil
 		}
-		logger.Info("Using raw configuration provider.")
 		conf = common.NewRawConfigurationProvider(
 			cfg.Auth.TenancyOCID,
 			cfg.Auth.UserOCID,

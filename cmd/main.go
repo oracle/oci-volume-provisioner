@@ -21,16 +21,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kubernetes-incubator/external-storage/lib/controller"
-	"github.com/oracle/oci-volume-provisioner/pkg/logging"
-	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/core"
-	"github.com/oracle/oci-volume-provisioner/pkg/signals"
-	"go.uber.org/zap"
-
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+
+	"github.com/kubernetes-incubator/external-storage/lib/controller"
+	"go.uber.org/zap"
+
+	"github.com/oracle/oci-volume-provisioner/pkg/logging"
+	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/core"
+	"github.com/oracle/oci-volume-provisioner/pkg/signals"
 )
 
 const (
@@ -43,6 +44,10 @@ const (
 	renewDeadline             = controller.DefaultRenewDeadline
 	termLimit                 = controller.DefaultTermLimit
 )
+
+// version/build is set at build time to the version of the provisioner being built.
+var version string
+var build string
 
 // informerResyncPeriod computes the time interval a shared informer waits
 // before resyncing with the API server.
@@ -64,14 +69,11 @@ func main() {
 	volumeRoundingEnabled := flag.Bool("rounding-enabled", true, "When enabled volumes will be rounded up if less than 'minVolumeSizeMB'")
 	minVolumeSize := flag.String("min-volume-size", "50Gi", "The minimum size for a block volume. By default OCI only supports block volumes > 50GB")
 	master := flag.String("master", "", "The address of the Kubernetes API server (overrides any value in kubeconfig).")
-	flag.Set("logtostderr", "true")
 	flag.Parse()
 
 	logger := log.Sugar()
 
-	//logger.Infof("logtostderr is set to %b", flag.Lookup("logtostderr").Value.(flag.Getter).Get().(bool))
-
-	//logger.Sugar().With("version", version, "build", build).Info("oci-volume-provisioner")
+	logger.With("version", version, "build", build).Info("oci-volume-provisioner")
 
 	// Set up signals so we handle the shutdown signal gracefully.
 	stopCh := signals.SetupSignalHandler()
@@ -108,7 +110,7 @@ func main() {
 	}
 
 	logger = logger.With("provisionerType", provisionerType)
-	logger.Info("Starting volume provisioner in %q mode", provisionerType)
+	logger.Infof("Starting volume provisioner in %q mode", provisionerType)
 
 	sharedInformerFactory := informers.NewSharedInformerFactory(clientset, informerResyncPeriod(minResyncPeriod)())
 

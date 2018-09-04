@@ -60,7 +60,7 @@ func TestListAllMountTargets(t *testing.T) {
 func TestGetOrCreateMountTarget(t *testing.T) {
 	// test get or create mount target
 	var ctx = context.Background()
-	fss := filesystemProvisioner{client: provisioner.NewClientProvisioner(nil, nil)}
+	fss := filesystemProvisioner{client: provisioner.NewClientProvisioner(nil, nil), logger: zap.S()}
 	resp, err := fss.getOrCreateMountTarget(ctx, "", provisioner.NilListMountTargetsADID, "subnetID")
 	if err != nil {
 		t.Fatalf("Failed to retrieve or create mount target: %v", err)

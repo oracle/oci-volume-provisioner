@@ -19,6 +19,12 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"go.uber.org/zap"
+
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner"
 
@@ -26,12 +32,6 @@ import (
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-go-sdk/identity"
-
-	"k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"go.uber.org/zap"
 )
 
 var (
@@ -63,9 +63,6 @@ func TestResolveFSTypeWhenConfigured(t *testing.T) {
 
 func TestCreateVolumeFromBackup(t *testing.T) {
 	// test creating a volume from an existing backup
-
-	logger := zap.S()
-
 	options := controller.VolumeOptions{
 		PVName: "dummyVolumeOptions",
 		PVC: &v1.PersistentVolumeClaim{
@@ -84,7 +81,7 @@ func TestCreateVolumeFromBackup(t *testing.T) {
 			},
 		}}
 
-	block := NewBlockProvisioner(logger,
+	block := NewBlockProvisioner(zap.S(),
 		provisioner.NewClientProvisioner(nil, &provisioner.MockBlockStorageClient{VolumeState: core.VolumeLifecycleStateAvailable}),
 		instancemeta.NewMock(&instancemeta.InstanceMetadata{
 			CompartmentOCID: "",
@@ -105,9 +102,6 @@ func TestCreateVolumeFromBackup(t *testing.T) {
 }
 
 func TestCreateVolumeFailure(t *testing.T) {
-
-	logger := zap.S()
-
 	var volumeFailureTests = []struct {
 		state    core.VolumeLifecycleStateEnum
 		errormsg string
@@ -134,7 +128,7 @@ func TestCreateVolumeFailure(t *testing.T) {
 					},
 				}}
 
-			block := NewBlockProvisioner(logger, provisioner.NewClientProvisioner(nil, &provisioner.MockBlockStorageClient{VolumeState: tt.state}),
+			block := NewBlockProvisioner(zap.S(), provisioner.NewClientProvisioner(nil, &provisioner.MockBlockStorageClient{VolumeState: tt.state}),
 				instancemeta.NewMock(&instancemeta.InstanceMetadata{
 					CompartmentOCID: "",
 					Region:          "phx",
@@ -154,9 +148,6 @@ func TestCreateVolumeFailure(t *testing.T) {
 }
 
 func TestVolumeRoundingLogic(t *testing.T) {
-
-	logger := zap.S()
-
 	var volumeRoundingTests = []struct {
 		requestedStorage string
 		enabled          bool
@@ -177,7 +168,7 @@ func TestVolumeRoundingLogic(t *testing.T) {
 				CompartmentOCID: "",
 				Region:          "phx",
 			})
-			block := NewBlockProvisioner(logger, provisioner.NewClientProvisioner(nil, &provisioner.MockBlockStorageClient{VolumeState: core.VolumeLifecycleStateAvailable}),
+			block := NewBlockProvisioner(zap.S(), provisioner.NewClientProvisioner(nil, &provisioner.MockBlockStorageClient{VolumeState: core.VolumeLifecycleStateAvailable}),
 				metadata,
 				tt.enabled,
 				tt.minVolumeSize,
