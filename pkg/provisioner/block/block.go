@@ -44,7 +44,6 @@ import (
 const (
 	ociVolumeID             = "ociVolumeID"
 	ociVolumeBackupID       = "volume.beta.kubernetes.io/oci-volume-source"
-	volumePrefixEnvVarName  = "OCI_VOLUME_NAME_PREFIX"
 	fsType                  = "fsType"
 	volumeRoundingUpEnabled = "volumeRoundingUpEnabled"
 )
@@ -163,15 +162,10 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 
 	glog.Infof("Creating volume size=%v AD=%s compartmentOCID=%q", volSizeMB, *ad.Name, block.client.CompartmentOCID())
 
-	prefix := strings.TrimSpace(os.Getenv(volumePrefixEnvVarName))
-	if prefix != "" && !strings.HasSuffix(prefix, "-") {
-		prefix = fmt.Sprintf("%s%s", prefix, "-")
-	}
-
 	volumeDetails := core.CreateVolumeDetails{
 		AvailabilityDomain: ad.Name,
 		CompartmentId:      common.String(block.client.CompartmentOCID()),
-		DisplayName:        common.String(fmt.Sprintf("%s%s", prefix, options.PVC.Name)),
+		DisplayName:        common.String(fmt.Sprintf("%s%s", provisioner.GetPrefix(), options.PVC.Name)),
 		SizeInMBs:          common.Int(volSizeMB),
 	}
 
