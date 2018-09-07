@@ -39,7 +39,11 @@ import (
 )
 
 const (
-	configFilePath string = "/etc/oci/config.yaml"
+	OCIConfigVar  = "OCICONFIG_VAR"
+	KubeConfigVar = "KUBECONFIG_VAR"
+	SubnetOCID    = "SUBNET_OCID"
+	MntTargetOCID = "MNT_TARGET_OCID"
+	DefaultAD     = "PHX-AD-2"
 )
 
 // Framework is used in the execution of e2e tests.
@@ -49,6 +53,7 @@ type Framework struct {
 
 	ClientSet          clientset.Interface
 	BlockStorageClient coreOCI.BlockstorageClient
+	IsBackup           bool
 
 	Namespace          *v1.Namespace   // Every test has at least one namespace unless creation is skipped
 	namespacesToDelete []*v1.Namespace // Some tests have more than one.
@@ -61,15 +66,16 @@ type Framework struct {
 
 // NewDefaultFramework constructs a new e2e test Framework with default options.
 func NewDefaultFramework(baseName string) *Framework {
-	f := NewFramework(baseName, nil)
+	f := NewFramework(baseName, nil, false)
 	return f
 }
 
 // NewFramework constructs a new e2e test Framework.
-func NewFramework(baseName string, client clientset.Interface) *Framework {
+func NewFramework(baseName string, client clientset.Interface, backup bool) *Framework {
 	f := &Framework{
 		BaseName:  baseName,
 		ClientSet: client,
+		IsBackup:  backup,
 	}
 
 	BeforeEach(f.BeforeEach)
@@ -78,10 +84,9 @@ func NewFramework(baseName string, client clientset.Interface) *Framework {
 	return f
 }
 
-// NewBackupFramework constrycts a new e2e test Framework for the backup initialising a storage client to used to create a backup
+// NewBackupFramework constructs a new e2e test Framework initialising a storage client used to create a backup
 func NewBackupFramework(baseName string) *Framework {
-	f := NewFramework(baseName, nil)
-	f.BlockStorageClient = createStorageClient()
+	f := NewFramework(baseName, nil, true)
 	return f
 }
 
@@ -188,6 +193,9 @@ func (f *Framework) BeforeEach() {
 		f.Namespace = namespace
 	}
 
+	if f.IsBackup {
+		f.BlockStorageClient = f.createStorageClient()
+	}
 	if !f.ProvisionerInstalled {
 		err := f.InstallProvisioner(f.Namespace.Name)
 		Expect(err).NotTo(HaveOccurred())
@@ -224,47 +232,38 @@ func (f *Framework) AfterEach() {
 	f.ProvisionerInstalled = false
 }
 
-func createStorageClient() coreOCI.BlockstorageClient {
+func (f *Framework) createStorageClient() coreOCI.BlockstorageClient {
 	By("Creating an OCI block storage client")
 	configPath, ok := os.LookupEnv("OCICONFIG_VAR")
 	if !ok {
-		configPath = "/home/bdour/go/src/github.com/oracle/oci-volume-provisioner/cloud-config.yaml"
+		if TestContext.OCIConfig == "" {
+			Failf("Unable to load file from var or test context")
+		} else {
+			configPath = TestContext.OCIConfig
+		}
 	}
 
 	file, err := os.Open(configPath)
 	if err != nil {
-		glog.Fatalf("Unable to load volume provisioner configuration file: %v", configPath)
+		Failf("Unable to load volume provisioner configuration file: %v", configPath)
 	}
 	defer file.Close()
 	cfg, err := client.LoadConfig(file)
 	if err != nil {
-		glog.Fatalf("Unable to load volume provisioner client: %v", err)
+		Failf("Unable to load volume provisioner configuration file %q: %v", file, err)
 	}
-	config, err := newConfigurationProvider(cfg)
+	config, err := f.newConfigurationProvider(cfg)
 	if err != nil {
-		// TO-DO modify error message
-		Logf("config %q, err: %v", config, err)
+		Failf("Unable to load volume provisioner configuration file %q: %v", cfg, err)
 	}
 	blockStorageClient, err := coreOCI.NewBlockstorageClientWithConfigurationProvider(config)
 	if err != nil {
-		// TO-DO modify error message
-		Logf("config %q, err: %v", config, err)
+		Logf("Unable to load volume provisioner client %q: %v", config, err)
 	}
-	/*By("client declared")
-
-		config, err := clientcmd.BuildConfigFromFlags("", TestContext.KubeConfig)
-		Expect(err).NotTo(HaveOccurred())
-		f.BlockStorageClient, err = *coreOCI.NewBlockstorageClientWithConfigurationProvider(config)
-		Expect(err).NotTo(HaveOccurred())
-
-	conf := common.DefaultConfigProvider()
-	blockStorageClient, err := coreOCI.NewBlockstorageClientWithConfigurationProvider(conf)
-	Expect(err).NotTo(HaveOccurred())
-	*/
 	return blockStorageClient
 }
 
-func newConfigurationProvider(cfg *client.Config) (common.ConfigurationProvider, error) {
+func (f *Framework) newConfigurationProvider(cfg *client.Config) (common.ConfigurationProvider, error) {
 	var conf common.ConfigurationProvider
 	if cfg != nil {
 		err := cfg.Validate()
@@ -291,4 +290,30 @@ func newConfigurationProvider(cfg *client.Config) (common.ConfigurationProvider,
 		conf = common.DefaultConfigProvider()
 	}
 	return conf, nil
+}
+
+// CheckMntEnv checks if an environment variable is set in the werker environement, if not it checks the test context.
+func (f *Framework) CheckMntEnv() string {
+	response, ok := os.LookupEnv(MntTargetOCID)
+	if !ok {
+		if TestContext.MntTargetOCID == "" {
+			Failf("Mount target not specified")
+		} else {
+			return TestContext.MntTargetOCID
+		}
+	}
+	return response
+}
+
+// CheckSubnetEnv checks if an environment variable is set in the werker environement, if not it checks the test context.
+func (f *Framework) CheckSubnetEnv() string {
+	response, ok := os.LookupEnv(SubnetOCID)
+	if !ok {
+		if TestContext.SubnetOCID == "" {
+			Failf("Subnet id not specified")
+		} else {
+			return TestContext.SubnetOCID
+		}
+	}
+	return response
 }
