@@ -15,6 +15,7 @@
 package framework
 
 import (
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -27,28 +28,28 @@ import (
 )
 
 // CreateAndAwaitNginxPodOrFail creates a pod with a dymincally provisioned volume
-func CreateAndAwaitNginxPodOrFail(client clientset.Interface, namespace string, pvc *v1.PersistentVolumeClaim) {
-	pod := MakeNginxPod(namespace, pvc)
-	By("Creating a pod with the dynmically provisioned volume")
-	pod, err := client.CoreV1().Pods(namespace).Create(pod)
+func (j *PVCTestJig) CreateAndAwaitNginxPodOrFail(namespace string, pvcParam *v1.PersistentVolumeClaim) {
+	pvc, err := j.KubeClient.CoreV1().PersistentVolumeClaims(pvcParam.Namespace).Get(pvcParam.Name, metav1.GetOptions{})
+	pv, err := j.KubeClient.CoreV1().PersistentVolumes().Get(pvc.Spec.VolumeName, metav1.GetOptions{})
 	if err != nil {
-		Failf("pod Create API error: %v", err)
+		Failf("Failed to get persistent volume %q: %v", pvc.Spec.VolumeName, err)
 	}
-	// Waiting for pod to be running
-	err = WaitForPodNameRunningInNamespace(client, pod.Name, namespace)
-	if err != nil {
-		Failf("pod %q is not Running: %v", pod.Name, err)
+	By("checking the created volume is writable and has the PV's mount options")
+	command := "echo 'hello world' > /usr/share/nginx/html/"
+	// We give the first pod the secondary responsibility of checking the volume has
+	// been mounted with the PV's mount options, if the PV was provisioned with any
+	for _, option := range pv.Spec.MountOptions {
+		// Get entry, get mount options at 6th word, replace brackets with commas
+		command += fmt.Sprintf(" && ( mount | grep 'on /usr/share/nginx/html/' | awk '{print $6}' | sed 's/^(/,/; s/)$/,/' | grep -q ,%s, )", option)
 	}
-	// Get fresh pod info
-	pod, err = client.CoreV1().Pods(namespace).Get(pod.Name, metav1.GetOptions{})
-	if err != nil {
-		Failf("pod Get API error: %v", err)
-	}
-	// TO-DO (bl) - check read write
+	j.MakeNginxPod(pvc.Namespace, pvc, command)
+
+	By("checking the created volume is readable and retains data")
+	j.MakeNginxPod(pvc.Namespace, pvc, "grep 'hello world' /mnt/test/data")
 }
 
 // MakeNginxPod returns a pod definition based on the namespace using nginx image
-func MakeNginxPod(ns string, pvc *v1.PersistentVolumeClaim) *v1.Pod {
+func (j *PVCTestJig) MakeNginxPod(ns string, pvc *v1.PersistentVolumeClaim, command string) {
 	podSpec := &v1.Pod{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Pod",
@@ -69,6 +70,8 @@ func MakeNginxPod(ns string, pvc *v1.PersistentVolumeClaim) *v1.Pod {
 							ContainerPort: 80,
 						},
 					},
+					Command: []string{"/bin/sh"},
+					Args:    []string{"-c", command},
 					VolumeMounts: []v1.VolumeMount{
 						{
 							Name:      "nginx-storage",
@@ -89,18 +92,22 @@ func MakeNginxPod(ns string, pvc *v1.PersistentVolumeClaim) *v1.Pod {
 			},
 		},
 	}
-	return podSpec
+	By("Creating a pod with the dynmically provisioned volume")
+	pod, err := j.KubeClient.CoreV1().Pods(ns).Create(podSpec)
+	if err != nil {
+		Failf("pod Create API error: %v", err)
+	}
+	// Waiting for pod to be running
+	err = j.waitTimeoutForPodRunningInNamespace(pod.Name, ns, slowPodStartTimeout)
+	if err != nil {
+		Failf("pod %q is not Running: %v", pod.Name, err)
+	}
 }
 
-// WaitForPodNameRunningInNamespace aits default amount of time (PodStartTimeout) for the specified pod to become running.
+// WaitTimeoutForPodRunningInNamespace aits default amount of time (PodStartTimeout) for the specified pod to become running.
 // Returns an error if timeout occurs first, or pod goes in to failed state.
-func WaitForPodNameRunningInNamespace(c clientset.Interface, podName, namespace string) error {
-	return WaitTimeoutForPodRunningInNamespace(c, podName, namespace, slowPodStartTimeout)
-}
-
-// WaitTimeoutForPodRunningInNamespace comment
-func WaitTimeoutForPodRunningInNamespace(c clientset.Interface, podName, namespace string, timeout time.Duration) error {
-	return wait.PollImmediate(Poll, timeout, podRunning(c, podName, namespace))
+func (j *PVCTestJig) waitTimeoutForPodRunningInNamespace(podName, namespace string, timeout time.Duration) error {
+	return wait.PollImmediate(Poll, timeout, podRunning(j.KubeClient, podName, namespace))
 }
 
 func podRunning(c clientset.Interface, podName, namespace string) wait.ConditionFunc {
@@ -117,4 +124,23 @@ func podRunning(c clientset.Interface, podName, namespace string) wait.Condition
 		}
 		return false, nil
 	}
+}
+
+func (j *PVCTestJig) createPodCheckReadWrite(pvc *v1.PersistentVolumeClaim) {
+	pv, err := j.KubeClient.CoreV1().PersistentVolumes().Get(pvc.Spec.VolumeName, metav1.GetOptions{})
+	if err != nil {
+		Failf("Failed to get persistent volume %q: %v", pvc.Spec.VolumeName, err)
+	}
+	By("checking the created volume is writable and has the PV's mount options")
+	command := "echo 'hello world' > /usr/share/nginx/html/"
+	// We give the first pod the secondary responsibility of checking the volume has
+	// been mounted with the PV's mount options, if the PV was provisioned with any
+	for _, option := range pv.Spec.MountOptions {
+		// Get entry, get mount options at 6th word, replace brackets with commas
+		command += fmt.Sprintf(" && ( mount | grep 'on /usr/share/nginx/html/' | awk '{print $6}' | sed 's/^(/,/; s/)$/,/' | grep -q ,%s, )", option)
+	}
+	j.MakeNginxPod(pvc.Namespace, pvc, command)
+
+	By("checking the created volume is readable and retains data")
+	j.MakeNginxPod(pvc.Namespace, pvc, "grep 'hello world' /mnt/test/data")
 }

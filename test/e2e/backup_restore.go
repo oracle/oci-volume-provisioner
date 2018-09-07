@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/ginkgo"
 
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/oracle/oci-volume-provisioner/test/e2e/framework"
 )
@@ -31,10 +32,10 @@ var _ = Describe("Backup/Restore", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
 		By("Provisioning volume to backup")
 		pvc, backupID := pvcJig.CreatePVCAndBackupOrFail(f.BlockStorageClient, f.Namespace.Name, "50Gi", func(pvc *v1.PersistentVolumeClaim) {
+			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
+				"failure-domain.beta.kubernetes.io/zone": framework.DefaultAD}}
 			pvcJig.StorageClassName = "oci"
-			if !pvcJig.CheckStorageClass(pvcJig.StorageClassName) {
-				pvcJig.StorageClassName = pvcJig.CreateStorageClassOrFail(pvcJig.StorageClassName, "oracle.com/oci", nil)
-			}
+			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, "oracle.com/oci", nil)
 			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
 		})
 		framework.Logf("pvc %q has been backed up with the following id %q", pvc.Name, &backupID)
@@ -46,19 +47,19 @@ var _ = Describe("Backup/Restore", func() {
 			pvcJig.DeletePersistentVolumeClaim(pvc.Name, f.Namespace.Name)
 		}
 		By("Restoring the backup")
-		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "50Gi", func(pvcRestore *v1.PersistentVolumeClaim) {
+		pvcRestored := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "50Gi", func(pvcRestore *v1.PersistentVolumeClaim) {
 			pvcRestore.ObjectMeta.Name = pvc.Name + "-restored"
 			pvcRestore.ObjectMeta.Annotations = map[string]string{
 				"volume.beta.kubernetes.io/oci-volume-source": backupID,
 			}
+			pvcRestore.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
+				"failure-domain.beta.kubernetes.io/zone": framework.DefaultAD}}
 			pvcJig.StorageClassName = "oci"
-			if !pvcJig.CheckStorageClass(pvcJig.StorageClassName) {
-				pvcJig.StorageClassName = pvcJig.CreateStorageClassOrFail(pvcJig.StorageClassName, "oracle.com/oci", nil)
-			}
+			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, "oracle.com/oci", nil)
 			pvcRestore.Spec.StorageClassName = &pvcJig.StorageClassName
 		})
-		//By("Checking the volume is present and contains the correct uuid")
-		//pvcJig.CheckBackupUUID(backupID, pvcRestore)
+		pvcJig.CreateAndAwaitNginxPodOrFail(f.Namespace.Name, pvcRestored)
+
 		pvcJig.DeleteBackup(f.BlockStorageClient, &backupID)
 	})
 })

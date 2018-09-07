@@ -15,12 +15,10 @@
 package framework
 
 import (
-	"context"
 	"fmt"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	storagev1beta1 "k8s.io/api/storage/v1beta1"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -86,53 +84,6 @@ func (j *PVCTestJig) newPVCTemplate(namespace string, volumeSize string) *v1.Per
 	}
 }
 
-// CheckStorageClass verifies the storage class exists, if not creates a storage class
-func (j *PVCTestJig) CheckStorageClass(name string) bool {
-	list, err := j.KubeClient.StorageV1beta1().StorageClasses().List(metav1.ListOptions{})
-	if err != nil {
-		Failf("Error listing storage classes: %v", err)
-	}
-
-	for _, sc := range list.Items {
-		if sc.Name == name {
-			Logf("Storage class %q found", sc.Name)
-			return true
-		}
-	}
-
-	return false
-}
-
-// NewStorageClassTemplate returns the default template for this jig, but
-// does not actually create the storage class. The default storage class has the same name
-// as the jig
-func (j *PVCTestJig) newStorageClassTemplate(name string, provisionerType string, parameters map[string]string) *storagev1beta1.StorageClass {
-	return &storagev1beta1.StorageClass{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "StorageClass",
-			APIVersion: "storage.k8s.io/v1beta1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   name,
-			Labels: j.Labels,
-		},
-		Provisioner: provisionerType,
-		Parameters:  parameters,
-	}
-}
-
-// CreateStorageClassOrFail creates a new storage class based on the jig's defaults.
-func (j *PVCTestJig) CreateStorageClassOrFail(name string, provisionerType string, parameters map[string]string) string {
-	class := j.newStorageClassTemplate(name, provisionerType, parameters)
-
-	result, err := j.KubeClient.StorageV1beta1().StorageClasses().Create(class)
-	if err != nil {
-		Failf("Failed to create storage class %q: %v", j.Name, err)
-	}
-	j.CustomStorageClass = true
-	return result.Name
-}
-
 // CreatePVCorFail creates a new claim based on the jig's
 // defaults. Callers can provide a function to tweak the claim object
 // before it is created.
@@ -171,16 +122,6 @@ func (j *PVCTestJig) CreateAndAwaitPVCOrFail(namespace string, volumeSize string
 	return pvc
 }
 
-// CreatePVCAndBackupOrFail creates
-func (j *PVCTestJig) CreatePVCAndBackupOrFail(storageClient coreOCI.BlockstorageClient, namespace string, volumeSize string, tweak func(pvc *v1.PersistentVolumeClaim)) (*v1.PersistentVolumeClaim, string) {
-	pvc := j.CreateAndAwaitPVCOrFail(namespace, volumeSize, tweak)
-	backupVolumeID, err := j.BackupVolume(storageClient, pvc)
-	if err != nil {
-		Failf("Failed to created backup for pvc %q: %v", pvc.Name, err)
-	}
-	return pvc, *backupVolumeID
-}
-
 // WaitForPVCPhase waits for a PersistentVolumeClaim to be in a specific phase or until timeout occurs, whichever comes first.
 func (j *PVCTestJig) WaitForPVCPhase(phase v1.PersistentVolumeClaimPhase, ns string, pvcName string) error {
 	Logf("Waiting up to %v for PersistentVolumeClaim %s to have phase %s", DefaultTimeout, pvcName, phase)
@@ -203,7 +144,7 @@ func (j *PVCTestJig) WaitForPVCPhase(phase v1.PersistentVolumeClaimPhase, ns str
 // SanityCheckPV checks basic properties of a given volume match
 // our expectations.
 func (j *PVCTestJig) SanityCheckPV(pvc *v1.PersistentVolumeClaim) {
-	By("Checking the claim")
+	By("Checking the claim and volume are bound.")
 	pvc, err := j.KubeClient.CoreV1().PersistentVolumeClaims(pvc.Namespace).Get(pvc.Name, metav1.GetOptions{})
 	Expect(err).NotTo(HaveOccurred())
 	// Get the bound PV
@@ -218,7 +159,6 @@ func (j *PVCTestJig) SanityCheckPV(pvc *v1.PersistentVolumeClaim) {
 	Expect(pvCapacity.Value()).To(Equal(claimCapacity.Value()), "pvCapacity is not equal to expectedCapacity")
 
 	// Check PV properties
-	By("checking the PV")
 	expectedAccessModes := []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce}
 	Expect(pv.Spec.AccessModes).To(Equal(expectedAccessModes))
 	Expect(pv.Spec.ClaimRef.Name).To(Equal(pvc.ObjectMeta.Name))
@@ -296,18 +236,6 @@ func (j *PVCTestJig) TestCleanup(ns string, pvc *v1.PersistentVolumeClaim) []err
 	return errs
 }
 
-// DeleteStorageClass will delete a class
-func (j *PVCTestJig) DeleteStorageClass(scName string) error {
-	if j.KubeClient != nil && len(scName) > 0 {
-		Logf("Deleting Storage Class %q", scName)
-		err := j.KubeClient.StorageV1beta1().StorageClasses().Delete(scName, nil)
-		if err != nil && !apierrs.IsNotFound(err) {
-			return fmt.Errorf("Storage Class Delete API error: %v", err)
-		}
-	}
-	return nil
-}
-
 // DeletePersistentVolume - Delete the PV.
 func (j *PVCTestJig) DeletePersistentVolume(pvName string) error {
 	if j.KubeClient != nil && len(pvName) > 0 {
@@ -340,101 +268,3 @@ func (j *PVCTestJig) EnsureDeletion(pvcName string, ns string) bool {
 	}
 	return false
 }
-
-// BackupVolume creates a volume backup on OCI from an exsiting volume and returns the backup volume id
-func (j *PVCTestJig) BackupVolume(storageClient coreOCI.BlockstorageClient, pvc *v1.PersistentVolumeClaim) (*string, error) {
-	ctx := context.Background()
-	pvc, err := j.KubeClient.CoreV1().PersistentVolumeClaims(pvc.Namespace).Get(pvc.Name, metav1.GetOptions{})
-	Expect(err).NotTo(HaveOccurred())
-	pv, err := j.KubeClient.CoreV1().PersistentVolumes().Get(pvc.Spec.VolumeName, metav1.GetOptions{})
-	volumeID := pv.ObjectMeta.Annotations["ociVolumeID"]
-	// volumeID := pv.ObjectMeta.Name
-	if err != nil {
-		return nil, fmt.Errorf("Failed to get persistent volume created name by claim %q: %v", pvc.Spec.VolumeName, err)
-	}
-
-	backupVolume, err := storageClient.CreateVolumeBackup(ctx, coreOCI.CreateVolumeBackupRequest{
-		CreateVolumeBackupDetails: coreOCI.CreateVolumeBackupDetails{
-			VolumeId:    &volumeID,
-			DisplayName: &j.Name,
-			Type:        coreOCI.CreateVolumeBackupDetailsTypeFull,
-		},
-	})
-	if err != nil {
-		return backupVolume.Id, fmt.Errorf("Failed to backup volume with ocid %q: %v", volumeID, err)
-	}
-
-	err = j.waitForVolumeAvailable(ctx, storageClient, backupVolume.Id, DefaultTimeout)
-	if err != nil {
-		// Delete the volume if it failed to get in a good state for us
-		ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)
-		defer cancel()
-
-		_, _ = storageClient.DeleteVolumeBackup(ctx,
-			coreOCI.DeleteVolumeBackupRequest{VolumeBackupId: backupVolume.Id})
-
-		return backupVolume.Id, err
-	}
-	return backupVolume.Id, nil
-}
-
-func (j *PVCTestJig) waitForVolumeAvailable(ctx context.Context, storageClient coreOCI.BlockstorageClient, volumeID *string, timeout time.Duration) error {
-	isVolumeReady := func() (bool, error) {
-		ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)
-		defer cancel()
-
-		getVolumeResponse, err := storageClient.GetVolumeBackup(ctx,
-			coreOCI.GetVolumeBackupRequest{VolumeBackupId: volumeID})
-		if err != nil {
-			return false, err
-		}
-
-		state := getVolumeResponse.LifecycleState
-		Logf("State: %q", state)
-		switch state {
-		case coreOCI.VolumeBackupLifecycleStateCreating:
-			return false, nil
-		case coreOCI.VolumeBackupLifecycleStateAvailable:
-			return true, nil
-		case coreOCI.VolumeBackupLifecycleStateFaulty,
-			coreOCI.VolumeBackupLifecycleStateTerminated,
-			coreOCI.VolumeBackupLifecycleStateTerminating:
-			return false, fmt.Errorf("volume has lifecycle state %q", state)
-		}
-		return false, nil
-	}
-
-	return wait.PollImmediate(time.Second*5, timeout, func() (bool, error) {
-		ready, err := isVolumeReady()
-		if err != nil {
-			return false, fmt.Errorf("failed to provision volume %q: %v", *volumeID, err)
-		}
-		return ready, nil
-	})
-
-}
-
-// DeleteBackup deletes the backup
-func (j *PVCTestJig) DeleteBackup(storageClient coreOCI.BlockstorageClient, backupID *string) {
-	ctx := context.Background()
-	storageClient.DeleteVolumeBackup(ctx,
-		coreOCI.DeleteVolumeBackupRequest{VolumeBackupId: backupID})
-}
-
-/*
-// CheckBackupUUID checks
-func (j *PVCTestJig) CheckBackupUUID(backupID string, pvc *v1.PersistentVolumeClaim) {
-	pvcRestore, err := j.KubeClient.CoreV1().PersistentVolumeClaims(pvc.Namespace).Get(pvc.Name, metav1.GetOptions{})
-	if err != nil {
-		Failf("Failed to get persistent volume claim %q: %v", pvc.Name, err)
-	}
-	pvRestore, err := j.KubeClient.CoreV1().PersistentVolumes().Get(pvcRestore.Spec.VolumeName, metav1.GetOptions{})
-	if err != nil {
-		Failf("Failed to get persistent volume created name by claim %q: %v", pvcRestore.Spec.VolumeName, err)
-	}
-	if pvRestore.Annotations["ociVolumeID"] != backupID {
-		Failf("Failed to assign the id of the blockID: %s, assigned %s instead", backupID,
-			pvRestore.Annotations["ociVolumeID"])
-	}
-}
-*/
