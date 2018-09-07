@@ -26,53 +26,41 @@ import (
 var _ = Describe("FSS Volume Creation", func() {
 	f := framework.NewDefaultFramework("fss-volume")
 
-	It("Should be possible to create a persistent volume claim (PVC) for a FSS with a mnt target specified ", func() {
+	It("Should be possible to create a persistent volume claim (PVC) for a FSS with a mnt target specified", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
-		// TO-DO (bl) - refer to config yaml for specific ad, or specify somewhere in framework
-		// TO-DO (bl) - need to add a tweak function to check the if the a pod is attached
+		By("Creating PVC that will dynamically provision a FSS")
 		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "1Gi", func(pvc *v1.PersistentVolumeClaim) {
 			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				"failure-domain.beta.kubernetes.io/zone": "PHX-AD-2"}}
+				"failure-domain.beta.kubernetes.io/zone": framework.DefaultAD}}
+
 			pvcJig.StorageClassName = "oci-fss-mnt"
-			if !pvcJig.CheckStorageClass(pvcJig.StorageClassName) {
-				pvcJig.StorageClassName = pvcJig.CreateStorageClassOrFail(pvcJig.StorageClassName, "oracle.com/oci-fss", map[string]string{
-					"mntTargetId": "ocid1.mounttarget.oc1.phx.aaaaaa4np2snlxveobuhqllqojxwiotqnb4c2ylefuzaaaaa"})
-			}
+			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, "oracle.com/oci-fss", map[string]string{
+				"mntTargetId": f.CheckMntEnv()})
 			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
+
 		})
+		By("Creating a Pod and waiting till attaches to the volume")
+		pvcJig.CreateAndAwaitNginxPodOrFail(f.Namespace.Name, pvc)
 
-		framework.CreateAndAwaitNginxPodOrFail(f.ClientSet, f.Namespace.Name, pvc)
-
-		if pvcJig.CustomStorageClass && framework.DeleteNamespaceRegisterFlag() {
-			// TO-DO (bl) - look at deletenamespaceonfailure case
-			pvcJig.DeleteStorageClass(pvcJig.StorageClassName)
-		}
-		// TO-DO (bl) - compare expected and actual
+		pvcJig.DeleteStorageClass(pvcJig.StorageClassName)
 
 	})
 
-	It("Should be possible to create a persistent volume claim (PVC) for a FSS with a subnet id specified", func() {
+	It("Should be possible to create a persistent volume claim (PVC) for a FSS no mnt target or subnet id specified", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
-		// TO-DO (bl) - maybe refer to config yaml for specific ad, or specify somewhere in framework
-		// TO-DO (bl) - need to add a tweak function to check the if the a pod is attached
+		By("Creating PVC that will dynamically provision a FSS")
 		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "1Gi", func(pvc *v1.PersistentVolumeClaim) {
 			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				"failure-domain.beta.kubernetes.io/zone": "PHX-AD-2"}}
-			pvcJig.StorageClassName = "oci-fss-subnet"
-			if !pvcJig.CheckStorageClass(pvcJig.StorageClassName) {
-				pvcJig.StorageClassName = pvcJig.CreateStorageClassOrFail(pvcJig.StorageClassName, "oracle.com/oci-fss", map[string]string{
-					"subnetId": "ocid1.subnet.oc1.phx.aaaaaaaanlsnbcixkkchz6n6eznusplxui3xwgb7bsaeucqy4zpehohcb3ra"})
-			}
+				"failure-domain.beta.kubernetes.io/zone": framework.DefaultAD}}
+			pvcJig.StorageClassName = "oci-fss-noparam"
+			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, "oracle.com/oci-fss", nil)
 			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
 		})
+		By("Creating a Pod and waiting till attaches to the volume")
+		pvcJig.CreateAndAwaitNginxPodOrFail(f.Namespace.Name, pvc)
 
-		framework.CreateAndAwaitNginxPodOrFail(f.ClientSet, f.Namespace.Name, pvc)
-
-		if pvcJig.CustomStorageClass && framework.DeleteNamespaceRegisterFlag() {
-			// TO-DO (bl) - look at deletenamespaceonfailure case
-			pvcJig.DeleteStorageClass(pvcJig.StorageClassName)
-		}
-		// TO-DO (bl) - compare expected and actual
+		pvcJig.DeleteStorageClass(pvcJig.StorageClassName)
 	})
+
 })
 */
