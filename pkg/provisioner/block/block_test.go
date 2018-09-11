@@ -54,7 +54,7 @@ func TestResolveFSTypeWhenNotConfigured(t *testing.T) {
 
 func TestResolveFSTypeWhenConfigured(t *testing.T) {
 	// test default fsType of 'ext3' is always returned when configured.
-	options := controller.VolumeOptions{Parameters: map[string]string{fsType: "ext3"}}
+	options := controller.VolumeOptions{Parameters: map[string]string{FsType: "ext3"}}
 	fst := resolveFSType(options)
 	if fst != "ext3" {
 		t.Fatalf("Unexpected filesystem type: '%s'.", fst)
@@ -68,7 +68,7 @@ func TestCreateVolumeFromBackup(t *testing.T) {
 		PVC: &v1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					ociVolumeBackupID: volumeBackupID,
+					OCIVolumeBackupID: volumeBackupID,
 				},
 			},
 			Spec: v1.PersistentVolumeClaimSpec{
@@ -95,9 +95,9 @@ func TestCreateVolumeFromBackup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to provision volume from block storage: %v", err)
 	}
-	if provisionedVolume.Annotations[ociVolumeID] != volumeBackupID {
+	if provisionedVolume.Annotations[OCIVolumeID] != volumeBackupID {
 		t.Fatalf("Failed to assign the id of the blockID: %s, assigned %s instead", volumeBackupID,
-			provisionedVolume.Annotations[ociVolumeID])
+			provisionedVolume.Annotations[OCIVolumeID])
 	}
 }
 

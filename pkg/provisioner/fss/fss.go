@@ -39,11 +39,24 @@ import (
 )
 
 const (
+<<<<<<< HEAD
 	ociVolumeID = "volume.beta.kubernetes.io/oci-volume-id"
 	ociExportID = "volume.beta.kubernetes.io/oci-export-id"
 	fsType      = "fsType"
 	subnetID    = "subnetId"
 	mntTargetID = "mntTargetId"
+=======
+	ociVolumeID            = "volume.beta.kubernetes.io/oci-volume-id"
+	ociExportID            = "volume.beta.kubernetes.io/oci-export-id"
+	volumePrefixEnvVarName = "OCI_VOLUME_NAME_PREFIX"
+	fsType                 = "fsType"
+
+	// SubnetID is the field format for specifying a parameter when creating a storage class
+	SubnetID = "subnetId"
+
+	// MntTargetID is the field format for specifying a parameter when creating a storage class
+	MntTargetID = "mntTargetId"
+>>>>>>> 13eff5de... install provisioner and PR comments
 )
 
 // filesystemProvisioner is the internal provisioner for OCI filesystem volumes
@@ -168,7 +181,7 @@ func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad
 	}
 	logger = logger.With("fileSystemID", fsID)
 
-	target, err := fsp.getOrCreateMountTarget(ctx, options.Parameters[mntTargetID], *ad.Name, options.Parameters[subnetID])
+	target, err := fsp.getOrCreateMountTarget(ctx, options.Parameters[MntTargetID], *ad.Name, options.Parameters[SubnetID])
 	if err != nil {
 		logger.With(zap.Error(err)).Error("Failed to retrieve mount target.")
 		return nil, err

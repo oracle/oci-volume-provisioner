@@ -15,12 +15,12 @@
 package framework
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/pkg/errors"
@@ -39,21 +39,32 @@ import (
 )
 
 const (
-	OCIConfigVar  = "OCICONFIG_VAR"
-	KubeConfigVar = "KUBECONFIG_VAR"
-	SubnetOCID    = "SUBNET_OCID"
-	MntTargetOCID = "MNT_TARGET_OCID"
-	DefaultAD     = "PHX-AD-2"
+	OCIConfigVar       = "OCICONFIG_VAR"
+	KubeConfigVar      = "KUBECONFIG_VAR"
+	SubnetOCID         = "SUBNET_OCID"
+	MntTargetOCID      = "MNT_TARGET_OCID"
+	DefaultAD          = "PHX-AD-2"
+	KubeSystemNS       = "kube-system"
+	ClassOCI           = "oci"
+	ClassOCIExt3       = "oci-ext3"
+	ClassOCINoParamFss = "oci-fss-noparam"
+	ClassOCIMntFss     = "oci-fss-mnt"
+	ClassOCISubnetFss  = "oci-fss-subnet"
+	MinVolumeBlock     = "50Gi"
+	VolumeFss          = "1Gi"
 )
 
 // Framework is used in the execution of e2e tests.
 type Framework struct {
-	BaseName             string
-	ProvisionerInstalled bool
+	BaseName                  string
+	ProvisionerFSSInstalled   bool
+	ProvisionerBlockInstalled bool
 
-	ClientSet          clientset.Interface
+	ClientSet clientset.Interface
+
 	BlockStorageClient coreOCI.BlockstorageClient
 	IsBackup           bool
+	BackupIDs          []string
 
 	Namespace          *v1.Namespace   // Every test has at least one namespace unless creation is skipped
 	namespacesToDelete []*v1.Namespace // Some tests have more than one.
@@ -159,12 +170,6 @@ func (f *Framework) DeleteNamespace(namespace string, timeout time.Duration) err
 	return nil
 }
 
-// InstallProvisioner installs the Volume Provisioner as a deployment into the given namespace
-func (f *Framework) InstallProvisioner(namespace string) error {
-	return nil
-
-}
-
 // BeforeEach gets a client and makes a namespace.
 func (f *Framework) BeforeEach() {
 	// The fact that we need this feels like a bug in ginkgo.
@@ -196,10 +201,17 @@ func (f *Framework) BeforeEach() {
 	if f.IsBackup {
 		f.BlockStorageClient = f.createStorageClient()
 	}
-	if !f.ProvisionerInstalled {
-		err := f.InstallProvisioner(f.Namespace.Name)
+
+	if !f.ProvisionerFSSInstalled {
+		err := f.installFSSProvisioner(f.Namespace.Name)
 		Expect(err).NotTo(HaveOccurred())
-		f.ProvisionerInstalled = true
+		f.ProvisionerFSSInstalled = true
+	}
+
+	if !f.ProvisionerBlockInstalled {
+		err := f.installBlockProvisioner(f.Namespace.Name)
+		Expect(err).NotTo(HaveOccurred())
+		f.ProvisionerBlockInstalled = true
 	}
 }
 
@@ -221,6 +233,12 @@ func (f *Framework) AfterEach() {
 		}
 	}
 
+	for _, backupID := range f.BackupIDs {
+		By(fmt.Sprintf("Deleting backups %q", backupID))
+		ctx := context.Background()
+		f.BlockStorageClient.DeleteVolumeBackup(ctx, coreOCI.DeleteVolumeBackupRequest{VolumeBackupId: &backupID})
+	}
+
 	// if we had errors deleting, report them now.
 	if len(nsDeletionErrors) != 0 {
 		messages := []string{}
@@ -229,19 +247,14 @@ func (f *Framework) AfterEach() {
 		}
 		Failf(strings.Join(messages, ","))
 	}
-	f.ProvisionerInstalled = false
+
+	f.ProvisionerBlockInstalled = false
+	f.ProvisionerFSSInstalled = false
 }
 
 func (f *Framework) createStorageClient() coreOCI.BlockstorageClient {
 	By("Creating an OCI block storage client")
-	configPath, ok := os.LookupEnv("OCICONFIG_VAR")
-	if !ok {
-		if TestContext.OCIConfig == "" {
-			Failf("Unable to load file from var or test context")
-		} else {
-			configPath = TestContext.OCIConfig
-		}
-	}
+	configPath := f.CheckOCIConfig()
 
 	file, err := os.Open(configPath)
 	if err != nil {
@@ -271,14 +284,14 @@ func (f *Framework) newConfigurationProvider(cfg *client.Config) (common.Configu
 			return nil, errors.Wrap(err, "invalid client config")
 		}
 		if cfg.UseInstancePrincipals {
-			glog.V(2).Info("Using instance principals configuration provider")
+			Logf("Using instance principals configuration provider")
 			cp, err := auth.InstancePrincipalConfigurationProvider()
 			if err != nil {
 				return nil, errors.Wrap(err, "InstancePrincipalConfigurationProvider")
 			}
 			return cp, nil
 		}
-		glog.V(2).Info("Using raw configuration provider")
+		Logf("Using raw configuration provider")
 		conf = common.NewRawConfigurationProvider(
 			cfg.Auth.TenancyOCID,
 			cfg.Auth.UserOCID,
@@ -292,7 +305,19 @@ func (f *Framework) newConfigurationProvider(cfg *client.Config) (common.Configu
 	return conf, nil
 }
 
-// CheckMntEnv checks if an environment variable is set in the werker environement, if not it checks the test context.
+// CheckOCIConfig finds the path to the oci config
+func (f *Framework) CheckOCIConfig() string {
+	configPath, ok := os.LookupEnv(OCIConfigVar)
+	if !ok {
+		configPath = TestContext.OCIConfig
+		if configPath == "" {
+			Failf("Unable to load file from var or test context")
+		}
+	}
+	return configPath
+}
+
+// CheckMntEnv verifies if an environment variable is set in the werker environement, if not it checks the test context.
 func (f *Framework) CheckMntEnv() string {
 	response, ok := os.LookupEnv(MntTargetOCID)
 	if !ok {
