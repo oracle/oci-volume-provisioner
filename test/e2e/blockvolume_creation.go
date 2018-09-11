@@ -14,13 +14,15 @@
 
 package e2e
 
-/*
 import (
 	. "github.com/onsi/ginkgo"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/block"
+	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/core"
+	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/plugin"
 	"github.com/oracle/oci-volume-provisioner/test/e2e/framework"
 )
 
@@ -29,11 +31,11 @@ var _ = Describe("Block Volume Creation", func() {
 
 	It("Should be possible to create a persistent volume claim for a block storage (PVC)", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
-		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "50Gi", func(pvc *v1.PersistentVolumeClaim) {
+		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, func(pvc *v1.PersistentVolumeClaim) {
 			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				"failure-domain.beta.kubernetes.io/zone": framework.DefaultAD}}
-			pvcJig.StorageClassName = "oci-new"
-			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, "oracle.com/oci", nil)
+				plugin.LabelZoneFailureDomain: framework.DefaultAD}}
+			pvcJig.StorageClassName = framework.ClassOCI
+			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameDefault, nil)
 			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
 		})
 
@@ -44,11 +46,11 @@ var _ = Describe("Block Volume Creation", func() {
 
 	It("Should be possible to create a persistent volume claim (PVC) for a block storage of Ext3 file system ", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
-		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "50Gi", func(pvc *v1.PersistentVolumeClaim) {
+		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, func(pvc *v1.PersistentVolumeClaim) {
 			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				"failure-domain.beta.kubernetes.io/zone": framework.DefaultAD}}
-			pvcJig.StorageClassName = "oci-ext3"
-			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, "oracle.com/oci", map[string]string{"fsType": "ext3"})
+				plugin.LabelZoneFailureDomain: framework.DefaultAD}}
+			pvcJig.StorageClassName = framework.ClassOCIExt3
+			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameDefault, map[string]string{block.FsType: "ext3"})
 			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
 		})
 
@@ -59,9 +61,9 @@ var _ = Describe("Block Volume Creation", func() {
 
 	It("Should be possible to create a persistent volume claim (PVC) for a block storage with no AD specified ", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
-		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, "50Gi", func(pvc *v1.PersistentVolumeClaim) {
-			pvcJig.StorageClassName = "oci"
-			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, "oracle.com/oci", nil)
+		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, func(pvc *v1.PersistentVolumeClaim) {
+			pvcJig.StorageClassName = framework.ClassOCI
+			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameDefault, nil)
 			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
 		})
 
@@ -71,4 +73,3 @@ var _ = Describe("Block Volume Creation", func() {
 	})
 
 })
-*/

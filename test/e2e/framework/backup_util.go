@@ -26,6 +26,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+
+	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/block"
 )
 
 // CreatePVCAndBackupOrFail calls CreateAndAwaitPVCOrFail creates a new PVC based on the
@@ -46,11 +48,10 @@ func (j *PVCTestJig) BackupVolume(storageClient coreOCI.BlockstorageClient, pvc 
 	pvc, err := j.KubeClient.CoreV1().PersistentVolumeClaims(pvc.Namespace).Get(pvc.Name, metav1.GetOptions{})
 	Expect(err).NotTo(HaveOccurred())
 	pv, err := j.KubeClient.CoreV1().PersistentVolumes().Get(pvc.Spec.VolumeName, metav1.GetOptions{})
-	volumeID := pv.ObjectMeta.Annotations["ociVolumeID"]
 	if err != nil {
 		return nil, fmt.Errorf("Failed to get persistent volume created name by claim %q: %v", pvc.Spec.VolumeName, err)
 	}
-
+	volumeID := pv.ObjectMeta.Annotations[block.OCIVolumeID]
 	backupVolume, err := storageClient.CreateVolumeBackup(ctx, coreOCI.CreateVolumeBackupRequest{
 		CreateVolumeBackupDetails: coreOCI.CreateVolumeBackupDetails{
 			VolumeId:    &volumeID,
