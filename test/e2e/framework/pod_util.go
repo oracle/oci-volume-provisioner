@@ -125,22 +125,3 @@ func podRunning(c clientset.Interface, podName, namespace string) wait.Condition
 		return false, nil
 	}
 }
-
-func (j *PVCTestJig) createPodCheckReadWrite(pvc *v1.PersistentVolumeClaim) {
-	pv, err := j.KubeClient.CoreV1().PersistentVolumes().Get(pvc.Spec.VolumeName, metav1.GetOptions{})
-	if err != nil {
-		Failf("Failed to get persistent volume %q: %v", pvc.Spec.VolumeName, err)
-	}
-	By("checking the created volume is writable and has the PV's mount options")
-	command := "echo 'hello world' > /usr/share/nginx/html/"
-	// We give the first pod the secondary responsibility of checking the volume has
-	// been mounted with the PV's mount options, if the PV was provisioned with any
-	for _, option := range pv.Spec.MountOptions {
-		// Get entry, get mount options at 6th word, replace brackets with commas
-		command += fmt.Sprintf(" && ( mount | grep 'on /usr/share/nginx/html/' | awk '{print $6}' | sed 's/^(/,/; s/)$/,/' | grep -q ,%s, )", option)
-	}
-	j.MakeNginxPod(pvc.Namespace, pvc, command)
-
-	By("checking the created volume is readable and retains data")
-	j.MakeNginxPod(pvc.Namespace, pvc, "grep 'hello world' /mnt/test/data")
-}

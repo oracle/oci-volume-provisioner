@@ -17,9 +17,6 @@ package framework
 import (
 	"bytes"
 	"fmt"
-	"io"
-	"net"
-	"net/url"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -27,7 +24,6 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/pkg/errors"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/clientcmd"
@@ -121,54 +117,9 @@ func NewKubectlCommand(args ...string) *kubectlBuilder {
 	return b
 }
 
-func (b *kubectlBuilder) WithEnv(env []string) *kubectlBuilder {
-	b.cmd.Env = env
-	return b
-}
-
 func (b *kubectlBuilder) WithTimeout(t <-chan time.Time) *kubectlBuilder {
 	b.timeout = t
 	return b
-}
-
-func (b kubectlBuilder) WithStdinData(data string) *kubectlBuilder {
-	b.cmd.Stdin = strings.NewReader(data)
-	return &b
-}
-
-func (b kubectlBuilder) WithStdinReader(reader io.Reader) *kubectlBuilder {
-	b.cmd.Stdin = reader
-	return &b
-}
-
-func (b kubectlBuilder) ExecOrDie() string {
-	str, err := b.Exec()
-	Logf("stdout: %q", str)
-	// In case of i/o timeout error, try talking to the apiserver again after 2s before dying.
-	// Note that we're still dying after retrying so that we can get visibility to triage it further.
-	if isTimeout(err) {
-		Logf("Hit i/o timeout error, talking to the server 2s later to see if it's temporary.")
-		time.Sleep(2 * time.Second)
-		retryStr, retryErr := RunKubectl("version")
-		Logf("stdout: %q", retryStr)
-		Logf("err: %v", retryErr)
-	}
-	Expect(err).NotTo(HaveOccurred())
-	return str
-}
-
-func isTimeout(err error) bool {
-	switch err := err.(type) {
-	case net.Error:
-		if err.Timeout() {
-			return true
-		}
-	case *url.Error:
-		if err, ok := err.Err.(net.Error); ok && err.Timeout() {
-			return true
-		}
-	}
-	return false
 }
 
 func (b kubectlBuilder) Exec() (string, error) {
@@ -203,33 +154,4 @@ func (b kubectlBuilder) Exec() (string, error) {
 	}
 	Logf("stderr: %q", stderr.String())
 	return stdout.String(), nil
-}
-
-// RunKubectl is a convenience wrapper over kubectlBuilder
-func RunKubectl(args ...string) (string, error) {
-	return NewKubectlCommand(args...).Exec()
-}
-
-// RunKubectlWithRetries runs a kubectl command with 3 retries.
-func RunKubectlWithRetries(args ...string) (string, error) {
-	var err error
-	var out string
-	for i := 0; i < 3; i++ {
-		if out, err = RunKubectl(args...); err == nil {
-			return out, err
-		}
-		Logf("Retrying %v:\nerror %v\nstdout %v", args, err, out)
-	}
-	return "", errors.Wrapf(err, "failed to execute \"%v\" with retries", args)
-}
-
-// RunHostCmd runs the given cmd in the context of the given pod using `kubectl exec`
-// inside of a shell.
-func RunHostCmd(ns, name, container, cmd string) (string, error) {
-	args := []string{"exec", fmt.Sprintf("--namespace=%v", ns), name}
-	if container != "" {
-		args = append(args, "-c", container)
-	}
-	args = append(args, "--", "/bin/sh", "-c", cmd)
-	return RunKubectl(args...)
 }

@@ -199,55 +199,6 @@ func (j *PVCTestJig) waitForConditionOrFail(namespace, name string, timeout time
 	return pvc
 }
 
-// TestCleanup - Clean up a pv and pvc in a single pv/pvc test case.
-// Note: delete errors are appended to []error so that we can attempt to delete both the pvc and pv.
-func (j *PVCTestJig) TestCleanup(ns string, pvc *v1.PersistentVolumeClaim) []error {
-	var errs []error
-
-	if pvc != nil {
-		err := j.DeletePersistentVolumeClaim(pvc.Name, ns)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to delete PVC %q: %v", pvc.Name, err))
-		}
-	} else {
-		Logf("pvc is nil")
-	}
-	pv, err := j.KubeClient.CoreV1().PersistentVolumes().Get(pvc.Spec.VolumeName, metav1.GetOptions{})
-	if err != nil {
-		errs = append(errs, fmt.Errorf("Failed to get persistent volume created name by claim %q: %v", pvc.Spec.VolumeName, err))
-	}
-	if pv != nil {
-		err := j.DeletePersistentVolume(pv.Name)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to delete PV %q: %v", pv.Name, err))
-		}
-	} else {
-		Logf("pv is nil")
-	}
-
-	if len(j.StorageClassName) != 0 {
-		err := j.DeleteStorageClass(j.StorageClassName)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to delete Storage Class %q: %v", j.StorageClassName, err))
-		}
-	} else {
-		Logf("sc is nil")
-	}
-	return errs
-}
-
-// DeletePersistentVolume - Delete the PV.
-func (j *PVCTestJig) DeletePersistentVolume(pvName string) error {
-	if j.KubeClient != nil && len(pvName) > 0 {
-		Logf("Deleting PersistentVolume %q", pvName)
-		err := j.KubeClient.CoreV1().PersistentVolumes().Delete(pvName, nil)
-		if err != nil && !apierrs.IsNotFound(err) {
-			return fmt.Errorf("PV Delete API error: %v", err)
-		}
-	}
-	return nil
-}
-
 // DeletePersistentVolumeClaim - Delete the Claim
 func (j *PVCTestJig) DeletePersistentVolumeClaim(pvcName string, ns string) error {
 	if j.KubeClient != nil && len(pvcName) > 0 {
