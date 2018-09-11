@@ -65,7 +65,10 @@ func RegisterFlags() {
 // DeleteNamespaceRegisterFlag returns if a flag has been specified to delete/not delete namespace after test completion.
 // It is set to false usually for debugging purposes.
 func DeleteNamespaceRegisterFlag() bool {
-	return TestContext.DeleteNamespace
+	if TestContext.DeleteNamespace && TestContext.DeleteNamespaceOnFailure {
+		return true
+	}
+	return false
 }
 
 func init() {
