@@ -54,7 +54,7 @@ func TestResolveFSTypeWhenNotConfigured(t *testing.T) {
 
 func TestResolveFSTypeWhenConfigured(t *testing.T) {
 	// test default fsType of 'ext3' is always returned when configured.
-	options := controller.VolumeOptions{Parameters: map[string]string{FsType: "ext3"}}
+	options := controller.VolumeOptions{Parameters: map[string]string{FSType: "ext3"}}
 	fst := resolveFSType(options)
 	if fst != "ext3" {
 		t.Fatalf("Unexpected filesystem type: '%s'.", fst)

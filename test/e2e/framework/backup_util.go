@@ -22,82 +22,84 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	coreOCI "github.com/oracle/oci-go-sdk/core"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 
+	ocicore "github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/block"
 )
 
 // CreatePVCAndBackupOrFail calls CreateAndAwaitPVCOrFail creates a new PVC based on the
 // jig's defaults, waits for it to become ready. The volume is then backed up.
-func (j *PVCTestJig) CreatePVCAndBackupOrFail(storageClient coreOCI.BlockstorageClient, namespace string, volumeSize string, tweak func(pvc *v1.PersistentVolumeClaim)) (*v1.PersistentVolumeClaim, string) {
-	pvc := j.CreateAndAwaitPVCOrFail(namespace, volumeSize, tweak)
-	backupVolumeID, err := j.BackupVolume(storageClient, pvc)
+func (j *PVCTestJig) CreatePVCAndBackupOrFail(storageClient ocicore.BlockstorageClient, namespace string, volumeSize string, scName string, tweak func(pvc *v1.PersistentVolumeClaim)) (*v1.PersistentVolumeClaim, string) {
+	pvc := j.CreateAndAwaitPVCOrFail(namespace, volumeSize, scName, tweak)
+	backupVolumeID, err := j.CreateBackupVolume(storageClient, pvc)
 	if err != nil {
 		Failf("Failed to created backup for pvc %q: %v", pvc.Name, err)
 	}
-	return pvc, *backupVolumeID
+	return pvc, backupVolumeID
 }
 
-// BackupVolume creates a volume backup on OCI from an exsiting volume and returns the backup volume id
-func (j *PVCTestJig) BackupVolume(storageClient coreOCI.BlockstorageClient, pvc *v1.PersistentVolumeClaim) (*string, error) {
+// CreateBackupVolume creates a volume backup on OCI from an exsiting volume and returns the backup volume id
+func (j *PVCTestJig) CreateBackupVolume(storageClient ocicore.BlockstorageClient, pvc *v1.PersistentVolumeClaim) (string, error) {
 	By("Creating backup of the volume")
-	ctx := context.Background()
 	pvc, err := j.KubeClient.CoreV1().PersistentVolumeClaims(pvc.Namespace).Get(pvc.Name, metav1.GetOptions{})
 	Expect(err).NotTo(HaveOccurred())
 	pv, err := j.KubeClient.CoreV1().PersistentVolumes().Get(pvc.Spec.VolumeName, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("Failed to get persistent volume created name by claim %q: %v", pvc.Spec.VolumeName, err)
+		return "", fmt.Errorf("failed to get persistent volume created name by claim %q: %v", pvc.Spec.VolumeName, err)
 	}
 	volumeID := pv.ObjectMeta.Annotations[block.OCIVolumeID]
-	backupVolume, err := storageClient.CreateVolumeBackup(ctx, coreOCI.CreateVolumeBackupRequest{
-		CreateVolumeBackupDetails: coreOCI.CreateVolumeBackupDetails{
+	// TO-DO make sure this ctx works okay - changed for PR
+	ctx := context.TODO()
+	backupVolume, err := storageClient.CreateVolumeBackup(ctx, ocicore.CreateVolumeBackupRequest{
+		CreateVolumeBackupDetails: ocicore.CreateVolumeBackupDetails{
 			VolumeId:    &volumeID,
 			DisplayName: &j.Name,
-			Type:        coreOCI.CreateVolumeBackupDetailsTypeFull,
+			Type:        ocicore.CreateVolumeBackupDetailsTypeFull,
 		},
 	})
 	if err != nil {
-		return backupVolume.Id, fmt.Errorf("Failed to backup volume with ocid %q: %v", volumeID, err)
+		return *backupVolume.Id, fmt.Errorf("failed to backup volume with ocid %q: %v", volumeID, err)
 	}
 
-	err = j.waitForVolumeAvailable(ctx, storageClient, backupVolume.Id, DefaultTimeout)
+	err = j.waitForVolumeAvailable(ctx, storageClient, *backupVolume.Id, DefaultTimeout)
 	if err != nil {
 		// Delete the volume if it failed to get in a good state for us
-		ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)
-		defer cancel()
+		if _, err := storageClient.DeleteVolumeBackup(ctx, ocicore.DeleteVolumeBackupRequest{
+			VolumeBackupId: backupVolume.Id,
+		}); err != nil {
+			Logf("backup volume failed to become available. Deleting backup volume %q was not possible: %v", *backupVolume.Id, err)
+		}
 
-		_, _ = storageClient.DeleteVolumeBackup(ctx,
-			coreOCI.DeleteVolumeBackupRequest{VolumeBackupId: backupVolume.Id})
-
-		return backupVolume.Id, err
+		return *backupVolume.Id, err
 	}
-	return backupVolume.Id, nil
+	return *backupVolume.Id, nil
 }
 
-func (j *PVCTestJig) waitForVolumeAvailable(ctx context.Context, storageClient coreOCI.BlockstorageClient, volumeID *string, timeout time.Duration) error {
+func (j *PVCTestJig) waitForVolumeAvailable(ctx context.Context, storageClient ocicore.BlockstorageClient, volumeID string, timeout time.Duration) error {
 	isVolumeReady := func() (bool, error) {
 		ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)
 		defer cancel()
 
-		getVolumeResponse, err := storageClient.GetVolumeBackup(ctx,
-			coreOCI.GetVolumeBackupRequest{VolumeBackupId: volumeID})
+		resp, err := storageClient.GetVolumeBackup(ctx, ocicore.GetVolumeBackupRequest{
+			VolumeBackupId: &volumeID,
+		})
 		if err != nil {
 			return false, err
 		}
 
-		state := getVolumeResponse.LifecycleState
+		state := resp.LifecycleState
 		Logf("State: %q", state)
 		switch state {
-		case coreOCI.VolumeBackupLifecycleStateCreating:
+		case ocicore.VolumeBackupLifecycleStateCreating:
 			return false, nil
-		case coreOCI.VolumeBackupLifecycleStateAvailable:
+		case ocicore.VolumeBackupLifecycleStateAvailable:
 			return true, nil
-		case coreOCI.VolumeBackupLifecycleStateFaulty,
-			coreOCI.VolumeBackupLifecycleStateTerminated,
-			coreOCI.VolumeBackupLifecycleStateTerminating:
+		case ocicore.VolumeBackupLifecycleStateFaulty,
+			ocicore.VolumeBackupLifecycleStateTerminated,
+			ocicore.VolumeBackupLifecycleStateTerminating:
 			return false, fmt.Errorf("volume has lifecycle state %q", state)
 		}
 		return false, nil
@@ -106,16 +108,15 @@ func (j *PVCTestJig) waitForVolumeAvailable(ctx context.Context, storageClient c
 	return wait.PollImmediate(time.Second*5, timeout, func() (bool, error) {
 		ready, err := isVolumeReady()
 		if err != nil {
-			return false, fmt.Errorf("failed to provision volume %q: %v", *volumeID, err)
+			return false, fmt.Errorf("failed to provision volume %q: %v", volumeID, err)
 		}
 		return ready, nil
 	})
-
 }
 
 // DeleteBackup deletes the backup after a volume has been restored.
-func (j *PVCTestJig) DeleteBackup(storageClient coreOCI.BlockstorageClient, backupID *string) {
+func (j *PVCTestJig) DeleteBackup(storageClient ocicore.BlockstorageClient, backupID *string) {
 	ctx := context.Background()
 	storageClient.DeleteVolumeBackup(ctx,
-		coreOCI.DeleteVolumeBackupRequest{VolumeBackupId: backupID})
+		ocicore.DeleteVolumeBackupRequest{VolumeBackupId: backupID})
 }
