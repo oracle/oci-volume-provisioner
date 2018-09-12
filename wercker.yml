@@ -206,9 +206,7 @@ release:
 
 ginkgo-e2e:
   base-path: "/go/src/github.com/oracle/oci-volume-provisioner"
-  box: 
-    registry: https://iad.ocir.io/v2
-    id: iad.ocir.io/oracle/oci-volume-provisioner-system-test:1.0.2
+  box: iad.ocir.io/oracle/oci-volume-provisioner-system-test:1.0.2
   steps: 
     - script: 
     name: e2e tests
