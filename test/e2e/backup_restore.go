@@ -36,7 +36,7 @@ var _ = Describe("Backup/Restore", func() {
 		By("Provisioning volume to backup")
 		pvc, backupID := pvcJig.CreatePVCAndBackupOrFail(f.BlockStorageClient, f.Namespace.Name, framework.MinVolumeBlock, func(pvc *v1.PersistentVolumeClaim) {
 			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				plugin.LabelZoneFailureDomain: framework.DefaultAD}}
+				plugin.LabelZoneFailureDomain: f.CheckADEnv()}}
 			pvcJig.StorageClassName = framework.ClassOCI
 			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameDefault, nil)
 			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
@@ -57,7 +57,7 @@ var _ = Describe("Backup/Restore", func() {
 				block.OCIVolumeBackupID: backupID,
 			}
 			pvcRestore.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				plugin.LabelZoneFailureDomain: framework.DefaultAD}}
+				plugin.LabelZoneFailureDomain: f.CheckADEnv()}}
 			pvcJig.StorageClassName = framework.ClassOCI
 			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameDefault, nil)
 			pvcRestore.Spec.StorageClassName = &pvcJig.StorageClassName

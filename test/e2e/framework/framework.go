@@ -43,7 +43,7 @@ const (
 	KubeConfigVar      = "KUBECONFIG_VAR"
 	SubnetOCID         = "SUBNET_OCID"
 	MntTargetOCID      = "MNT_TARGET_OCID"
-	DefaultAD          = "PHX-AD-2"
+	AD                 = "AD"
 	KubeSystemNS       = "kube-system"
 	ClassOCI           = "oci"
 	ClassOCIExt3       = "oci-ext3"
@@ -317,12 +317,12 @@ func (f *Framework) CheckOCIConfig() string {
 	return configPath
 }
 
-// CheckMntEnv verifies if an environment variable is set in the werker environement, if not it checks the test context.
+// CheckMntEnv checks if an environment variable is set in the werker environement, if not it checks the test context.
 func (f *Framework) CheckMntEnv() string {
 	response, ok := os.LookupEnv(MntTargetOCID)
 	if !ok {
 		if TestContext.MntTargetOCID == "" {
-			Failf("Mount target not specified")
+			Failf("Mount target ID not specified")
 		} else {
 			return TestContext.MntTargetOCID
 		}
@@ -335,9 +335,22 @@ func (f *Framework) CheckSubnetEnv() string {
 	response, ok := os.LookupEnv(SubnetOCID)
 	if !ok {
 		if TestContext.SubnetOCID == "" {
-			Failf("Subnet id not specified")
+			Failf("Subnet ID not specified")
 		} else {
 			return TestContext.SubnetOCID
+		}
+	}
+	return response
+}
+
+// CheckADEnv checks if an environment variable is set in the werker environement, if not it checks the test context.
+func (f *Framework) CheckADEnv() string {
+	response, ok := os.LookupEnv(AD)
+	if !ok {
+		if TestContext.AD == "" {
+			Failf("Availability Domain not specified")
+		} else {
+			return TestContext.AD
 		}
 	}
 	return response
