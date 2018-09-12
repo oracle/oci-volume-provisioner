@@ -254,7 +254,7 @@ func (f *Framework) AfterEach() {
 
 func (f *Framework) createStorageClient() coreOCI.BlockstorageClient {
 	By("Creating an OCI block storage client")
-	configPath := f.CheckOCIConfig()
+	configPath := f.CheckEnvVar(OCIConfigVar)
 
 	file, err := os.Open(configPath)
 	if err != nil {
@@ -305,53 +305,29 @@ func (f *Framework) newConfigurationProvider(cfg *client.Config) (common.Configu
 	return conf, nil
 }
 
-// CheckOCIConfig finds the path to the oci config
-func (f *Framework) CheckOCIConfig() string {
-	configPath, ok := os.LookupEnv(OCIConfigVar)
+// CheckEnvVar checks if an environment variable is set in the werker environement, if not it checks the test context.
+func (f *Framework) CheckEnvVar(envVar string) string {
+	response, ok := os.LookupEnv(envVar)
 	if !ok {
-		configPath = TestContext.OCIConfig
-		if configPath == "" {
-			Failf("Unable to load file from var or test context")
-		}
-	}
-	return configPath
-}
-
-// CheckMntEnv checks if an environment variable is set in the werker environement, if not it checks the test context.
-func (f *Framework) CheckMntEnv() string {
-	response, ok := os.LookupEnv(MntTargetOCID)
-	if !ok {
-		if TestContext.MntTargetOCID == "" {
-			Failf("Mount target ID not specified")
-		} else {
-			return TestContext.MntTargetOCID
+		response = f.lookUpContext(envVar)
+		if len(response) == 0 {
+			Failf("%q not found", envVar)
 		}
 	}
 	return response
 }
 
-// CheckSubnetEnv checks if an environment variable is set in the werker environement, if not it checks the test context.
-func (f *Framework) CheckSubnetEnv() string {
-	response, ok := os.LookupEnv(SubnetOCID)
-	if !ok {
-		if TestContext.SubnetOCID == "" {
-			Failf("Subnet ID not specified")
-		} else {
-			return TestContext.SubnetOCID
-		}
+func (f *Framework) lookUpContext(envVar string) string {
+	switch envVar {
+	case AD:
+		return TestContext.AD
+	case MntTargetOCID:
+		return TestContext.MntTargetOCID
+	case OCIConfigVar:
+		return TestContext.OCIConfig
+	case SubnetOCID:
+		return TestContext.SubnetOCID
+	default:
+		return ""
 	}
-	return response
-}
-
-// CheckADEnv checks if an environment variable is set in the werker environement, if not it checks the test context.
-func (f *Framework) CheckADEnv() string {
-	response, ok := os.LookupEnv(AD)
-	if !ok {
-		if TestContext.AD == "" {
-			Failf("Availability Domain not specified")
-		} else {
-			return TestContext.AD
-		}
-	}
-	return response
 }

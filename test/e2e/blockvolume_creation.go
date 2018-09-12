@@ -33,7 +33,7 @@ var _ = Describe("Block Volume Creation", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
 		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, func(pvc *v1.PersistentVolumeClaim) {
 			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				plugin.LabelZoneFailureDomain: f.CheckADEnv()}}
+				plugin.LabelZoneFailureDomain: f.CheckEnvVar(framework.AD)}}
 			pvcJig.StorageClassName = framework.ClassOCI
 			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameDefault, nil)
 			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
@@ -48,7 +48,7 @@ var _ = Describe("Block Volume Creation", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
 		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, func(pvc *v1.PersistentVolumeClaim) {
 			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				plugin.LabelZoneFailureDomain: f.CheckADEnv()}}
+				plugin.LabelZoneFailureDomain: f.CheckEnvVar(framework.AD)}}
 			pvcJig.StorageClassName = framework.ClassOCIExt3
 			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameDefault, map[string]string{block.FsType: "ext3"})
 			pvc.Spec.StorageClassName = &pvcJig.StorageClassName

@@ -33,11 +33,11 @@ var _ = Describe("FSS Volume Creation", func() {
 		By("Creating PVC that will dynamically provision a FSS")
 		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, func(pvc *v1.PersistentVolumeClaim) {
 			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				plugin.LabelZoneFailureDomain: f.CheckADEnv()}}
+				plugin.LabelZoneFailureDomain: f.CheckEnvVar(framework.AD)}}
 
 			pvcJig.StorageClassName = framework.ClassOCIMntFss
 			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameFss, map[string]string{
-				fss.MntTargetID: f.CheckMntEnv()})
+				fss.MntTargetID: f.CheckEnvVar(framework.MntTargetOCID)})
 			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
 
 		})
@@ -53,11 +53,11 @@ var _ = Describe("FSS Volume Creation", func() {
 		By("Creating PVC that will dynamically provision a FSS")
 		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, func(pvc *v1.PersistentVolumeClaim) {
 			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				plugin.LabelZoneFailureDomain: f.CheckADEnv()}}
+				plugin.LabelZoneFailureDomain: f.CheckEnvVar(framework.AD)}}
 
 			pvcJig.StorageClassName = framework.ClassOCISubnetFss
 			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameFss, map[string]string{
-				fss.SubnetID: f.CheckSubnetEnv()})
+				fss.SubnetID: f.CheckEnvVar(framework.SubnetOCID)})
 			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
 
 		})
@@ -73,7 +73,7 @@ var _ = Describe("FSS Volume Creation", func() {
 		By("Creating PVC that will dynamically provision a FSS")
 		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, func(pvc *v1.PersistentVolumeClaim) {
 			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				plugin.LabelZoneFailureDomain: f.CheckADEnv()}}
+				plugin.LabelZoneFailureDomain: f.CheckEnvVar(framework.AD)}}
 			pvcJig.StorageClassName = framework.ClassOCINoParamFss
 			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameFss, nil)
 			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
