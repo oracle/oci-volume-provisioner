@@ -36,6 +36,9 @@ type TestContextType struct {
 	// SubnetOCID used to mount a volume looking for a mount in the specified subnet
 	SubnetOCID string
 
+	// AD used to specify an availability domain to create the volumes in.
+	AD string
+
 	// Namespace (if provided) is the namespace of an existing namespace to
 	// use for test execution rather than creating a new namespace.
 	Namespace string
@@ -56,8 +59,9 @@ func RegisterFlags() {
 	flag.StringVar(&TestContext.KubeConfig, "kubeconfig", "", "Path to Kubeconfig file with authorization and master location information.")
 	flag.StringVar(&TestContext.OCIConfig, "ociconfig", "", "Path to OCIconfig file with cloud provider config.")
 	flag.StringVar(&TestContext.Namespace, "namespace", "", "Name of an existing Namespace to run tests in.")
-	flag.StringVar(&TestContext.MntTargetOCID, "mnt-target-id", "", "Mount Target ID is specified to identify the mount target for a FSS.")
+	flag.StringVar(&TestContext.MntTargetOCID, "mnt-target-id", "", " ")
 	flag.StringVar(&TestContext.SubnetOCID, "subnet-id", "", "Subnet id is specified to identify where to look for a mount target, such that a FSS can be mounted.")
+	flag.StringVar(&TestContext.AD, "ad", "PHX-AD-2", "The availability domain is specified to identify in which to create the volumes.")
 	flag.BoolVar(&TestContext.DeleteNamespace, "delete-namespace", true, "If true tests will delete namespace after completion. It is only designed to make debugging easier, DO NOT turn it off by default.")
 	flag.BoolVar(&TestContext.DeleteNamespaceOnFailure, "delete-namespace-on-failure", true, "If true tests will delete their associated namespace upon completion whether or not the test has failed.")
 }
