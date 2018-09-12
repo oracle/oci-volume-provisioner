@@ -33,7 +33,7 @@ var _ = Describe("FSS Volume Creation", func() {
 		By("Creating PVC that will dynamically provision a FSS")
 		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, func(pvc *v1.PersistentVolumeClaim) {
 			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				plugin.LabelZoneFailureDomain: framework.DefaultAD}}
+				plugin.LabelZoneFailureDomain: f.CheckADEnv()}}
 
 			pvcJig.StorageClassName = framework.ClassOCIMntFss
 			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameFss, map[string]string{
@@ -53,7 +53,7 @@ var _ = Describe("FSS Volume Creation", func() {
 		By("Creating PVC that will dynamically provision a FSS")
 		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, func(pvc *v1.PersistentVolumeClaim) {
 			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				plugin.LabelZoneFailureDomain: framework.DefaultAD}}
+				plugin.LabelZoneFailureDomain: f.CheckADEnv()}}
 
 			pvcJig.StorageClassName = framework.ClassOCISubnetFss
 			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameFss, map[string]string{
@@ -73,7 +73,7 @@ var _ = Describe("FSS Volume Creation", func() {
 		By("Creating PVC that will dynamically provision a FSS")
 		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, func(pvc *v1.PersistentVolumeClaim) {
 			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				plugin.LabelZoneFailureDomain: framework.DefaultAD}}
+				plugin.LabelZoneFailureDomain: f.CheckADEnv()}}
 			pvcJig.StorageClassName = framework.ClassOCINoParamFss
 			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameFss, nil)
 			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
