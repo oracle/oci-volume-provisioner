@@ -203,3 +203,25 @@ release:
       file: ./dist/storage-class.yaml
       filename: storage-class.yaml
       content-type: text/yaml
+
+ginkgo-e2e:
+  base-path: "/go/src/github.com/oracle/oci-volume-provisioner"
+  box: iad.ocir.io/oracle/oci-volume-provisioner-system-test:1.0.2
+  steps: 
+    - script: 
+    name: e2e tests
+    code: |
+        export OCICONFIG="/tmp/ociconfig"
+        echo -n "${OCICONFIG_VAR}" | openssl enc -base64 -d -A > "${OCICONFIG}"
+        export KUBECONFIG="/tmp/kubeconfig"
+        echo -n "${KUBECONFIG_VAR}" | openssl enc -base64 -d -A > "${KUBECONFIG}"
+        ginkgo \
+          -v \
+          #-nodes=5 \
+          test/e2e -- \
+          --kubeconfig="${KUBECONFIG}" \
+          --ociconfig="${OCICONFIG}" \
+          --provisioner-version="$(cat dist/version.txt)" \
+          --subnet-id="${SUBNET_OCID}" \
+          --mnt-target-id="${MNT_TARGET_OCID}" \
+          --delete-namespace-on-failure=false
