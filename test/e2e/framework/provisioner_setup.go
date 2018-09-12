@@ -36,7 +36,7 @@ func (f *Framework) installFSSProvisioner(namespace string) error {
 		Logf("Error getting oci-volume-provisioner-fss: %v", err)
 		if !f.checkSecret(KubeSystemNS, "oci-volume-provisioner") {
 			By("Creating oci-volume-provisioner secret")
-			KubectlCmd("-n" + namespace + "create secret generic oci-volume-provisioner --from-file=config.yaml=" + f.CheckOCIConfig())
+			KubectlCmd("-n" + namespace + "create secret generic oci-volume-provisioner --from-file=config.yaml=" + TestContext.OCIConfig)
 		}
 		By("Installing OCI FSS volume provisioner")
 		KubectlCmd("create -f " + TestContext.RepoRoot + "dist/oci-volume-provisioner-fss.yaml")
@@ -53,7 +53,7 @@ func (f *Framework) installBlockProvisioner(namespace string) error {
 		Logf("Error getting oci-volume-provisioner: %v", err)
 		if !f.checkSecret(KubeSystemNS, "oci-volume-provisioner") {
 			By("Creating oci-volume-provisioner secret")
-			KubectlCmd("-n" + namespace + "create secret generic oci-volume-provisioner --from-file=config.yaml=" + f.CheckOCIConfig())
+			KubectlCmd("-n" + namespace + "create secret generic oci-volume-provisioner --from-file=config.yaml=" + TestContext.OCIConfig)
 		}
 		By("Installing OCI volume provisioner")
 		KubectlCmd("create -f " + TestContext.RepoRoot + "dist/oci-volume-provisioner.yaml")

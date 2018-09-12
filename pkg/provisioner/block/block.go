@@ -50,8 +50,8 @@ const (
 	OCIVolumeBackupID      = "volume.beta.kubernetes.io/oci-volume-source"
 	volumePrefixEnvVarName = "OCI_VOLUME_NAME_PREFIX"
 
-	// FsType is the field format for specifying the parameter in a storage class
-	FsType                  = "fsType"
+	// FSType is the field format for specifying the parameter in a storage class
+	FSType                  = "fsType"
 	volumeRoundingUpEnabled = "volumeRoundingUpEnabled"
 )
 
@@ -88,7 +88,7 @@ func mapVolumeIDToName(volumeID string) string {
 
 func resolveFSType(options controller.VolumeOptions) string {
 	fs := "ext4" // default to ext4
-	if fsType, ok := options.Parameters[FsType]; ok {
+	if fsType, ok := options.Parameters[FSType]; ok {
 		fs = fsType
 	}
 	return fs

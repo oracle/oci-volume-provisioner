@@ -16,12 +16,9 @@ package e2e
 
 import (
 	. "github.com/onsi/ginkgo"
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/core"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/fss"
-	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/plugin"
 	"github.com/oracle/oci-volume-provisioner/test/e2e/framework"
 )
 
@@ -30,58 +27,40 @@ var _ = Describe("FSS Volume Creation", func() {
 
 	It("Should be possible to create a persistent volume claim (PVC) for a FSS with a mnt target specified", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
+
+		scName := f.CreateStorageClassOrFail(framework.ClassOCIMntFss, core.ProvisionerNameFss, map[string]string{
+			fss.MntTargetID: framework.TestContext.MntTargetOCID}, pvcJig.Labels)
+
 		By("Creating PVC that will dynamically provision a FSS")
-		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, func(pvc *v1.PersistentVolumeClaim) {
-			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				plugin.LabelZoneFailureDomain: f.CheckADEnv()}}
+		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, scName, nil)
 
-			pvcJig.StorageClassName = framework.ClassOCIMntFss
-			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameFss, map[string]string{
-				fss.MntTargetID: f.CheckMntEnv()})
-			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
-
-		})
 		By("Creating a Pod and waiting till attaches to the volume")
-		pvcJig.CreateAndAwaitNginxPodOrFail(f.Namespace.Name, pvc)
-
-		pvcJig.DeleteStorageClass(pvcJig.StorageClassName)
-
+		pvcJig.CheckVolumeReadWrite(f.Namespace.Name, pvc)
 	})
 
 	It("Should be possible to create a persistent volume claim (PVC) for a FSS with a subnet id specified", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
+
+		scName := f.CreateStorageClassOrFail(framework.ClassOCISubnetFss, core.ProvisionerNameFss, map[string]string{
+			fss.SubnetID: framework.TestContext.SubnetOCID}, pvcJig.Labels)
+
 		By("Creating PVC that will dynamically provision a FSS")
-		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, func(pvc *v1.PersistentVolumeClaim) {
-			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				plugin.LabelZoneFailureDomain: f.CheckADEnv()}}
+		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, scName, nil)
 
-			pvcJig.StorageClassName = framework.ClassOCISubnetFss
-			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameFss, map[string]string{
-				fss.SubnetID: f.CheckSubnetEnv()})
-			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
-
-		})
 		By("Creating a Pod and waiting till attaches to the volume")
-		pvcJig.CreateAndAwaitNginxPodOrFail(f.Namespace.Name, pvc)
-
-		pvcJig.DeleteStorageClass(pvcJig.StorageClassName)
-
+		pvcJig.CheckVolumeReadWrite(f.Namespace.Name, pvc)
 	})
 
 	It("Should be possible to create a persistent volume claim (PVC) for a FSS no mnt target or subnet id specified", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
-		By("Creating PVC that will dynamically provision a FSS")
-		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, func(pvc *v1.PersistentVolumeClaim) {
-			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				plugin.LabelZoneFailureDomain: f.CheckADEnv()}}
-			pvcJig.StorageClassName = framework.ClassOCINoParamFss
-			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameFss, nil)
-			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
-		})
-		By("Creating a Pod and waiting till attaches to the volume")
-		pvcJig.CreateAndAwaitNginxPodOrFail(f.Namespace.Name, pvc)
 
-		pvcJig.DeleteStorageClass(pvcJig.StorageClassName)
+		scName := f.CreateStorageClassOrFail(framework.ClassOCINoParamFss, core.ProvisionerNameFss, nil, pvcJig.Labels)
+
+		By("Creating PVC that will dynamically provision a FSS")
+		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, scName, nil)
+
+		By("Creating a Pod and waiting till attaches to the volume")
+		pvcJig.CheckVolumeReadWrite(f.Namespace.Name, pvc)
 	})
 
 })
