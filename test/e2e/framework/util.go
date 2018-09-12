@@ -39,12 +39,13 @@ const (
 
 type podCondition func(pod *v1.Pod) (bool, error)
 
-func nowStamp() string {
+// NowStamp returns the time
+func NowStamp() string {
 	return time.Now().Format(time.StampMilli)
 }
 
 func log(level string, format string, args ...interface{}) {
-	fmt.Fprintf(GinkgoWriter, nowStamp()+": "+level+": "+format+"\n", args...)
+	fmt.Fprintf(GinkgoWriter, NowStamp()+": "+level+": "+format+"\n", args...)
 }
 
 // Logf used in framework
@@ -62,7 +63,7 @@ func Failf(format string, args ...interface{}) {
 func FailfWithOffset(offset int, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
 	log("INFO", msg)
-	ginkgowrapper.Fail(nowStamp()+": "+msg, 1+offset)
+	ginkgowrapper.Fail(NowStamp()+": "+msg, 1+offset)
 }
 
 // KubectlCmd runs the kubectl executable through the wrapper script.

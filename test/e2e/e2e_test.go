@@ -31,10 +31,12 @@ func TestE2E(t *testing.T) {
 	defer logs.FlushLogs()
 
 	gomega.RegisterFailHandler(ginkgowrapper.Fail)
+	framework.PopulateCanaryMetrics(framework.StartTime, framework.NowStamp())
 	ginkgo.RunSpecs(t, "Volume Provisioner E2E Test Suite")
 }
 
 var _ = ginkgo.SynchronizedAfterSuite(func() {
+	framework.PopulateCanaryMetrics(framework.EndTime, framework.NowStamp())
 	framework.Logf("Running AfterSuite actions on all node")
 	framework.RunCleanupActions()
 }, func() {})

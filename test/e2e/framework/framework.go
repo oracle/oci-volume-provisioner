@@ -219,6 +219,8 @@ func (f *Framework) BeforeEach() {
 func (f *Framework) AfterEach() {
 	RemoveCleanupAction(f.cleanupHandle)
 
+	PopulateTestSuccessCanaryMetrics(CurrentGinkgoTestDescription().TestText, CurrentGinkgoTestDescription().Failed)
+
 	nsDeletionErrors := map[string]error{}
 
 	// Whether to delete namespace is determined by 3 factors: delete-namespace flag, delete-namespace-on-failure flag and the test result
@@ -327,6 +329,8 @@ func (f *Framework) lookUpContext(envVar string) string {
 		return TestContext.OCIConfig
 	case SubnetOCID:
 		return TestContext.SubnetOCID
+	case MetricsFile:
+		return TestContext.MetricsFile
 	default:
 		return ""
 	}

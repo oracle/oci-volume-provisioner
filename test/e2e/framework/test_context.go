@@ -18,26 +18,20 @@ import "flag"
 
 // TestContextType represents the co
 type TestContextType struct {
-	// ProvisionerVersion is the version of the OCI volume provisioner under test.
-	ProvisionerVersion string
-
 	// RepoRoot is the root directory of the repository.
 	RepoRoot string
-
 	// KubeConfig is the path to the kubeconfig file.
 	KubeConfig string
-
 	// OCIConfig is the path to the ociconfig file
 	OCIConfig string
-
 	// MntTargetOCID used mount a volume to the specific mount id
 	MntTargetOCID string
-
 	// SubnetOCID used to mount a volume looking for a mount in the specified subnet
 	SubnetOCID string
-
 	// AD used to specify an availability domain to create the volumes in.
 	AD string
+	// MetricsFile to specify where to store the values
+	MetricsFile string
 
 	// Namespace (if provided) is the namespace of an existing namespace to
 	// use for test execution rather than creating a new namespace.
@@ -55,13 +49,13 @@ var TestContext TestContextType
 // RegisterFlags registers the test framework flags and populates TestContext.
 func RegisterFlags() {
 	flag.StringVar(&TestContext.RepoRoot, "repo-root", "../../", "Root directory of kubernetes repository, for finding test files.")
-	flag.StringVar(&TestContext.ProvisionerVersion, "operator-version", "", "The version of the OCI volume provisioner under test.")
 	flag.StringVar(&TestContext.KubeConfig, "kubeconfig", "", "Path to Kubeconfig file with authorization and master location information.")
 	flag.StringVar(&TestContext.OCIConfig, "ociconfig", "", "Path to OCIconfig file with cloud provider config.")
 	flag.StringVar(&TestContext.Namespace, "namespace", "", "Name of an existing Namespace to run tests in.")
 	flag.StringVar(&TestContext.MntTargetOCID, "mnt-target-id", "", " ")
 	flag.StringVar(&TestContext.SubnetOCID, "subnet-id", "", "Subnet id is specified to identify where to look for a mount target, such that a FSS can be mounted.")
 	flag.StringVar(&TestContext.AD, "ad", "PHX-AD-2", "The availability domain is specified to identify in which to create the volumes.")
+	flag.StringVar(&TestContext.MetricsFile, "metrics-file", "", "The path of the metrics file to save the canary metrics results as a json.")
 	flag.BoolVar(&TestContext.DeleteNamespace, "delete-namespace", true, "If true tests will delete namespace after completion. It is only designed to make debugging easier, DO NOT turn it off by default.")
 	flag.BoolVar(&TestContext.DeleteNamespaceOnFailure, "delete-namespace-on-failure", true, "If true tests will delete their associated namespace upon completion whether or not the test has failed.")
 }
