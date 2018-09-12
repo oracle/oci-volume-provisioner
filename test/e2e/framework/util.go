@@ -15,19 +15,14 @@
 package framework
 
 import (
-	"bytes"
 	"fmt"
 	"os/exec"
-	"strings"
-	"syscall"
 	"time"
 
 	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/clientcmd"
-	uexec "k8s.io/utils/exec"
 
 	"github.com/oracle/oci-volume-provisioner/test/e2e/framework/ginkgowrapper"
 )
@@ -62,20 +57,6 @@ func Failf(format string, args ...interface{}) {
 	FailfWithOffset(1, format, args...)
 }
 
-// ExpectNoError used in framework
-func ExpectNoError(err error, explain ...interface{}) {
-	ExpectNoErrorWithOffset(1, err, explain...)
-}
-
-// ExpectNoErrorWithOffset checks if "err" is set, and if so, fails assertion while logging the error at "offset" levels above its caller
-// (for example, for call chain f -> g -> ExpectNoErrorWithOffset(1, ...) error would be logged for "f").
-func ExpectNoErrorWithOffset(offset int, err error, explain ...interface{}) {
-	if err != nil {
-		Logf("Unexpected error occurred: %v", err)
-	}
-	ExpectWithOffset(1+offset, err).NotTo(HaveOccurred(), explain...)
-}
-
 // FailfWithOffset calls "Fail" and logs the error at "offset" levels above its caller
 // (for example, for call chain f -> g -> FailfWithOffset(1, ...) error would be logged for "f").
 func FailfWithOffset(offset int, format string, args ...interface{}) {
@@ -108,50 +89,4 @@ func KubectlCmd(args ...string) *exec.Cmd {
 type kubectlBuilder struct {
 	cmd     *exec.Cmd
 	timeout <-chan time.Time
-}
-
-// NewKubectlCommand used in framework
-func NewKubectlCommand(args ...string) *kubectlBuilder {
-	b := new(kubectlBuilder)
-	b.cmd = KubectlCmd(args...)
-	return b
-}
-
-func (b *kubectlBuilder) WithTimeout(t <-chan time.Time) *kubectlBuilder {
-	b.timeout = t
-	return b
-}
-
-func (b kubectlBuilder) Exec() (string, error) {
-	var stdout, stderr bytes.Buffer
-	cmd := b.cmd
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-
-	Logf("Running '%s %s'", cmd.Path, strings.Join(cmd.Args[1:], " ")) // skip arg[0] as it is printed separately
-	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("error starting %v:\nCommand stdout:\n%v\nstderr:\n%v\nerror:\n%v\n", cmd, cmd.Stdout, cmd.Stderr, err)
-	}
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- cmd.Wait()
-	}()
-	select {
-	case err := <-errCh:
-		if err != nil {
-			var rc = 127
-			if ee, ok := err.(*exec.ExitError); ok {
-				rc = int(ee.Sys().(syscall.WaitStatus).ExitStatus())
-				Logf("rc: %d", rc)
-			}
-			return "", uexec.CodeExitError{
-				Err:  fmt.Errorf("error running %v:\nCommand stdout:\n%v\nstderr:\n%v\nerror:\n%v\n", cmd, cmd.Stdout, cmd.Stderr, err),
-				Code: rc,
-			}
-		}
-	case <-b.timeout:
-		b.cmd.Process.Kill()
-		return "", fmt.Errorf("timed out waiting for command %v:\nCommand stdout:\n%v\nstderr:\n%v\n", cmd, cmd.Stdout, cmd.Stderr)
-	}
-	Logf("stderr: %q", stderr.String())
-	return stdout.String(), nil
 }

@@ -15,41 +15,15 @@
 package framework
 
 import (
-	"fmt"
-
 	storagev1beta1 "k8s.io/api/storage/v1beta1"
-	apierrs "k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
-// CheckStorageClass verifies the storage class exists, if not creates a storage class
-func (j *PVCTestJig) CheckStorageClass(name string) bool {
-	list, err := j.KubeClient.StorageV1beta1().StorageClasses().List(metav1.ListOptions{})
-	if err != nil {
-		Failf("Error listing storage classes: %v", err)
-	}
-
-	for _, sc := range list.Items {
-		if sc.Name == name {
-			Logf("Storage class %q found", sc.Name)
-			return true
-		}
-	}
-
-	return false
-}
-
-// CheckSCorCreate checks if a storage class exists, if not creates one
-func (j *PVCTestJig) CheckSCorCreate(name string, provisionerType string, param map[string]string) {
-	if !j.CheckStorageClass(name) {
-		j.CreateStorageClassOrFail(name, provisionerType, param)
-	}
-}
 
 // NewStorageClassTemplate returns the default template for this jig, but
 // does not actually create the storage class. The default storage class has the same name
 // as the jig
-func (j *PVCTestJig) newStorageClassTemplate(name string, provisionerType string, parameters map[string]string) *storagev1beta1.StorageClass {
+func (f *Framework) newStorageClassTemplate(name string, provisionerType string, parameters map[string]string, testLabels map[string]string) *storagev1beta1.StorageClass {
 	return &storagev1beta1.StorageClass{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "StorageClass",
@@ -57,7 +31,7 @@ func (j *PVCTestJig) newStorageClassTemplate(name string, provisionerType string
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   name,
-			Labels: j.Labels,
+			Labels: testLabels,
 		},
 		Provisioner: provisionerType,
 		Parameters:  parameters,
@@ -65,25 +39,17 @@ func (j *PVCTestJig) newStorageClassTemplate(name string, provisionerType string
 }
 
 // CreateStorageClassOrFail creates a new storage class based on the jig's defaults.
-func (j *PVCTestJig) CreateStorageClassOrFail(name string, provisionerType string, parameters map[string]string) string {
-	classTemp := j.newStorageClassTemplate(name, provisionerType, parameters)
+func (f *Framework) CreateStorageClassOrFail(name string, provisionerType string, parameters map[string]string, testLabels map[string]string) string {
+	classTemp := f.newStorageClassTemplate(name, provisionerType, parameters, testLabels)
 
-	class, err := j.KubeClient.StorageV1beta1().StorageClasses().Create(classTemp)
+	class, err := f.ClientSet.StorageV1beta1().StorageClasses().Create(classTemp)
 	if err != nil {
-		Failf("Failed to create storage class %q: %v", j.Name, err)
-	}
-	j.CustomStorageClass = true
-	return class.Name
-}
-
-// DeleteStorageClass will delete a class
-func (j *PVCTestJig) DeleteStorageClass(scName string) error {
-	if j.KubeClient != nil && len(scName) > 0 {
-		Logf("Deleting Storage Class %q", scName)
-		err := j.KubeClient.StorageV1beta1().StorageClasses().Delete(scName, nil)
-		if err != nil && !apierrs.IsNotFound(err) {
-			return fmt.Errorf("Storage Class Delete API error: %v", err)
+		if apierrors.IsAlreadyExists(err) {
+			Logf("Storage Class already exists. Using existing.")
+			return name
 		}
+		Failf("Failed to create storage class %q: %v", name, err)
 	}
-	return nil
+	f.StorageClasses = append(f.StorageClasses, class.Name)
+	return class.Name
 }

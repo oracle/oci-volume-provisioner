@@ -23,12 +23,11 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/client/conditions"
 )
 
-// CreateAndAwaitNginxPodOrFail creates a pod with a dymincally provisioned volume
-func (j *PVCTestJig) CreateAndAwaitNginxPodOrFail(namespace string, pvcParam *v1.PersistentVolumeClaim) {
+// CheckVolumeReadWrite creates a pod with a dymincally provisioned volume
+func (j *PVCTestJig) CheckVolumeReadWrite(namespace string, pvcParam *v1.PersistentVolumeClaim) {
 	pvc, err := j.KubeClient.CoreV1().PersistentVolumeClaims(pvcParam.Namespace).Get(pvcParam.Name, metav1.GetOptions{})
 	pv, err := j.KubeClient.CoreV1().PersistentVolumes().Get(pvc.Spec.VolumeName, metav1.GetOptions{})
 	if err != nil {
@@ -42,14 +41,14 @@ func (j *PVCTestJig) CreateAndAwaitNginxPodOrFail(namespace string, pvcParam *v1
 		// Get entry, get mount options at 6th word, replace brackets with commas
 		command += fmt.Sprintf(" && ( mount | grep 'on /usr/share/nginx/html/' | awk '{print $6}' | sed 's/^(/,/; s/)$/,/' | grep -q ,%s, )", option)
 	}
-	j.MakeNginxPod(pvc.Namespace, pvc, command)
+	j.CreateAndAwaitNginxPodOrFail(pvc.Namespace, pvc, command)
 
 	By("checking the created volume is readable and retains data")
-	j.MakeNginxPod(pvc.Namespace, pvc, "grep 'hello world' /mnt/test/data")
+	j.CreateAndAwaitNginxPodOrFail(pvc.Namespace, pvc, "grep 'hello world' /mnt/test/data")
 }
 
-// MakeNginxPod returns a pod definition based on the namespace using nginx image
-func (j *PVCTestJig) MakeNginxPod(ns string, pvc *v1.PersistentVolumeClaim, command string) {
+// CreateAndAwaitNginxPodOrFail returns a pod definition based on the namespace using nginx image
+func (j *PVCTestJig) CreateAndAwaitNginxPodOrFail(ns string, pvc *v1.PersistentVolumeClaim, command string) {
 	podSpec := &v1.Pod{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Pod",
@@ -107,12 +106,12 @@ func (j *PVCTestJig) MakeNginxPod(ns string, pvc *v1.PersistentVolumeClaim, comm
 // WaitTimeoutForPodRunningInNamespace aits default amount of time (PodStartTimeout) for the specified pod to become running.
 // Returns an error if timeout occurs first, or pod goes in to failed state.
 func (j *PVCTestJig) waitTimeoutForPodRunningInNamespace(podName, namespace string, timeout time.Duration) error {
-	return wait.PollImmediate(Poll, timeout, podRunning(j.KubeClient, podName, namespace))
+	return wait.PollImmediate(Poll, timeout, j.podRunning(podName, namespace))
 }
 
-func podRunning(c clientset.Interface, podName, namespace string) wait.ConditionFunc {
+func (j *PVCTestJig) podRunning(podName, namespace string) wait.ConditionFunc {
 	return func() (bool, error) {
-		pod, err := c.CoreV1().Pods(namespace).Get(podName, metav1.GetOptions{})
+		pod, err := j.KubeClient.CoreV1().Pods(namespace).Get(podName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}

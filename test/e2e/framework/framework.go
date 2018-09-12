@@ -34,7 +34,7 @@ import (
 
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/common/auth"
-	coreOCI "github.com/oracle/oci-go-sdk/core"
+	ocicore "github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 )
 
@@ -62,9 +62,10 @@ type Framework struct {
 
 	ClientSet clientset.Interface
 
-	BlockStorageClient coreOCI.BlockstorageClient
+	BlockStorageClient ocicore.BlockstorageClient
 	IsBackup           bool
 	BackupIDs          []string
+	StorageClasses     []string
 
 	Namespace          *v1.Namespace   // Every test has at least one namespace unless creation is skipped
 	namespacesToDelete []*v1.Namespace // Some tests have more than one.
@@ -166,7 +167,7 @@ func (f *Framework) DeleteNamespace(namespace string, timeout time.Duration) err
 		return fmt.Errorf("namespace %v was not deleted with limit: %v", namespace, err)
 	}
 
-	Logf("namespace %v deletion completed in %s", namespace, time.Now().Sub(startTime))
+	Logf("Namespace %v deletion completed in %s", namespace, time.Now().Sub(startTime))
 	return nil
 }
 
@@ -233,10 +234,21 @@ func (f *Framework) AfterEach() {
 		}
 	}
 
+	for _, storageClass := range f.StorageClasses {
+		By(fmt.Sprintf("Deleting storage class %q", storageClass))
+		err := f.ClientSet.StorageV1beta1().StorageClasses().Delete(storageClass, nil)
+		if err != nil && !apierrors.IsNotFound(err) {
+			Logf("Storage Class Delete API error: %v", err)
+		}
+	}
+
 	for _, backupID := range f.BackupIDs {
 		By(fmt.Sprintf("Deleting backups %q", backupID))
-		ctx := context.Background()
-		f.BlockStorageClient.DeleteVolumeBackup(ctx, coreOCI.DeleteVolumeBackupRequest{VolumeBackupId: &backupID})
+		ctx := context.TODO()
+		_, err := f.BlockStorageClient.DeleteVolumeBackup(ctx, ocicore.DeleteVolumeBackupRequest{VolumeBackupId: &backupID})
+		if err != nil && !apierrors.IsNotFound(err) {
+			Logf("Failed to delete backup id %q: %v", backupID, err)
+		}
 	}
 
 	// if we had errors deleting, report them now.
@@ -252,9 +264,9 @@ func (f *Framework) AfterEach() {
 	f.ProvisionerFSSInstalled = false
 }
 
-func (f *Framework) createStorageClient() coreOCI.BlockstorageClient {
+func (f *Framework) createStorageClient() ocicore.BlockstorageClient {
 	By("Creating an OCI block storage client")
-	configPath := f.CheckOCIConfig()
+	configPath := TestContext.OCIConfig
 
 	file, err := os.Open(configPath)
 	if err != nil {
@@ -269,7 +281,7 @@ func (f *Framework) createStorageClient() coreOCI.BlockstorageClient {
 	if err != nil {
 		Failf("Unable to load volume provisioner configuration file %q: %v", cfg, err)
 	}
-	blockStorageClient, err := coreOCI.NewBlockstorageClientWithConfigurationProvider(config)
+	blockStorageClient, err := ocicore.NewBlockstorageClientWithConfigurationProvider(config)
 	if err != nil {
 		Logf("Unable to load volume provisioner client %q: %v", config, err)
 	}
@@ -303,55 +315,4 @@ func (f *Framework) newConfigurationProvider(cfg *client.Config) (common.Configu
 		conf = common.DefaultConfigProvider()
 	}
 	return conf, nil
-}
-
-// CheckOCIConfig finds the path to the oci config
-func (f *Framework) CheckOCIConfig() string {
-	configPath, ok := os.LookupEnv(OCIConfigVar)
-	if !ok {
-		configPath = TestContext.OCIConfig
-		if configPath == "" {
-			Failf("Unable to load file from var or test context")
-		}
-	}
-	return configPath
-}
-
-// CheckMntEnv checks if an environment variable is set in the werker environement, if not it checks the test context.
-func (f *Framework) CheckMntEnv() string {
-	response, ok := os.LookupEnv(MntTargetOCID)
-	if !ok {
-		if TestContext.MntTargetOCID == "" {
-			Failf("Mount target ID not specified")
-		} else {
-			return TestContext.MntTargetOCID
-		}
-	}
-	return response
-}
-
-// CheckSubnetEnv checks if an environment variable is set in the werker environement, if not it checks the test context.
-func (f *Framework) CheckSubnetEnv() string {
-	response, ok := os.LookupEnv(SubnetOCID)
-	if !ok {
-		if TestContext.SubnetOCID == "" {
-			Failf("Subnet ID not specified")
-		} else {
-			return TestContext.SubnetOCID
-		}
-	}
-	return response
-}
-
-// CheckADEnv checks if an environment variable is set in the werker environement, if not it checks the test context.
-func (f *Framework) CheckADEnv() string {
-	response, ok := os.LookupEnv(AD)
-	if !ok {
-		if TestContext.AD == "" {
-			Failf("Availability Domain not specified")
-		} else {
-			return TestContext.AD
-		}
-	}
-	return response
 }
