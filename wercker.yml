@@ -213,13 +213,6 @@ ginkgo-e2e:
     id: iad.ocir.io/oracle/oci-volume-provisioner-system-test:1.0.2
   steps: 
 
-    - script:
-      name: install ginkgo
-      code: |
-        go version
-        go get -u github.com/onsi/ginkgo/ginkgo
-        ginkgo version
-
     - script: 
       name: e2e tests
       code: |
