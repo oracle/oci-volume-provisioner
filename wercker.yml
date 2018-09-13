@@ -212,7 +212,6 @@ ginkgo-e2e:
     - script: 
       name: e2e tests
       code: |
-        go get -u github.com/onsi/ginkgo/ginkgo
         export OCICONFIG="/tmp/ociconfig"
         echo -n "${OCICONFIG_VAR}" | openssl enc -base64 -d -A > "${OCICONFIG}"
         export KUBECONFIG="/tmp/kubeconfig"
