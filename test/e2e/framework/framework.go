@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -216,6 +215,7 @@ func (f *Framework) BeforeEach() {
 	}
 }
 
+/*
 func getCanaryMetrics(description string, testFail bool) (string, int) {
 	cmRegEx := regexp.MustCompile(`\[(.*?)\]`)
 	canaryMetricName := cmRegEx.FindStringSubmatch(description)
@@ -225,13 +225,13 @@ func getCanaryMetrics(description string, testFail bool) (string, int) {
 	}
 	return canaryMetricName[1], result
 }
+*/
 
 // AfterEach deletes the namespace(s).
 func (f *Framework) AfterEach() {
 	RemoveCleanupAction(f.cleanupHandle)
 
-	getCanaryMetrics(CurrentGinkgoTestDescription().TestText, CurrentGinkgoTestDescription().Failed)
-	//PopulateTestSuccessCanaryMetrics(CurrentGinkgoTestDescription().TestText, CurrentGinkgoTestDescription().Failed)
+	//getCanaryMetrics(CurrentGinkgoTestDescription().TestText, CurrentGinkgoTestDescription().Failed)
 
 	nsDeletionErrors := map[string]error{}
 

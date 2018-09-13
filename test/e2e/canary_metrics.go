@@ -14,11 +14,6 @@
 
 package e2e
 
-import (
-	"encoding/json"
-	"io/ioutil"
-)
-
 const (
 	CMBlockSimple           = "volume_provisioner_block_simple"
 	CMBlockExt3             = "volume_provisioner_block_ext3"
@@ -32,52 +27,7 @@ const (
 	MetricsFile             = "METRICS_FILE"
 )
 
-// CanaryMetrics holds the value of the test results to form the canary json file
 type CanaryMetrics struct {
-	CMBlockSimple, CMBlockExt3, CMBlockNoAD, CMBlockVolumeFromBackup,
-	CMFssMnt, CMFssSubnet, CMFssNoParam int32
-	StartTime, EndTime string
-}
-
-// PopulateCanaryMetrics populate the canary metric to be passed as a json
-func PopulateCanaryMetrics(metric string, value string) {
-}
-
-// MetricsToJSON takes the canary metrics and writes them to a file in json format.
-func (f *Framework) MetricsToJSON(metricsBody CanaryMetrics) {
-	cmJSON, err := json.Marshal(metricsBody)
-	if err != nil {
-		Logf("Invalid json format for the canary metrics")
-	}
-	ioutil.WriteFile(f.CheckEnvVar(MetricsFile), cmJSON, 0644)
-}
-
-// PopulateTestSuccessCanaryMetrics populated the canary metrics based on the test and result
-func PopulateTestSuccessCanaryMetrics(testName string, result bool) {
-	var metric, value string
-	switch testName {
-	case "Should be possible to create a persistent volume claim for a block storage (PVC).":
-		metric = CMBlockSimple
-	case "Should be possible to create a persistent volume claim (PVC) for a block storage of Ext3 file system.":
-		metric = CMBlockExt3
-	case "Should be possible to create a persistent volume claim (PVC) for a block storage with no AD specified.":
-		metric = CMBlockNoAD
-	case "Should be possible to backup a volume and restore the created backup.":
-		metric = CMBlockVolumeFromBackup
-	case "Should be possible to create a persistent volume claim (PVC) for a FSS with a mnt target specified.":
-		metric = CMFssMnt
-	case "Should be possible to create a persistent volume claim (PVC) for a FSS with a subnet id specified.":
-		metric = CMFssSubnet
-	case "Should be possible to create a persistent volume claim (PVC) for a FSS no mnt target or subnet id specified.":
-		metric = CMFssNoParam
-	}
-	switch result {
-	case true:
-		// return 1 on failure
-		value = "1"
-	case false:
-		// return 0 on success
-		value = "0"
-	}
-	PopulateCanaryMetrics(metric, value)
+	testName string
+	result   int
 }

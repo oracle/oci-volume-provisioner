@@ -65,3 +65,4 @@ RUN mv ./kubectl /usr/local/bin/kubectl
 
 # Install Ginkgo
 RUN go get -u github.com/onsi/ginkgo/ginkgo
+

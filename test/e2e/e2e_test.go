@@ -38,7 +38,6 @@ func TestE2E(t *testing.T) {
 
 	gomega.RegisterFailHandler(ginkgowrapper.Fail)
 	canaryMetricsTestsChannel := make(chan canaryMetrics)
-	// time.Now
 	startTime := time.Now()
 	ginkgo.RunSpecs(t, "Volume Provisioner E2E Test Suite")
 	endTime := time.Now()
@@ -50,7 +49,6 @@ func TestE2E(t *testing.T) {
 }
 
 var _ = ginkgo.SynchronizedAfterSuite(func() {
-	framework.PopulateCanaryMetrics(framework.EndTime, framework.NowStamp())
 	framework.Logf("Running AfterSuite actions on all node")
 	framework.RunCleanupActions()
 }, func() {})
