@@ -17,6 +17,9 @@ build:
       code: |
         go get -u github.com/golang/lint/golint
         make gofmt golint govet
+        echo go version
+        go get -u github.com/onsi/ginkgo/ginkgo
+        echo ginkgo version
 
     - script:
       name: run unit tests
