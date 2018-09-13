@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package framework
+package e2e
 
 import (
 	"encoding/json"
@@ -38,9 +38,6 @@ type CanaryMetrics struct {
 	CMFssMnt, CMFssSubnet, CMFssNoParam int32
 	StartTime, EndTime string
 }
-
-// CMGlobal holds the canary metrics
-var CMGlobal CanaryMetrics
 
 // PopulateCanaryMetrics populate the canary metric to be passed as a json
 func PopulateCanaryMetrics(metric string, value string) {

@@ -31,7 +31,7 @@ import (
 var _ = Describe("Backup/Restore", func() {
 	f := framework.NewBackupFramework("backup-restore")
 
-	It("Should be possible to backup a volume and restore the created backup.", func() {
+	It("Should be possible to backup a volume and restore the created backup. ["+CMBlockVolumeFromBackup+"]", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
 		By("Provisioning volume to backup")
 		pvc, backupID := pvcJig.CreatePVCAndBackupOrFail(f.BlockStorageClient, f.Namespace.Name, framework.MinVolumeBlock, func(pvc *v1.PersistentVolumeClaim) {

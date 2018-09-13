@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -215,11 +216,22 @@ func (f *Framework) BeforeEach() {
 	}
 }
 
+func getCanaryMetrics(description string, testFail bool) (string, int) {
+	cmRegEx := regexp.MustCompile(`\[(.*?)\]`)
+	canaryMetricName := cmRegEx.FindStringSubmatch(description)
+	result := 0
+	if testFail {
+		result = 1
+	}
+	return canaryMetricName[1], result
+}
+
 // AfterEach deletes the namespace(s).
 func (f *Framework) AfterEach() {
 	RemoveCleanupAction(f.cleanupHandle)
 
-	PopulateTestSuccessCanaryMetrics(CurrentGinkgoTestDescription().TestText, CurrentGinkgoTestDescription().Failed)
+	getCanaryMetrics(CurrentGinkgoTestDescription().TestText, CurrentGinkgoTestDescription().Failed)
+	//PopulateTestSuccessCanaryMetrics(CurrentGinkgoTestDescription().TestText, CurrentGinkgoTestDescription().Failed)
 
 	nsDeletionErrors := map[string]error{}
 
@@ -329,8 +341,6 @@ func (f *Framework) lookUpContext(envVar string) string {
 		return TestContext.OCIConfig
 	case SubnetOCID:
 		return TestContext.SubnetOCID
-	case MetricsFile:
-		return TestContext.MetricsFile
 	default:
 		return ""
 	}

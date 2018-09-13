@@ -28,7 +28,7 @@ import (
 var _ = Describe("FSS Volume Creation", func() {
 	f := framework.NewDefaultFramework("fss-volume")
 
-	It("Should be possible to create a persistent volume claim (PVC) for a FSS with a mnt target specified.", func() {
+	It("Should be possible to create a persistent volume claim (PVC) for a FSS with a mnt target specified. ["+CMFssMnt+"]", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
 		By("Creating PVC that will dynamically provision a FSS")
 		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, func(pvc *v1.PersistentVolumeClaim) {
@@ -48,7 +48,7 @@ var _ = Describe("FSS Volume Creation", func() {
 
 	})
 
-	It("Should be possible to create a persistent volume claim (PVC) for a FSS with a subnet id specified.", func() {
+	It("Should be possible to create a persistent volume claim (PVC) for a FSS with a subnet id specified. ["+CMFssSubnet+"]", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
 		By("Creating PVC that will dynamically provision a FSS")
 		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, func(pvc *v1.PersistentVolumeClaim) {
@@ -68,7 +68,7 @@ var _ = Describe("FSS Volume Creation", func() {
 
 	})
 
-	It("Should be possible to create a persistent volume claim (PVC) for a FSS no mnt target or subnet id specified.", func() {
+	It("Should be possible to create a persistent volume claim (PVC) for a FSS no mnt target or subnet id specified. ["+CMFssNoParam+"]", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
 		By("Creating PVC that will dynamically provision a FSS")
 		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, func(pvc *v1.PersistentVolumeClaim) {

@@ -16,6 +16,7 @@ package e2e
 
 import (
 	"testing"
+	"time"
 
 	"github.com/onsi/ginkgo"
 	"github.com/onsi/gomega"
@@ -26,13 +27,26 @@ import (
 	"github.com/oracle/oci-volume-provisioner/test/e2e/framework/ginkgowrapper"
 )
 
+type canaryMetrics struct {
+	testName string
+	passFail int
+}
+
 func TestE2E(t *testing.T) {
 	logs.InitLogs()
 	defer logs.FlushLogs()
 
 	gomega.RegisterFailHandler(ginkgowrapper.Fail)
-	framework.PopulateCanaryMetrics(framework.StartTime, framework.NowStamp())
+	canaryMetricsTestsChannel := make(chan canaryMetrics)
+	// time.Now
+	startTime := time.Now()
 	ginkgo.RunSpecs(t, "Volume Provisioner E2E Test Suite")
+	endTime := time.Now()
+
+	// time.Now
+	// populateTime
+	// Recieve from channel
+	// recieve := <- canaryMetricsTestsChannel
 }
 
 var _ = ginkgo.SynchronizedAfterSuite(func() {

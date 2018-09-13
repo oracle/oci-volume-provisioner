@@ -29,7 +29,7 @@ import (
 var _ = Describe("Block Volume Creation", func() {
 	f := framework.NewDefaultFramework("block-volume")
 
-	It("Should be possible to create a persistent volume claim for a block storage (PVC).", func() {
+	It("Should be possible to create a persistent volume claim for a block storage (PVC). ["+CMBlockSimple+"]", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
 		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, func(pvc *v1.PersistentVolumeClaim) {
 			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
@@ -44,7 +44,7 @@ var _ = Describe("Block Volume Creation", func() {
 		}
 	})
 
-	It("Should be possible to create a persistent volume claim (PVC) for a block storage of Ext3 file system.", func() {
+	It("Should be possible to create a persistent volume claim (PVC) for a block storage of Ext3 file system. ["+CMBlockExt3+"]", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
 		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, func(pvc *v1.PersistentVolumeClaim) {
 			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
@@ -59,7 +59,7 @@ var _ = Describe("Block Volume Creation", func() {
 		}
 	})
 
-	It("Should be possible to create a persistent volume claim (PVC) for a block storage with no AD specified.", func() {
+	It("Should be possible to create a persistent volume claim (PVC) for a block storage with no AD specified. ["+CMBlockNoAD+"]", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
 		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, func(pvc *v1.PersistentVolumeClaim) {
 			pvcJig.StorageClassName = framework.ClassOCI

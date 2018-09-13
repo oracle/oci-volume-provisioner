@@ -106,7 +106,7 @@ push:
       registry: https://fra.ocir.io/v2
       username: $OCIRUSERNAME
       password: $OCIRPASSWORD
-
+      
 system-test:
   box:
     id: iad.ocir.io/oracle/oci-volume-provisioner-system-test:1.0.2
@@ -209,6 +209,21 @@ ginkgo-e2e:
   box: 
     id: iad.ocir.io/oracle/oci-volume-provisioner-system-test:1.0.2
   steps: 
+
+    - internal/docker-push:
+      repository: iad.ocir.io/oracle/oci-volume-provisioner-test
+      tag: $VERSION
+      working-dir: /test/
+      entrypoint: ./runner.py
+      registry: https://iad.ocir.io/v2
+      username: $OCIRUSERNAME
+      password: $OCIRPASSWORD
+
+    - script:
+      name: install ginkgo
+      code: |
+        go get -u github.com/onsi/ginkgo/ginkgo
+
     - script: 
       name: e2e tests
       code: |
