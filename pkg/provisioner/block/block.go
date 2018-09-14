@@ -42,10 +42,16 @@ import (
 )
 
 const (
-	ociVolumeID             = "ociVolumeID"
-	ociVolumeBackupID       = "volume.beta.kubernetes.io/oci-volume-source"
-	volumePrefixEnvVarName  = "OCI_VOLUME_NAME_PREFIX"
-	fsType                  = "fsType"
+
+	// OCIVolumeID is the field format to declare the volume id when creating the backup
+	OCIVolumeID = "ociVolumeID"
+
+	// OCIVolumeBackupID is the field format to declare the backup volume id when restoring a volume
+	OCIVolumeBackupID      = "volume.beta.kubernetes.io/oci-volume-source"
+	volumePrefixEnvVarName = "OCI_VOLUME_NAME_PREFIX"
+
+	// FsType is the field format for specifying the parameter in a storage class
+	FsType                  = "fsType"
 	volumeRoundingUpEnabled = "volumeRoundingUpEnabled"
 )
 
@@ -82,7 +88,7 @@ func mapVolumeIDToName(volumeID string) string {
 
 func resolveFSType(options controller.VolumeOptions) string {
 	fs := "ext4" // default to ext4
-	if fsType, ok := options.Parameters[fsType]; ok {
+	if fsType, ok := options.Parameters[FsType]; ok {
 		fs = fsType
 	}
 	return fs
@@ -170,7 +176,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 		SizeInMBs:          common.Int(volSizeMB),
 	}
 
-	if value, ok := options.PVC.Annotations[ociVolumeBackupID]; ok {
+	if value, ok := options.PVC.Annotations[OCIVolumeBackupID]; ok {
 		glog.Infof("Creating volume from backup ID %s", value)
 		volumeDetails.SourceDetails = &core.VolumeSourceFromVolumeBackupDetails{Id: &value}
 	}
@@ -216,7 +222,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 		ObjectMeta: metav1.ObjectMeta{
 			Name: *newVolume.Id,
 			Annotations: map[string]string{
-				ociVolumeID: *newVolume.Id,
+				OCIVolumeID: *newVolume.Id,
 			},
 			Labels: map[string]string{
 				plugin.LabelZoneRegion:        region,
@@ -245,7 +251,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 // Delete destroys a OCI volume created by Provision
 func (block *blockProvisioner) Delete(volume *v1.PersistentVolume) error {
 	ctx := context.Background()
-	volID, ok := volume.Annotations[ociVolumeID]
+	volID, ok := volume.Annotations[OCIVolumeID]
 	if !ok {
 		return errors.New("volumeid annotation not found on PV")
 	}

@@ -32,13 +32,24 @@ RUN apt-get update && apt-get install -y \
     jq \
     pwgen
 
+# Install golang environment
+RUN curl https://storage.googleapis.com/golang/go1.8.3.linux-amd64.tar.gz -O && \
+    mkdir /tools && \
+    tar xzf go1.8.3.linux-amd64.tar.gz -C /tools && \
+    rm go1.8.3.linux-amd64.tar.gz && \
+    mkdir -p /go/bin
+
+ENV PATH=/tools/go/bin:/go/bin:/tools/linux-amd64:$PATH \
+    GOPATH=/go \
+    GOROOT=/tools/go
+
 # Installs terraform.
 RUN wget https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip
 RUN unzip terraform_${TERRAFORM_VERSION}_linux_amd64.zip
 RUN mv terraform /usr/bin/
 
 # Installs the OCI terraform provider.
-RUN wget https://github.com/oracle/terraform-provider-oci/releases/download/${OCI_TERRAFORM_PROVIDER_VERSION}/linux.tar.gz
+RUN curl https://github.com/oracle/terraform-provider-oci/releases/download/${OCI_TERRAFORM_PROVIDER_VERSION}/linux.tar.gz
 RUN tar -xzvf linux.tar.gz -C /
 RUN echo "providers { oci = \"/linux_amd64/terraform-provider-oci_v${OCI_TERRAFORM_PROVIDER_VERSION}\" }" > ~/.terraformrc
 
@@ -51,3 +62,7 @@ RUN pip install \
 RUN curl -LO https://storage.googleapis.com/kubernetes-release/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl
 RUN chmod +x ./kubectl
 RUN mv ./kubectl /usr/local/bin/kubectl
+
+# Install Ginkgo
+RUN go get -u github.com/onsi/ginkgo/ginkgo
+
