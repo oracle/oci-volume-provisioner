@@ -34,7 +34,7 @@ import (
 
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/common/auth"
-	coreOCI "github.com/oracle/oci-go-sdk/core"
+	ocicore "github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 )
 
@@ -46,6 +46,7 @@ const (
 	AD                 = "AD"
 	KubeSystemNS       = "kube-system"
 	ClassOCI           = "oci"
+	ClassBlock         = "oci-block"
 	ClassOCIExt3       = "oci-ext3"
 	ClassOCINoParamFss = "oci-fss-noparam"
 	ClassOCIMntFss     = "oci-fss-mnt"
@@ -62,9 +63,10 @@ type Framework struct {
 
 	ClientSet clientset.Interface
 
-	BlockStorageClient coreOCI.BlockstorageClient
+	BlockStorageClient ocicore.BlockstorageClient
 	IsBackup           bool
 	BackupIDs          []string
+	StorageClasses     []string
 
 	Namespace          *v1.Namespace   // Every test has at least one namespace unless creation is skipped
 	namespacesToDelete []*v1.Namespace // Some tests have more than one.
@@ -166,7 +168,7 @@ func (f *Framework) DeleteNamespace(namespace string, timeout time.Duration) err
 		return fmt.Errorf("namespace %v was not deleted with limit: %v", namespace, err)
 	}
 
-	Logf("namespace %v deletion completed in %s", namespace, time.Now().Sub(startTime))
+	Logf("Namespace %v deletion completed in %s", namespace, time.Now().Sub(startTime))
 	return nil
 }
 
@@ -233,10 +235,21 @@ func (f *Framework) AfterEach() {
 		}
 	}
 
+	for _, storageClass := range f.StorageClasses {
+		By(fmt.Sprintf("Deleting storage class %q", storageClass))
+		err := f.ClientSet.StorageV1beta1().StorageClasses().Delete(storageClass, nil)
+		if err != nil && !apierrors.IsNotFound(err) {
+			Logf("Storage Class Delete API error: %v", err)
+		}
+	}
+
 	for _, backupID := range f.BackupIDs {
 		By(fmt.Sprintf("Deleting backups %q", backupID))
-		ctx := context.Background()
-		f.BlockStorageClient.DeleteVolumeBackup(ctx, coreOCI.DeleteVolumeBackupRequest{VolumeBackupId: &backupID})
+		ctx := context.TODO()
+		_, err := f.BlockStorageClient.DeleteVolumeBackup(ctx, ocicore.DeleteVolumeBackupRequest{VolumeBackupId: &backupID})
+		if err != nil && !apierrors.IsNotFound(err) {
+			Logf("Failed to delete backup id %q: %v", backupID, err)
+		}
 	}
 
 	// if we had errors deleting, report them now.
@@ -252,9 +265,9 @@ func (f *Framework) AfterEach() {
 	f.ProvisionerFSSInstalled = false
 }
 
-func (f *Framework) createStorageClient() coreOCI.BlockstorageClient {
+func (f *Framework) createStorageClient() ocicore.BlockstorageClient {
 	By("Creating an OCI block storage client")
-	configPath := f.CheckEnvVar(OCIConfigVar)
+	configPath := TestContext.OCIConfig
 
 	file, err := os.Open(configPath)
 	if err != nil {
@@ -269,7 +282,7 @@ func (f *Framework) createStorageClient() coreOCI.BlockstorageClient {
 	if err != nil {
 		Failf("Unable to load volume provisioner configuration file %q: %v", cfg, err)
 	}
-	blockStorageClient, err := coreOCI.NewBlockstorageClientWithConfigurationProvider(config)
+	blockStorageClient, err := ocicore.NewBlockstorageClientWithConfigurationProvider(config)
 	if err != nil {
 		Logf("Unable to load volume provisioner client %q: %v", config, err)
 	}
@@ -303,31 +316,4 @@ func (f *Framework) newConfigurationProvider(cfg *client.Config) (common.Configu
 		conf = common.DefaultConfigProvider()
 	}
 	return conf, nil
-}
-
-// CheckEnvVar checks if an environment variable is set in the werker environement, if not it checks the test context.
-func (f *Framework) CheckEnvVar(envVar string) string {
-	response, ok := os.LookupEnv(envVar)
-	if !ok {
-		response = f.lookUpContext(envVar)
-		if len(response) == 0 {
-			Failf("%q not found", envVar)
-		}
-	}
-	return response
-}
-
-func (f *Framework) lookUpContext(envVar string) string {
-	switch envVar {
-	case AD:
-		return TestContext.AD
-	case MntTargetOCID:
-		return TestContext.MntTargetOCID
-	case OCIConfigVar:
-		return TestContext.OCIConfig
-	case SubnetOCID:
-		return TestContext.SubnetOCID
-	default:
-		return ""
-	}
 }

@@ -9,9 +9,6 @@ E2E tests.
 ginkgo -v -progress test/e2e -- --kubeconfig=${HOME}/.kube/config --delete-namespace=false
 ```
 
-NOTE: Test suite will fail if executed behind a `$HTTP_PROXY` that returns a
-200 OK response upon failure to connect.
-
 ## Additional options
 
 |Flag | Usage | Value |
@@ -24,5 +21,3 @@ NOTE: Test suite will fail if executed behind a `$HTTP_PROXY` that returns a
 |mnt-target-id| Identifies the mount target id for a FSS.|string|
 |subnet-id| Identifies a subnet to look for a mount target, such that a FSS can be mounted.|string|
 |ad| Identifies the availability domain in which the PD resides|string|
-
-[1]: https://github.com/kubernetes/kubernetes/blob/0cb15453dae92d8be66cf42e6c1b04e21a2d0fb6/test/e2e/network/service.go

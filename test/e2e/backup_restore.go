@@ -15,16 +15,12 @@
 package e2e
 
 import (
-	"time"
-
 	. "github.com/onsi/ginkgo"
 
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/block"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/core"
-	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/plugin"
 	"github.com/oracle/oci-volume-provisioner/test/e2e/framework"
 )
 
@@ -33,37 +29,26 @@ var _ = Describe("Backup/Restore", func() {
 
 	It("should be possible to backup a volume and restore the created backup", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
+
+		scName := f.CreateStorageClassOrFail(framework.ClassOCI, core.ProvisionerNameDefault, nil, pvcJig.Labels)
+
 		By("Provisioning volume to backup")
-		pvc, backupID := pvcJig.CreatePVCAndBackupOrFail(f.BlockStorageClient, f.Namespace.Name, framework.MinVolumeBlock, func(pvc *v1.PersistentVolumeClaim) {
-			pvc.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				plugin.LabelZoneFailureDomain: f.CheckEnvVar(framework.AD)}}
-			pvcJig.StorageClassName = framework.ClassOCI
-			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameDefault, nil)
-			pvc.Spec.StorageClassName = &pvcJig.StorageClassName
-		})
+		pvc, backupID := pvcJig.CreatePVCAndBackupOrFail(f.BlockStorageClient, f.Namespace.Name, framework.MinVolumeBlock, scName, nil)
 		f.BackupIDs = append(f.BackupIDs, backupID)
-		framework.Logf("pvc %q has been backed up with the following id %q", pvc.Name, &backupID)
+		framework.Logf("pvc %q has been backed up with the following id %q", pvc.Name, backupID)
+
 		By("Teardown volume")
 		pvcJig.DeletePersistentVolumeClaim(pvc.Name, f.Namespace.Name)
-		time.Sleep(30 * time.Second)
-		By("Checking that the volume has been teared down")
-		if pvcJig.EnsureDeletion(pvc.Name, f.Namespace.Name) {
-			pvcJig.DeletePersistentVolumeClaim(pvc.Name, f.Namespace.Name)
-		}
+
 		By("Restoring the backup")
-		pvcRestored := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, func(pvcRestore *v1.PersistentVolumeClaim) {
-			pvcRestore.ObjectMeta.Name = pvc.Name + "-restored"
+		pvcRestored := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, scName, func(pvcRestore *v1.PersistentVolumeClaim) {
+			pvcRestore.Name = pvc.Name + "-restored"
 			pvcRestore.ObjectMeta.Annotations = map[string]string{
 				block.OCIVolumeBackupID: backupID,
 			}
-			pvcRestore.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{
-				plugin.LabelZoneFailureDomain: f.CheckEnvVar(framework.AD)}}
-			pvcJig.StorageClassName = framework.ClassOCI
-			pvcJig.CheckSCorCreate(pvcJig.StorageClassName, core.ProvisionerNameDefault, nil)
-			pvcRestore.Spec.StorageClassName = &pvcJig.StorageClassName
 		})
-		pvcJig.CreateAndAwaitNginxPodOrFail(f.Namespace.Name, pvcRestored)
 
-		pvcJig.DeleteBackup(f.BlockStorageClient, &backupID)
+		By("Creating pod to check read and write to volume")
+		pvcJig.CheckVolumeReadWrite(f.Namespace.Name, pvcRestored)
 	})
 })

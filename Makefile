@@ -24,13 +24,13 @@ else
 endif
 DIR := dist
 BIN := oci-volume-provisioner
-REGISTRY ?= iad.ocir.io
-DOCKER_REGISTRY_TENANCY ?= oracle
-DOCKER_REGISTRY_USERNAME ?= oracle
+REGISTRY ?= phx.ocir.io
+DOCKER_REGISTRY_TENANCY ?= spinnaker
+DOCKER_REGISTRY_USERNAME ?= spinnaker/ben.currer.burgess@oracle.com
 IMAGE ?= $(REGISTRY)/$(DOCKER_REGISTRY_TENANCY)/$(BIN)
 TEST_IMAGE ?= $(REGISTRY)/$(DOCKER_REGISTRY_TENANCY)/$(BIN)-test
 
-OCI_SHORT_REGION ?= iad
+OCI_SHORT_REGION ?= phx
 
 GOOS ?= linux
 GOARCH ?= amd64
@@ -61,7 +61,10 @@ build: ${DIR}/${BIN}
 	 manifests/oci-volume-provisioner.yaml > $(DIR)/oci-volume-provisioner.yaml
 	sed 's#@VERSION@#${VERSION}#g; s#@IMAGE@#${IMAGE}#g' \
 	 manifests/oci-volume-provisioner-fss.yaml > $(DIR)/oci-volume-provisioner-fss.yaml
+	sed 's#@VERSION@#${VERSION}#g; s#@IMAGE@#${IMAGE}#g' \
+	 manifests/oci-volume-provisioner-block.yaml > $(DIR)/oci-volume-provisioner-block.yaml
 	cp manifests/storage-class.yaml $(DIR)/storage-class.yaml
+	cp manifests/storage-class-block.yaml $(DIR)/storage-class-block.yaml
 	cp manifests/storage-class-ext3.yaml $(DIR)/storage-class-ext3.yaml
 	cp manifests/oci-volume-provisioner-rbac.yaml $(DIR)/oci-volume-provisioner-rbac.yaml
 
