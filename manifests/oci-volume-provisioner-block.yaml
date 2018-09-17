@@ -1,0 +1,31 @@
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: oci-volume-provisioner-block
+  namespace: kube-system
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: oci-volume-provisioner
+    spec:
+      serviceAccountName: oci-volume-provisioner
+      containers:
+        - name: oci-volume-provisioner
+          image: @IMAGE@:@VERSION@
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: PROVISIONER_TYPE
+              value: oracle.com/oci-block
+          volumeMounts:
+            - name: config
+              mountPath: /etc/oci/
+              readOnly: true
+      volumes:
+        - name: config
+          secret:
+            secretName: oci-volume-provisioner
