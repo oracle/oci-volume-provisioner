@@ -92,7 +92,7 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1
 	case ProvisionerNameBlock:
 		provisioner = block.NewBlockProvisioner(client, instancemeta.New(), volumeRoundingEnabled, minVolumeSize, time.Minute*3)
 	case ProvisionerNameFss:
-		provisioner = fss.NewFilesystemProvisioner(client)
+		provisioner = fss.NewFilesystemProvisioner(client, instancemeta.New())
 	default:
 		return nil, errors.Errorf("invalid provisioner type %q", provisionerType)
 	}

@@ -26,6 +26,7 @@ import (
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/identity"
 
+	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner"
 )
 
@@ -76,7 +77,11 @@ func TestCreateVolumeWithFSS(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{},
 		}}
 	ad := identity.AvailabilityDomain{Name: common.String("dummyAdName"), CompartmentId: common.String("dummyCompartmentId")}
-	fss := filesystemProvisioner{client: provisioner.NewClientProvisioner(nil, nil)}
+	fss := filesystemProvisioner{client: provisioner.NewClientProvisioner(nil, nil),
+		metadata: instancemeta.NewMock(&instancemeta.InstanceMetadata{
+			CompartmentOCID: "",
+			Region:          "phx",
+		})}
 	_, err := fss.Provision(options, &ad)
 	if err != nil {
 		t.Fatalf("Failed to provision volume from fss storage: %v", err)
