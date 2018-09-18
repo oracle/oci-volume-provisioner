@@ -1,4 +1,4 @@
-// Copyright 2018 Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -49,7 +49,8 @@ func (j *PVCTestJig) CheckVolumeReadWrite(namespace string, pvcParam *v1.Persist
 
 // CreateAndAwaitNginxPodOrFail returns a pod definition based on the namespace using nginx image
 func (j *PVCTestJig) CreateAndAwaitNginxPodOrFail(ns string, pvc *v1.PersistentVolumeClaim, command string) {
-	podSpec := &v1.Pod{
+	By("Creating a pod with the dynmically provisioned volume")
+	pod, err := j.KubeClient.CoreV1().Pods(ns).Create(&v1.Pod{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Pod",
 			APIVersion: "v1",
@@ -90,16 +91,15 @@ func (j *PVCTestJig) CreateAndAwaitNginxPodOrFail(ns string, pvc *v1.PersistentV
 				},
 			},
 		},
-	}
-	By("Creating a pod with the dynmically provisioned volume")
-	pod, err := j.KubeClient.CoreV1().Pods(ns).Create(podSpec)
+	})
 	if err != nil {
-		Failf("pod Create API error: %v", err)
+		Failf("Pod %q Create API error: %v", pod.Name, err)
 	}
+
 	// Waiting for pod to be running
 	err = j.waitTimeoutForPodRunningInNamespace(pod.Name, ns, slowPodStartTimeout)
 	if err != nil {
-		Failf("pod %q is not Running: %v", pod.Name, err)
+		Failf("Pod %q is not Running: %v", pod.Name, err)
 	}
 }
 

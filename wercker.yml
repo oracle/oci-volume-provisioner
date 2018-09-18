@@ -204,5 +204,5 @@ release:
       filename: storage-class.yaml
       content-type: text/yaml
 
-      # TO-DO (bdour) - make sure all of the following flags for the e2e pipeline are set referencing the write wercker environment
+      # TO-DO (bdour) - make sure all of the following flags for the e2e pipeline are set referencing the right wercker environment
       # kubeconfig, ociconfig, mnt-target-id, subnet-id (an AD default is set, if a change is required change it here)

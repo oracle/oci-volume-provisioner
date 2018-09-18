@@ -1,4 +1,4 @@
-// Copyright 2018 Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ var _ = Describe("FSS Volume Creation", func() {
 			fss.MntTargetID: framework.TestContext.MntTargetOCID}, pvcJig.Labels)
 
 		By("Creating PVC that will dynamically provision a FSS")
-		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, scName, nil)
+		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, scName, framework.TestContext.AD, nil)
 
 		By("Creating a Pod and waiting till attaches to the volume")
 		pvcJig.CheckVolumeReadWrite(f.Namespace.Name, pvc)
@@ -45,7 +45,7 @@ var _ = Describe("FSS Volume Creation", func() {
 			fss.SubnetID: framework.TestContext.SubnetOCID}, pvcJig.Labels)
 
 		By("Creating PVC that will dynamically provision a FSS")
-		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, scName, nil)
+		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, scName, framework.TestContext.AD, nil)
 
 		By("Creating a Pod and waiting till attaches to the volume")
 		pvcJig.CheckVolumeReadWrite(f.Namespace.Name, pvc)
@@ -57,10 +57,9 @@ var _ = Describe("FSS Volume Creation", func() {
 		scName := f.CreateStorageClassOrFail(framework.ClassOCINoParamFss, core.ProvisionerNameFss, nil, pvcJig.Labels)
 
 		By("Creating PVC that will dynamically provision a FSS")
-		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, scName, nil)
+		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.VolumeFss, scName, framework.TestContext.AD, nil)
 
 		By("Creating a Pod and waiting till attaches to the volume")
 		pvcJig.CheckVolumeReadWrite(f.Namespace.Name, pvc)
 	})
-
 })
