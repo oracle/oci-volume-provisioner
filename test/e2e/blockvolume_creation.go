@@ -1,4 +1,4 @@
-// Copyright 2018 Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,12 +24,11 @@ import (
 
 var _ = Describe("Block Volume Creation", func() {
 	f := framework.NewDefaultFramework("block-basic")
-
 	It("Should be possible to create a persistent volume claim for a block storage (PVC)", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
 
 		scName := f.CreateStorageClassOrFail(framework.ClassOCI, core.ProvisionerNameDefault, nil, pvcJig.Labels)
-		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, scName, nil)
+		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, scName, framework.TestContext.AD, nil)
 	})
 
 	It("Should be possible to create a persistent volume claim (PVC) for a block storage of Ext3 file system ", func() {
@@ -37,13 +36,13 @@ var _ = Describe("Block Volume Creation", func() {
 
 		scName := f.CreateStorageClassOrFail(framework.ClassOCIExt3, core.ProvisionerNameDefault, map[string]string{block.FSType: "ext3"},
 			pvcJig.Labels)
-		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, scName, nil)
+		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, scName, framework.TestContext.AD, nil)
 	})
 
 	It("Should be possible to create a persistent volume claim (PVC) for a block storage with no AD specified ", func() {
 		pvcJig := framework.NewPVCTestJig(f.ClientSet, "volume-provisioner-e2e-tests-pvc")
 
 		scName := f.CreateStorageClassOrFail(framework.ClassOCI, core.ProvisionerNameDefault, nil, pvcJig.Labels)
-		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, scName, nil)
+		pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, scName, "", nil)
 	})
 })

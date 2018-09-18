@@ -1,4 +1,4 @@
-// Copyright 2018 Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -33,15 +33,19 @@ var _ = Describe("Backup/Restore", func() {
 		scName := f.CreateStorageClassOrFail(framework.ClassOCI, core.ProvisionerNameDefault, nil, pvcJig.Labels)
 
 		By("Provisioning volume to backup")
-		pvc, backupID := pvcJig.CreatePVCAndBackupOrFail(f.BlockStorageClient, f.Namespace.Name, framework.MinVolumeBlock, scName, nil)
+		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, scName, framework.TestContext.AD, nil)
+		backupID, err := pvcJig.CreateBackupVolume(f.BlockStorageClient, pvc)
+		if err != nil {
+			framework.Failf("Failed to created backup for pvc %q: %v", &pvc.Name, err)
+		}
 		f.BackupIDs = append(f.BackupIDs, backupID)
-		framework.Logf("pvc %q has been backed up with the following id %q", pvc.Name, backupID)
+		framework.Logf("PVC %q has been backed up with the following id %q", &pvc.Name, backupID)
 
 		By("Teardown volume")
 		pvcJig.DeletePersistentVolumeClaim(pvc.Name, f.Namespace.Name)
 
 		By("Restoring the backup")
-		pvcRestored := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, scName, func(pvcRestore *v1.PersistentVolumeClaim) {
+		pvcRestored := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, scName, framework.TestContext.AD, func(pvcRestore *v1.PersistentVolumeClaim) {
 			pvcRestore.Name = pvc.Name + "-restored"
 			pvcRestore.ObjectMeta.Annotations = map[string]string{
 				block.OCIVolumeBackupID: backupID,

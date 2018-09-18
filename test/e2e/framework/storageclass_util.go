@@ -1,4 +1,4 @@
-// Copyright 2018 Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -45,7 +45,8 @@ func (f *Framework) CreateStorageClassOrFail(name string, provisionerType string
 	class, err := f.ClientSet.StorageV1beta1().StorageClasses().Create(classTemp)
 	if err != nil {
 		if apierrors.IsAlreadyExists(err) {
-			Logf("Storage Class already exists. Using existing.")
+			Logf("Storage Class already exists. Updating exisiting storage class.")
+			f.ClientSet.StorageV1beta1().StorageClasses().Update(f.newStorageClassTemplate(name, provisionerType, parameters, testLabels))
 			return name
 		}
 		Failf("Failed to create storage class %q: %v", name, err)

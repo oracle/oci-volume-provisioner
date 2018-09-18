@@ -1,4 +1,4 @@
-// Copyright 2018 Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -61,7 +61,7 @@ func NewPVCTestJig(kubeClient clientset.Interface, name string) *PVCTestJig {
 // newPVCTemplate returns the default template for this jig, but
 // does not actually create the PVC.  The default PVC has the same name
 // as the jig
-func (j *PVCTestJig) newPVCTemplate(namespace string, volumeSize string, scName string) *v1.PersistentVolumeClaim {
+func (j *PVCTestJig) newPVCTemplate(namespace string, volumeSize string, scName string, adLabel string) *v1.PersistentVolumeClaim {
 	return &v1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:    namespace,
@@ -74,7 +74,7 @@ func (j *PVCTestJig) newPVCTemplate(namespace string, volumeSize string, scName 
 			},
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					plugin.LabelZoneFailureDomain: TestContext.AD,
+					plugin.LabelZoneFailureDomain: adLabel,
 				},
 			},
 			Resources: v1.ResourceRequirements{
@@ -90,8 +90,8 @@ func (j *PVCTestJig) newPVCTemplate(namespace string, volumeSize string, scName 
 // CreatePVCorFail creates a new claim based on the jig's
 // defaults. Callers can provide a function to tweak the claim object
 // before it is created.
-func (j *PVCTestJig) CreatePVCorFail(namespace string, volumeSize string, scName string, tweak func(pvc *v1.PersistentVolumeClaim)) *v1.PersistentVolumeClaim {
-	pvc := j.newPVCTemplate(namespace, volumeSize, scName)
+func (j *PVCTestJig) CreatePVCorFail(namespace string, volumeSize string, scName string, adLabel string, tweak func(pvc *v1.PersistentVolumeClaim)) *v1.PersistentVolumeClaim {
+	pvc := j.newPVCTemplate(namespace, volumeSize, scName, adLabel)
 	if tweak != nil {
 		tweak(pvc)
 	}
@@ -110,8 +110,8 @@ func (j *PVCTestJig) CreatePVCorFail(namespace string, volumeSize string, scName
 // jig's defaults, waits for it to become ready, and then sanity checks it and
 // its dependant resources. Callers can provide a function to tweak the
 // PVC object before it is created.
-func (j *PVCTestJig) CreateAndAwaitPVCOrFail(namespace string, volumeSize string, scName string, tweak func(pvc *v1.PersistentVolumeClaim)) *v1.PersistentVolumeClaim {
-	pvc := j.CreatePVCorFail(namespace, volumeSize, scName, tweak)
+func (j *PVCTestJig) CreateAndAwaitPVCOrFail(namespace string, volumeSize string, scName string, adLabel string, tweak func(pvc *v1.PersistentVolumeClaim)) *v1.PersistentVolumeClaim {
+	pvc := j.CreatePVCorFail(namespace, volumeSize, scName, adLabel, tweak)
 	pvc = j.waitForConditionOrFail(namespace, pvc.Name, DefaultTimeout, "to be dynamically provisioned", func(pvc *v1.PersistentVolumeClaim) bool {
 		err := j.WaitForPVCPhase(v1.ClaimBound, namespace, pvc.Name)
 		if err != nil {
