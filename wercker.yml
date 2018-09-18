@@ -210,7 +210,7 @@ release:
 ginkgo-e2e:
   base-path: "/go/src/github.com/oracle/oci-volume-provisioner"
   box: 
-    id: iad.ocir.io/oracle/oci-cloud-controller-manager-ci-e2e:1.0.0
+    id: iad.ocir.io/oracle/mysql-operator-ci-e2e:1.1.1
     registry: https://iad.ocir.io/v2
     username: $OCIRUSERNAME
     password: $OCIRPASSWORD
