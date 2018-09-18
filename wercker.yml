@@ -206,3 +206,28 @@ release:
 
       # TO-DO (bdour) - make sure all of the following flags for the e2e pipeline are set referencing the write wercker environment
       # kubeconfig, ociconfig, mnt-target-id, subnet-id (an AD default is set, if a change is required change it here)
+
+ginkgo-e2e:
+  base-path: "/go/src/github.com/oracle/oci-volume-provisioner"
+  box: 
+    id: iad.ocir.io/oracle/oci-cloud-controller-manager-ci-e2e:1.0.0
+    registry: https://iad.ocir.io/v2
+    username: $OCIRUSERNAME
+    password: $OCIRPASSWORD
+  steps: 
+    - script: 
+      name: e2e tests
+      code: |
+        export OCICONFIG="/tmp/ociconfig"
+        echo -n "${OCICONFIG_VAR}" | openssl enc -base64 -d -A > "${OCICONFIG}"
+        export KUBECONFIG="/tmp/kubeconfig"
+        echo -n "${KUBECONFIG_VAR}" | openssl enc -base64 -d -A > "${KUBECONFIG}"
+        ginkgo \
+          -v \
+          test/e2e -- \
+          --kubeconfig="${KUBECONFIG}" \
+          --ociconfig="${OCICONFIG}" \
+          --subnet-id="${SUBNET_OCID}" \
+          --mnt-target-id="${MNT_TARGET_OCID}" \
+          --delete-namespace-on-failure=false
+          --image="${IMAGE}:${VERSION}"
