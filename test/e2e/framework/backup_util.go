@@ -1,4 +1,4 @@
-// Copyright 2018 Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import (
 	"time"
 
 	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,22 +29,13 @@ import (
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/block"
 )
 
-// CreatePVCAndBackupOrFail calls CreateAndAwaitPVCOrFail creates a new PVC based on the
-// jig's defaults, waits for it to become ready. The volume is then backed up.
-func (j *PVCTestJig) CreatePVCAndBackupOrFail(storageClient ocicore.BlockstorageClient, namespace string, volumeSize string, scName string, tweak func(pvc *v1.PersistentVolumeClaim)) (*v1.PersistentVolumeClaim, string) {
-	pvc := j.CreateAndAwaitPVCOrFail(namespace, volumeSize, scName, tweak)
-	backupVolumeID, err := j.CreateBackupVolume(storageClient, pvc)
-	if err != nil {
-		Failf("Failed to created backup for pvc %q: %v", pvc.Name, err)
-	}
-	return pvc, backupVolumeID
-}
-
 // CreateBackupVolume creates a volume backup on OCI from an exsiting volume and returns the backup volume id
 func (j *PVCTestJig) CreateBackupVolume(storageClient ocicore.BlockstorageClient, pvc *v1.PersistentVolumeClaim) (string, error) {
 	By("Creating backup of the volume")
 	pvc, err := j.KubeClient.CoreV1().PersistentVolumeClaims(pvc.Namespace).Get(pvc.Name, metav1.GetOptions{})
-	Expect(err).NotTo(HaveOccurred())
+	if err != nil {
+		return "", fmt.Errorf("failed to get persistent volume claim %q: %v", pvc.Name, err)
+	}
 	pv, err := j.KubeClient.CoreV1().PersistentVolumes().Get(pvc.Spec.VolumeName, metav1.GetOptions{})
 	if err != nil {
 		return "", fmt.Errorf("failed to get persistent volume created name by claim %q: %v", pvc.Spec.VolumeName, err)
@@ -70,7 +60,7 @@ func (j *PVCTestJig) CreateBackupVolume(storageClient ocicore.BlockstorageClient
 		if _, err := storageClient.DeleteVolumeBackup(ctx, ocicore.DeleteVolumeBackupRequest{
 			VolumeBackupId: backupVolume.Id,
 		}); err != nil {
-			Logf("backup volume failed to become available. Deleting backup volume %q was not possible: %v", *backupVolume.Id, err)
+			Logf("Backup volume failed to become available. Deleting backup volume %q was not possible: %v", *backupVolume.Id, err)
 		}
 
 		return *backupVolume.Id, err
@@ -112,11 +102,4 @@ func (j *PVCTestJig) waitForVolumeAvailable(ctx context.Context, storageClient o
 		}
 		return ready, nil
 	})
-}
-
-// DeleteBackup deletes the backup after a volume has been restored.
-func (j *PVCTestJig) DeleteBackup(storageClient ocicore.BlockstorageClient, backupID *string) {
-	ctx := context.Background()
-	storageClient.DeleteVolumeBackup(ctx,
-		ocicore.DeleteVolumeBackupRequest{VolumeBackupId: backupID})
 }

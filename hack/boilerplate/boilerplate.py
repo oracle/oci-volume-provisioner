@@ -143,7 +143,7 @@ skipped_dirs = [
     "hack/verify-boilerplate.sh",
 
     "pkg/signals/",
-    "test/e2e/"
+    "test/e2e/framework/ginkgowrapper/"
 ]
 
 

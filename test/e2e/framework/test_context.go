@@ -1,4 +1,4 @@
-// Copyright 2018 Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ import (
 	"flag"
 )
 
-// TestContextType represents the co
+// TestContextType represents the framework flags
 type TestContextType struct {
 	// RepoRoot is the root directory of the repository.
 	RepoRoot string
@@ -37,6 +37,9 @@ type TestContextType struct {
 
 	// SubnetOCID used to mount a volume looking for a mount in the specified subnet
 	SubnetOCID string
+
+	// Image is the docker image to which we are building
+	Image string
 
 	// Namespace (if provided) is the namespace of an existing namespace to
 	// use for test execution rather than creating a new namespace.
@@ -59,6 +62,7 @@ func RegisterFlags() {
 	flag.StringVar(&TestContext.AD, "ad", "PHX-AD-2", "The availability domain is specified to identify in which to create the volumes.")
 	flag.StringVar(&TestContext.MntTargetOCID, "mnt-target-id", "", "Mount Target ID is specified to identify the mount target to be attached to the volumes")
 	flag.StringVar(&TestContext.SubnetOCID, "subnet-id", "", "Subnet ID is specified to identify where to look for a mount target, such that a FSS can be mounted.")
+	flag.StringVar(&TestContext.Image, "image", "", "Image name and version to build images")
 	flag.StringVar(&TestContext.Namespace, "namespace", "", "Name of an existing Namespace to run tests in.")
 	flag.BoolVar(&TestContext.DeleteNamespace, "delete-namespace", true, "If true tests will delete namespace after completion. It is only designed to make debugging easier, DO NOT turn it off by default.")
 	flag.BoolVar(&TestContext.DeleteNamespaceOnFailure, "delete-namespace-on-failure", true, "If true tests will delete their associated namespace upon completion whether or not the test has failed.")

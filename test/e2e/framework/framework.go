@@ -1,4 +1,4 @@
-// Copyright 2018 Oracle and/or its affiliates. All rights reserved.
+// Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -36,6 +36,7 @@ import (
 	"github.com/oracle/oci-go-sdk/common/auth"
 	ocicore "github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
+	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/core"
 )
 
 const (
@@ -52,6 +53,9 @@ const (
 	ClassOCISubnetFss  = "oci-fss-subnet"
 	MinVolumeBlock     = "50Gi"
 	VolumeFss          = "1Gi"
+	FSSProv            = "oci-volume-provisioner-fss"
+	OCIProv            = "oci-volume-provisioner"
+	SecretNameDefault  = "oci-volume-provisioner"
 )
 
 // Framework is used in the execution of e2e tests.
@@ -85,9 +89,11 @@ func NewDefaultFramework(baseName string) *Framework {
 // NewFramework constructs a new e2e test Framework.
 func NewFramework(baseName string, client clientset.Interface, backup bool) *Framework {
 	f := &Framework{
-		BaseName:  baseName,
-		ClientSet: client,
-		IsBackup:  backup,
+		BaseName:                  baseName,
+		ClientSet:                 client,
+		IsBackup:                  backup,
+		ProvisionerBlockInstalled: false,
+		ProvisionerFSSInstalled:   false,
 	}
 
 	BeforeEach(f.BeforeEach)
@@ -204,15 +210,11 @@ func (f *Framework) BeforeEach() {
 	}
 
 	if !f.ProvisionerFSSInstalled {
-		err := f.installFSSProvisioner(f.Namespace.Name)
-		Expect(err).NotTo(HaveOccurred())
-		f.ProvisionerFSSInstalled = true
+		f.ProvisionerFSSInstalled = f.CheckandInstallProvisioner(FSSProv, core.ProvisionerNameFss)
 	}
 
 	if !f.ProvisionerBlockInstalled {
-		err := f.installBlockProvisioner(f.Namespace.Name)
-		Expect(err).NotTo(HaveOccurred())
-		f.ProvisionerBlockInstalled = true
+		f.ProvisionerBlockInstalled = f.CheckandInstallProvisioner(OCIProv, core.ProvisionerNameDefault)
 	}
 }
 
