@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"os"
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
@@ -38,12 +37,11 @@ import (
 )
 
 const (
-	ociVolumeID            = "volume.beta.kubernetes.io/oci-volume-id"
-	ociExportID            = "volume.beta.kubernetes.io/oci-export-id"
-	volumePrefixEnvVarName = "OCI_VOLUME_NAME_PREFIX"
-	fsType                 = "fsType"
-	subnetID               = "subnetId"
-	mntTargetID            = "mntTargetId"
+	ociVolumeID = "volume.beta.kubernetes.io/oci-volume-id"
+	ociExportID = "volume.beta.kubernetes.io/oci-export-id"
+	fsType      = "fsType"
+	subnetID    = "subnetId"
+	mntTargetID = "mntTargetId"
 )
 
 // filesystemProvisioner is the internal provisioner for OCI filesystem volumes
@@ -127,7 +125,7 @@ func (fsp *filesystemProvisioner) getOrCreateMountTarget(ctx context.Context, mt
 			AvailabilityDomain: &ad,
 			SubnetId:           &subnetID,
 			CompartmentId:      common.String(fsp.client.CompartmentOCID()),
-			DisplayName:        common.String(fmt.Sprintf("%s%s", os.Getenv(volumePrefixEnvVarName), "mnt")),
+			DisplayName:        common.String(fmt.Sprintf("%s%s", provisioner.GetPrefix(), "mnt")),
 		},
 	})
 	if err != nil {
@@ -147,7 +145,7 @@ func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad
 			CreateFileSystemDetails: filestorage.CreateFileSystemDetails{
 				AvailabilityDomain: ad.Name,
 				CompartmentId:      common.String(fsp.client.CompartmentOCID()),
-				DisplayName:        common.String(fmt.Sprintf("%s%s", os.Getenv(volumePrefixEnvVarName), options.PVC.Name)),
+				DisplayName:        common.String(fmt.Sprintf("%s%s", provisioner.GetPrefix(), options.PVC.Name)),
 			},
 		})
 		if err != nil {
