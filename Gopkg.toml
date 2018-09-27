@@ -70,7 +70,3 @@ revision = "f0cc927784781fa395c06317c58dea2841ece3a9" # Lock in to version 2.6.3
 [[override]]
  name = "k8s.io/api"
  version = "kubernetes-1.11.1"
-
-[[constraint]]
-  source = "https://github.com/fsnotify/fsnotify/archive/v1.4.7.tar.gz"
-  name = "gopkg.in/fsnotify.v1"
