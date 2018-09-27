@@ -20,20 +20,19 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/common/auth"
 	"github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-go-sdk/filestorage"
 	"github.com/oracle/oci-go-sdk/identity"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 )
@@ -41,12 +40,14 @@ import (
 // ProvisionerClient wraps the OCI sub-clients required for volume provisioning.
 type provisionerClient struct {
 	cfg            *Config
+	tenancyID      string
 	blockStorage   *core.BlockstorageClient
 	identity       *identity.IdentityClient
 	fileStorage    *filestorage.FileStorageClient
 	virtualNetwork *core.VirtualNetworkClient
 	timeout        time.Duration
 	metadata       *instancemeta.InstanceMetadata
+	logger         *zap.SugaredLogger
 }
 
 // BlockStorage specifies the subset of the OCI core API utilised by the provisioner.
@@ -108,27 +109,30 @@ func (p *provisionerClient) Timeout() time.Duration {
 	return p.timeout
 }
 
-func (p *provisionerClient) CompartmentOCID() (compartmentOCID string) {
+func (p *provisionerClient) CompartmentOCID() string {
 	if p.cfg.CompartmentOCID == "" {
 		if p.metadata == nil {
-			log.Fatalf("Unable to get compartment OCID. Please provide this via config")
-			return
+			p.logger.Fatal("Unable to get compartment OCID. Please provide this via config.")
+			return ""
 		}
-		glog.Infof("'CompartmentID' not given. Using compartment OCID %s from instance metadata", p.metadata.CompartmentOCID)
-		compartmentOCID = p.metadata.CompartmentOCID
-	} else {
-		compartmentOCID = p.cfg.CompartmentOCID
+		p.logger.With("compartmentOCID", p.metadata.CompartmentOCID).Infof("'CompartmentID' not given. Using compartment OCID from instance metadata.")
+		p.cfg.CompartmentOCID = p.metadata.CompartmentOCID
 	}
-	return
+	return p.cfg.CompartmentOCID
 }
 
 func (p *provisionerClient) TenancyOCID() string {
-	return p.cfg.Auth.TenancyOCID
+	return p.tenancyID
 }
 
 // FromConfig creates an OCI client from the given configuration.
-func FromConfig(cfg *Config) (ProvisionerClient, error) {
-	config, err := newConfigurationProvider(cfg)
+func FromConfig(logger *zap.SugaredLogger, cfg *Config) (ProvisionerClient, error) {
+	config, err := newConfigurationProvider(logger, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	tenancyID, err := config.TenancyOCID()
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +141,7 @@ func FromConfig(cfg *Config) (ProvisionerClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = configureCustomTransport(&blockStorage.BaseClient)
+	err = configureCustomTransport(logger, &blockStorage.BaseClient)
 	if err != nil {
 		return nil, err
 	}
@@ -156,28 +160,30 @@ func FromConfig(cfg *Config) (ProvisionerClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = configureCustomTransport(&identity.BaseClient)
+	err = configureCustomTransport(logger, &identity.BaseClient)
 	if err != nil {
 		return nil, err
 	}
 
 	metadata, err := instancemeta.New().Get()
 	if err != nil {
-		glog.Warningf("Unable to retrieve instance metadata: %s", err)
+		logger.With(zap.Error(err)).Warnf("Unable to retrieve instance metadata.")
 	}
 
 	return &provisionerClient{
 		cfg:            cfg,
+		tenancyID:      tenancyID,
 		blockStorage:   &blockStorage,
 		identity:       &identity,
 		fileStorage:    &fileStorage,
 		virtualNetwork: &virtualNetwork,
 		timeout:        3 * time.Minute,
 		metadata:       metadata,
+		logger:         logger,
 	}, nil
 }
 
-func newConfigurationProvider(cfg *Config) (common.ConfigurationProvider, error) {
+func newConfigurationProvider(logger *zap.SugaredLogger, cfg *Config) (common.ConfigurationProvider, error) {
 	var conf common.ConfigurationProvider
 	if cfg != nil {
 		err := cfg.Validate()
@@ -185,14 +191,13 @@ func newConfigurationProvider(cfg *Config) (common.ConfigurationProvider, error)
 			return nil, errors.Wrap(err, "invalid client config")
 		}
 		if cfg.UseInstancePrincipals {
-			glog.V(2).Info("Using instance principals configuration provider")
+			logger.Info("Using instance principals configuration provider.")
 			cp, err := auth.InstancePrincipalConfigurationProvider()
 			if err != nil {
 				return nil, errors.Wrap(err, "InstancePrincipalConfigurationProvider")
 			}
 			return cp, nil
 		}
-		glog.V(2).Info("Using raw configuration provider")
 		conf = common.NewRawConfigurationProvider(
 			cfg.Auth.TenancyOCID,
 			cfg.Auth.UserOCID,
@@ -206,7 +211,7 @@ func newConfigurationProvider(cfg *Config) (common.ConfigurationProvider, error)
 	return conf, nil
 }
 
-func configureCustomTransport(baseClient *common.BaseClient) error {
+func configureCustomTransport(logger *zap.SugaredLogger, baseClient *common.BaseClient) error {
 
 	httpClient := baseClient.HTTPClient.(*http.Client)
 
@@ -240,7 +245,7 @@ func configureCustomTransport(baseClient *common.BaseClient) error {
 
 	trustedCACertPath := os.Getenv("TRUSTED_CA_CERT_PATH")
 	if trustedCACertPath != "" {
-		glog.Infof("configuring OCI client with a new trusted ca: %s", trustedCACertPath)
+		logger.With("trustedCACertPath", trustedCACertPath).Info("Configuring OCI client with a new trusted ca.")
 		trustedCACert, err := ioutil.ReadFile(trustedCACertPath)
 		if err != nil {
 			return fmt.Errorf("failed to read root certificate: %s, err: %v", trustedCACertPath, err)

@@ -19,6 +19,12 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"go.uber.org/zap"
+
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner"
 
@@ -26,10 +32,6 @@ import (
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/core"
 	"github.com/oracle/oci-go-sdk/identity"
-
-	"k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var (
@@ -79,7 +81,7 @@ func TestCreateVolumeFromBackup(t *testing.T) {
 			},
 		}}
 
-	block := NewBlockProvisioner(
+	block := NewBlockProvisioner(zap.S(),
 		provisioner.NewClientProvisioner(nil, &provisioner.MockBlockStorageClient{VolumeState: core.VolumeLifecycleStateAvailable}),
 		instancemeta.NewMock(&instancemeta.InstanceMetadata{
 			CompartmentOCID: "",
@@ -126,7 +128,7 @@ func TestCreateVolumeFailure(t *testing.T) {
 					},
 				}}
 
-			block := NewBlockProvisioner(provisioner.NewClientProvisioner(nil, &provisioner.MockBlockStorageClient{VolumeState: tt.state}),
+			block := NewBlockProvisioner(zap.S(), provisioner.NewClientProvisioner(nil, &provisioner.MockBlockStorageClient{VolumeState: tt.state}),
 				instancemeta.NewMock(&instancemeta.InstanceMetadata{
 					CompartmentOCID: "",
 					Region:          "phx",
@@ -166,7 +168,7 @@ func TestVolumeRoundingLogic(t *testing.T) {
 				CompartmentOCID: "",
 				Region:          "phx",
 			})
-			block := NewBlockProvisioner(provisioner.NewClientProvisioner(nil, &provisioner.MockBlockStorageClient{VolumeState: core.VolumeLifecycleStateAvailable}),
+			block := NewBlockProvisioner(zap.S(), provisioner.NewClientProvisioner(nil, &provisioner.MockBlockStorageClient{VolumeState: core.VolumeLifecycleStateAvailable}),
 				metadata,
 				tt.enabled,
 				tt.minVolumeSize,

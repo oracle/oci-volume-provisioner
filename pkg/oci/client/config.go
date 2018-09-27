@@ -19,8 +19,9 @@ import (
 	"io"
 	"io/ioutil"
 
-	"github.com/golang/glog"
 	"gopkg.in/yaml.v2"
+
+	"go.uber.org/zap"
 )
 
 // AuthConfig holds the configuration required for communicating with the OCI
@@ -77,7 +78,7 @@ func LoadConfig(r io.Reader) (*Config, error) {
 // Complete the config applying defaults / overrides.
 func (c *Config) Complete() {
 	if c.CompartmentOCID == "" && c.Auth.CompartmentOCID != "" {
-		glog.Warning("cloud-provider config: \"auth.compartment\" is DEPRECATED and will be removed in a later release. Please set \"compartment\".")
+		zap.S().Warn("cloud-provider config: \"auth.compartment\" is DEPRECATED and will be removed in a later release. Please set \"compartment\".")
 		c.CompartmentOCID = c.Auth.CompartmentOCID
 	}
 }

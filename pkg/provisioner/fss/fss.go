@@ -20,7 +20,11 @@ import (
 	"math/rand"
 	"os"
 
-	"github.com/golang/glog"
+	"k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"go.uber.org/zap"
+
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/core"
@@ -32,9 +36,6 @@ import (
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/plugin"
-
-	"k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -49,16 +50,21 @@ const (
 type filesystemProvisioner struct {
 	client   client.ProvisionerClient
 	metadata instancemeta.Interface
+	logger   *zap.SugaredLogger
 }
 
 var _ plugin.ProvisionerPlugin = &filesystemProvisioner{}
 
 // NewFilesystemProvisioner creates a new file system provisioner that creates
 // filesystems using OCI File System Service.
-func NewFilesystemProvisioner(client client.ProvisionerClient, metadata instancemeta.Interface) plugin.ProvisionerPlugin {
+func NewFilesystemProvisioner(logger *zap.SugaredLogger, client client.ProvisionerClient, metadata instancemeta.Interface) plugin.ProvisionerPlugin {
 	return &filesystemProvisioner{
 		client:   client,
 		metadata: metadata,
+		logger: logger.With(
+			"compartmentID", client.CompartmentOCID(),
+			"tenancyID", client.TenancyOCID(),
+		),
 	}
 }
 
@@ -71,7 +77,6 @@ func (fsp *filesystemProvisioner) getMountTargetFromID(ctx context.Context, moun
 		MountTargetId: &mountTargetID,
 	})
 	if err != nil {
-		glog.Errorf("Failed to retrieve mount point mountTargetId=%q: %v", mountTargetID, err)
 		return nil, err
 	}
 	return &resp.MountTarget, nil
@@ -113,20 +118,21 @@ func (fsp *filesystemProvisioner) getOrCreateMountTarget(ctx context.Context, mt
 		return nil, err
 	}
 	if len(mountTargets) != 0 {
-		glog.V(4).Infof("Found mount targets to use")
 		mntTargetSummary := mountTargets[rand.Int()%len(mountTargets)]
 		target, err := fsp.getMountTargetFromID(ctx, *mntTargetSummary.Id)
 		return target, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
 	defer cancel()
+	mtDisplayName := common.String(fmt.Sprintf("%s%s", provisioner.GetPrefix(), "mnt"))
 	// Mount target not created, create a new one
+	fsp.logger.With("subnetId", subnetID, "mountTargetDisplayName", mtDisplayName).Info("Creating mount target.")
 	resp, err := fsp.client.FSS().CreateMountTarget(ctx, filestorage.CreateMountTargetRequest{
 		CreateMountTargetDetails: filestorage.CreateMountTargetDetails{
 			AvailabilityDomain: &ad,
 			SubnetId:           &subnetID,
 			CompartmentId:      common.String(fsp.client.CompartmentOCID()),
-			DisplayName:        common.String(fmt.Sprintf("%s%s", provisioner.GetPrefix(), "mnt")),
+			DisplayName:        mtDisplayName,
 		},
 	})
 	if err != nil {
@@ -137,7 +143,13 @@ func (fsp *filesystemProvisioner) getOrCreateMountTarget(ctx context.Context, mt
 
 func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad *identity.AvailabilityDomain) (*v1.PersistentVolume, error) {
 	ctx := context.Background()
+	fsDisplayName := common.String(fmt.Sprintf("%s%s", provisioner.GetPrefix(), options.PVC.Name))
+	logger := fsp.logger.With(
+		"availabilityDomain", ad,
+		"fileSystemDisplayName", fsDisplayName,
+	)
 	// Create the FileSystem.
+	logger.Info("Creating FileSystem")
 	var fsID string
 	{
 		ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
@@ -146,23 +158,23 @@ func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad
 			CreateFileSystemDetails: filestorage.CreateFileSystemDetails{
 				AvailabilityDomain: ad.Name,
 				CompartmentId:      common.String(fsp.client.CompartmentOCID()),
-				DisplayName:        common.String(fmt.Sprintf("%s%s", provisioner.GetPrefix(), options.PVC.Name)),
+				DisplayName:        fsDisplayName,
 			},
 		})
 		if err != nil {
-			glog.Errorf("Failed to create a file system options=%#v: %v", options, err)
 			return nil, err
 		}
 		fsID = *resp.FileSystem.Id
 	}
+	logger = logger.With("fileSystemID", fsID)
 
 	target, err := fsp.getOrCreateMountTarget(ctx, options.Parameters[mntTargetID], *ad.Name, options.Parameters[subnetID])
 	if err != nil {
-		glog.Errorf("Failed to retrieve mount target: %s", err)
+		logger.With(zap.Error(err)).Error("Failed to retrieve mount target.")
 		return nil, err
 	}
 
-	glog.V(6).Infof("Creating export set")
+	logger.Info("Creating export set.")
 	// Create the ExportSet.
 	var exportSetID string
 	{
@@ -176,15 +188,16 @@ func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad
 			},
 		})
 		if err != nil {
-			glog.Errorf("Failed to create export: %v", err)
+			logger.With(zap.Error(err)).Error("Failed to create export.")
 			return nil, err
 		}
 		exportSetID = *resp.Export.Id
+		logger = logger.With("exportSetID", exportSetID)
 	}
 
 	if len(target.PrivateIpIds) == 0 {
-		glog.Errorf("Failed to find server IDs associated with the Mount Target (OCID %s) to provision a persistent volume", target.Id)
-		return nil, errors.Errorf("failed to find server IDs associated with the Mount Target with OCID %q", target.Id)
+		logger.With("targetID", *target.Id).Error("Could not find any Private IPs for Mount Target.")
+		return nil, errors.Errorf("failed to find server IDs associated with the Mount Target with OCID %q", *target.Id)
 	}
 
 	// Get PrivateIP.
@@ -197,7 +210,7 @@ func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad
 			PrivateIpId: &id,
 		})
 		if err != nil {
-			glog.Errorf("Failed to retrieve IP address for mount target privateIpID=%q: %v", id, err)
+			logger.With(zap.Error(err), "privateIPID", id).Errorf("Failed to retrieve IP address for mount target privateIpID=%q: %v", id, err)
 			return nil, err
 		}
 		serverIP = *getPrivateIPResponse.PrivateIp.IpAddress
@@ -212,7 +225,8 @@ func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad
 		region = metadata.Region
 	}
 
-	glog.Infof("Creating persistent volume on mount target with private IP address %s", serverIP)
+	logger.With("privateIP", serverIP).Info("Selected Mount Target Private IP.")
+
 	return &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fsID,
@@ -257,23 +271,29 @@ func (fsp *filesystemProvisioner) Delete(volume *v1.PersistentVolume) error {
 		return errors.Errorf("%q annotation not found on PV", ociVolumeID)
 	}
 
-	glog.Infof("Deleting export for filesystemID %v", filesystemID)
+	logger := fsp.logger.With(
+		"volumeOCID", volume,
+		"exportOCID", exportID,
+	)
+
+	logger.Info("Deleting export.")
 	ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
 	defer cancel()
 	if _, err := fsp.client.FSS().DeleteExport(ctx, filestorage.DeleteExportRequest{
 		ExportId: &exportID,
 	}); err != nil {
 		if !provisioner.IsNotFound(err) {
-			glog.Errorf("Failed to delete export exportID=%q: %v", exportID, err)
+			logger.With(zap.Error(err)).Error("Failed to delete export.")
 			return err
 		}
-		glog.Infof("ExportID %q was not found. Unable to delete it: %v", exportID, err)
+		logger.With(zap.Error(err)).Info("ExportID not found. Unable to delete it.")
 	}
 
 	ctx, cancel = context.WithTimeout(ctx, fsp.client.Timeout())
 	defer cancel()
 
-	glog.Infof("Deleting volume %v with FileSystemID %v", volume, filesystemID)
+	logger.Info("Deleting File System.")
+
 	_, err := fsp.client.FSS().DeleteFileSystem(ctx, filestorage.DeleteFileSystemRequest{
 		FileSystemId: &filesystemID,
 	})
@@ -281,7 +301,7 @@ func (fsp *filesystemProvisioner) Delete(volume *v1.PersistentVolume) error {
 		if !provisioner.IsNotFound(err) {
 			return err
 		}
-		glog.Infof("FileSystemID %q was not found. Unable to delete it: %v", filesystemID, err)
+		logger.Info("File System not found. Unable to delete it.")
 	}
 	return nil
 }

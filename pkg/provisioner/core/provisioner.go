@@ -20,7 +20,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/pkg/errors"
 
@@ -31,6 +30,8 @@ import (
 	listersv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	metav1 "k8s.io/kubernetes/pkg/kubelet/apis"
+
+	"go.uber.org/zap"
 
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
@@ -61,10 +62,12 @@ type OCIProvisioner struct {
 	nodeLister       listersv1.NodeLister
 	nodeListerSynced cache.InformerSynced
 	provisioner      plugin.ProvisionerPlugin
+
+	logger *zap.SugaredLogger
 }
 
 // NewOCIProvisioner creates a new OCI provisioner.
-func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1.NodeInformer, provisionerType string, nodeName string, volumeRoundingEnabled bool, minVolumeSize resource.Quantity) (*OCIProvisioner, error) {
+func NewOCIProvisioner(logger *zap.SugaredLogger, kubeClient kubernetes.Interface, nodeInformer informersv1.NodeInformer, provisionerType string, nodeName string, volumeRoundingEnabled bool, minVolumeSize resource.Quantity) (*OCIProvisioner, error) {
 	configPath, ok := os.LookupEnv("CONFIG_YAML_FILENAME")
 	if !ok {
 		configPath = configFilePath
@@ -72,27 +75,27 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1
 
 	f, err := os.Open(configPath)
 	if err != nil {
-		glog.Fatalf("Unable to load volume provisioner configuration file: %v", configPath)
+		logger.With(zap.Error(err), "configPath", configPath).Fatal("Unable to load volume provisioner configuration file.")
 	}
 	defer f.Close()
 
 	cfg, err := client.LoadConfig(f)
 	if err != nil {
-		glog.Fatalf("Unable to load volume provisioner client: %v", err)
+		logger.With(zap.Error(err)).Fatal("Unable to load volume provisioner client.")
 	}
 
-	client, err := client.FromConfig(cfg)
+	client, err := client.FromConfig(logger, cfg)
 	if err != nil {
-		glog.Fatalf("Unable to create volume provisioner client: %v", err)
+		logger.With(zap.Error(err)).Fatal("Unable to create volume provisioner client.")
 	}
 	var provisioner plugin.ProvisionerPlugin
 	switch provisionerType {
 	case ProvisionerNameDefault:
-		provisioner = block.NewBlockProvisioner(client, instancemeta.New(), volumeRoundingEnabled, minVolumeSize, time.Minute*3)
+		provisioner = block.NewBlockProvisioner(logger, client, instancemeta.New(), volumeRoundingEnabled, minVolumeSize, time.Minute*3)
 	case ProvisionerNameBlock:
-		provisioner = block.NewBlockProvisioner(client, instancemeta.New(), volumeRoundingEnabled, minVolumeSize, time.Minute*3)
+		provisioner = block.NewBlockProvisioner(logger, client, instancemeta.New(), volumeRoundingEnabled, minVolumeSize, time.Minute*3)
 	case ProvisionerNameFss:
-		provisioner = fss.NewFilesystemProvisioner(client, instancemeta.New())
+		provisioner = fss.NewFilesystemProvisioner(logger, client, instancemeta.New())
 	default:
 		return nil, errors.Errorf("invalid provisioner type %q", provisionerType)
 	}
@@ -102,6 +105,7 @@ func NewOCIProvisioner(kubeClient kubernetes.Interface, nodeInformer informersv1
 		nodeLister:       nodeInformer.Lister(),
 		nodeListerSynced: nodeInformer.Informer().HasSynced,
 		provisioner:      provisioner,
+		logger:           logger,
 	}, nil
 }
 

@@ -19,15 +19,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/oracle/oci-go-sdk/common"
+	"github.com/oracle/oci-go-sdk/identity"
+
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
 	metav1 "k8s.io/kubernetes/pkg/kubelet/apis"
 	"k8s.io/kubernetes/pkg/volume/util"
-
-	"github.com/golang/glog"
-	"github.com/oracle/oci-go-sdk/common"
-	"github.com/oracle/oci-go-sdk/identity"
 )
 
 func (p *OCIProvisioner) findADByName(ctx context.Context, name string) (*identity.AvailabilityDomain, error) {
@@ -80,7 +79,7 @@ func (p *OCIProvisioner) chooseAvailabilityDomain(ctx context.Context, pvc *v1.P
 			return "", nil, fmt.Errorf("failed to choose availability domain; no zone labels (%q) on nodes", metav1.LabelZoneFailureDomain)
 		}
 		availabilityDomainName = util.ChooseZoneForVolume(validADs, pvc.Name)
-		glog.Infof("Zone not specified so %s selected", availabilityDomainName)
+		p.logger.With("availabilityDomain", availabilityDomainName).Info("No availability domain provided. Selecting one automatically.")
 	}
 
 	availabilityDomain, err := p.findADByName(ctx, availabilityDomainName)

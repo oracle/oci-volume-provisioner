@@ -68,7 +68,14 @@ build: ${DIR}/${BIN}
 
 ${DIR}/${BIN}: ${GO_SRC}
 	mkdir -p ${DIR}
-	GOOS=${GOOS} GOARCH=${GOARCH} CGO_ENABLED=0 go build -i -v -ldflags '-extldflags "-static"' -o $@ ./cmd/
+	GOOS=${GOOS} \
+	GOARCH=${GOARCH} \
+	CGO_ENABLED=0 \
+	go build \
+	-i \
+	-v \
+	-ldflags="-s -w -X main.version=${VERSION} -X main.build=${BUILD} -extldflags -static" \
+	-o $@ ./cmd/
 
 .PHONY: image
 image: build
