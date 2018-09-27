@@ -32,7 +32,7 @@ TEST_IMAGE ?= $(REGISTRY)/$(DOCKER_REGISTRY_TENANCY)/$(BIN)-test
 
 OCI_SHORT_REGION ?= iad
 
-GOOS ?= darwin
+GOOS ?= linux
 GOARCH ?= amd64
 SRC_DIRS := cmd pkg # directories which hold app source (not vendored)
 
