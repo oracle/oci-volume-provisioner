@@ -43,9 +43,12 @@ import (
 )
 
 const (
-	ociVolumeID             = "ociVolumeID"
-	ociVolumeBackupID       = "volume.beta.kubernetes.io/oci-volume-source"
-	fsType                  = "fsType"
+	// OCIVolumeID is the name of the oci volume id.
+	OCIVolumeID = "ociVolumeID"
+	// OCIVolumeBackupID is the name of the oci volume backup id annotation.
+	OCIVolumeBackupID = "volume.beta.kubernetes.io/oci-volume-source"
+	// FSType is the name of the file storage type parameter for storage classes.
+	FSType                  = "fsType"
 	volumeRoundingUpEnabled = "volumeRoundingUpEnabled"
 )
 
@@ -87,7 +90,7 @@ func mapVolumeIDToName(volumeID string) string {
 
 func resolveFSType(options controller.VolumeOptions) string {
 	fs := "ext4" // default to ext4
-	if fsType, ok := options.Parameters[fsType]; ok {
+	if fsType, ok := options.Parameters[FSType]; ok {
 		fs = fsType
 	}
 	return fs
@@ -177,7 +180,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 		SizeInMBs:          common.Int(volSizeMB),
 	}
 
-	if value, ok := options.PVC.Annotations[ociVolumeBackupID]; ok {
+	if value, ok := options.PVC.Annotations[OCIVolumeBackupID]; ok {
 		logger = logger.With("volumeBackupOCID", value)
 		logger.Info("Creating volume from backup.")
 		volumeDetails.SourceDetails = &core.VolumeSourceFromVolumeBackupDetails{Id: &value}
@@ -220,7 +223,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 		ObjectMeta: metav1.ObjectMeta{
 			Name: *newVolume.Id,
 			Annotations: map[string]string{
-				ociVolumeID: *newVolume.Id,
+				OCIVolumeID: *newVolume.Id,
 			},
 			Labels: map[string]string{
 				plugin.LabelZoneRegion:        region,
@@ -249,7 +252,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 // Delete destroys a OCI volume created by Provision
 func (block *blockProvisioner) Delete(volume *v1.PersistentVolume) error {
 	ctx := context.Background()
-	volID, ok := volume.Annotations[ociVolumeID]
+	volID, ok := volume.Annotations[OCIVolumeID]
 	if !ok {
 		return errors.New("volumeid annotation not found on PV")
 	}
