@@ -110,37 +110,27 @@ push:
       password: $OCIRPASSWORD
 
 system-test:
-  box:
-    id: iad.ocir.io/oracle/oci-volume-provisioner-system-test:1.0.2
-  steps:
-    - script:
-      name: set ENV vars
+  base-path: "/go/src/github.com/oracle/oci-volume-provisioner"
+  box: 
+    id: iad.ocir.io/spinnaker/oci-ci-e2e:1.0.1
+  steps: 
+    - script: 
+      name: e2e tests
       code: |
-        export VERSION=$(cat dist/VERSION.txt)
-        echo "Pushing test version ${VERSION}"
-
-    - script:
-      name: prepare
-      code: |
-        cp -R ./dist /dist
-        cp -R ./manifests /manifests
-        cp -R ./examples /examples
-        cp -R ./test /test
-
-    - internal/docker-push:
-      repository: iad.ocir.io/oracle/oci-volume-provisioner-test
-      tag: $VERSION
-      working-dir: /test/system
-      entrypoint: ./runner.py
-      registry: https://iad.ocir.io/v2
-      username: $OCIRUSERNAME
-      password: $OCIRPASSWORD
-
-    - script:
-        name: test
-        code: |
-          cd /test/system
-          ./runner.py --setup --check-oci
+        export OCICONFIG="/tmp/ociconfig"
+        echo -n "${OCICONFIG_VAR}" | openssl enc -base64 -d -A > "${OCICONFIG}"
+        export KUBECONFIG="/tmp/kubeconfig"
+        echo -n "${KUBECONFIG_VAR}" | openssl enc -base64 -d -A > "${KUBECONFIG}"
+        ginkgo \
+          -v \
+          -skip="fss|FSS" \
+          test/e2e -- \
+          --kubeconfig="${KUBECONFIG}" \
+          --ociconfig="${OCICONFIG}" \
+          --subnet-id="${SUBNET_OCID}" \
+          --mnt-target-id="${MNT_TARGET_OCID}" \
+          --delete-namespace-on-failure=false \
+          --image="${IMAGE}:${VERSION}"
 
 validate-test-image:
   box:
@@ -205,28 +195,3 @@ release:
       file: ./dist/storage-class.yaml
       filename: storage-class.yaml
       content-type: text/yaml
-
-ginkgo-e2e:
-  base-path: "/go/src/github.com/oracle/oci-volume-provisioner"
-  box: 
-    id: iad.ocir.io/oracle/mysql-operator-ci-e2e:1.1.1
-    registry: https://iad.ocir.io/v2
-    username: $OCIRUSERNAME
-    password: $OCIRPASSWORD
-  steps: 
-    - script: 
-      name: e2e tests
-      code: |
-        export OCICONFIG="/tmp/ociconfig"
-        echo -n "${OCICONFIG_VAR}" | openssl enc -base64 -d -A > "${OCICONFIG}"
-        export KUBECONFIG="/tmp/kubeconfig"
-        echo -n "${KUBECONFIG_VAR}" | openssl enc -base64 -d -A > "${KUBECONFIG}"
-        ginkgo \
-          -v \
-          test/e2e -- \
-          --kubeconfig="${KUBECONFIG}" \
-          --ociconfig="${OCICONFIG}" \
-          --subnet-id="${SUBNET_OCID}" \
-          --mnt-target-id="${MNT_TARGET_OCID}" \
-          --delete-namespace-on-failure=false
-          --image="${IMAGE}:${VERSION}"
