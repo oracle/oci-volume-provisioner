@@ -41,6 +41,8 @@ copy:
         cp -a test ${WERCKER_OUTPUT_DIR}
         cp -a manifests ${WERCKER_OUTPUT_DIR}
         cp -a examples ${WERCKER_OUTPUT_DIR}
+        cp -a pkg ${WERCKER_OUTPUT_DIR}
+        cp -a vendor ${WERCKER_OUTPUT_DIR}
 
 push:
   box:
@@ -108,37 +110,30 @@ push:
       password: $OCIRPASSWORD
 
 system-test:
+  base-path: "/go/src/github.com/oracle/oci-volume-provisioner"
   box:
-    id: iad.ocir.io/oracle/oci-volume-provisioner-system-test:1.0.2
+    id: iad.ocir.io/spinnaker/oci-ci-e2e:1.0.1
   steps:
     - script:
-      name: set ENV vars
+      name: e2e tests
       code: |
         export VERSION=$(cat dist/VERSION.txt)
-        echo "Pushing test version ${VERSION}"
 
-    - script:
-      name: prepare
-      code: |
-        cp -R ./dist /dist
-        cp -R ./manifests /manifests
-        cp -R ./examples /examples
-        cp -R ./test /test
+        export OCICONFIG="/tmp/ociconfig"
+        echo -n "${OCICONFIG_VAR}" | openssl enc -base64 -d -A > "${OCICONFIG}"
 
-    - internal/docker-push:
-      repository: iad.ocir.io/oracle/oci-volume-provisioner-test
-      tag: $VERSION
-      working-dir: /test/system
-      entrypoint: ./runner.py
-      registry: https://iad.ocir.io/v2
-      username: $OCIRUSERNAME
-      password: $OCIRPASSWORD
+        export KUBECONFIG="/tmp/kubeconfig"
+        echo -n "${KUBECONFIG_VAR}" | openssl enc -base64 -d -A > "${KUBECONFIG}"
 
-    - script:
-        name: test
-        code: |
-          cd /test/system
-          ./runner.py --setup --check-oci
+        ginkgo \
+          -v \
+          test/e2e -- \
+          --kubeconfig="${KUBECONFIG}" \
+          --ociconfig="${OCICONFIG}" \
+          --subnet-id="${SUBNET_OCID}" \
+          --mnt-target-id="${MNT_TARGET_OCID}" \
+          --delete-namespace-on-failure=true \
+          --image="iad.ocir.io/oracle/oci-volume-provisioner:${VERSION}"
 
 validate-test-image:
   box:
