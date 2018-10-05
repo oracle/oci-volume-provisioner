@@ -111,10 +111,10 @@ push:
 
 system-test:
   base-path: "/go/src/github.com/oracle/oci-volume-provisioner"
-  box: 
+  box:
     id: iad.ocir.io/spinnaker/oci-ci-e2e:1.0.1
-  steps: 
-    - script: 
+  steps:
+    - script:
       name: e2e tests
       code: |
         export OCICONFIG="/tmp/ociconfig"
@@ -129,7 +129,7 @@ system-test:
           --ociconfig="${OCICONFIG}" \
           --subnet-id="${SUBNET_OCID}" \
           --mnt-target-id="${MNT_TARGET_OCID}" \
-          --delete-namespace-on-failure=false \
+          --delete-namespace-on-failure=true \
           --image="${IMAGE}:${VERSION}"
 
 validate-test-image:

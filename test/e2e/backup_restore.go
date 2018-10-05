@@ -36,10 +36,10 @@ var _ = Describe("Backup/Restore", func() {
 		pvc := pvcJig.CreateAndAwaitPVCOrFail(f.Namespace.Name, framework.MinVolumeBlock, scName, framework.TestContext.AD, nil)
 		backupID, err := pvcJig.CreateBackupVolume(f.BlockStorageClient, pvc)
 		if err != nil {
-			framework.Failf("Failed to created backup for pvc %q: %v", &pvc.Name, err)
+			framework.Failf("Failed to created backup for pvc %q: %v", pvc.Name, err)
 		}
 		f.BackupIDs = append(f.BackupIDs, backupID)
-		framework.Logf("PVC %q has been backed up with the following id %q", &pvc.Name, backupID)
+		framework.Logf("PVC %q has been backed up with the following id %q", pvc.Name, backupID)
 
 		By("Teardown volume")
 		pvcJig.DeletePersistentVolumeClaim(pvc.Name, f.Namespace.Name)
