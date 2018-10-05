@@ -127,7 +127,6 @@ system-test:
 
         ginkgo \
           -v \
-          -skip="fss|FSS" \
           test/e2e -- \
           --kubeconfig="${KUBECONFIG}" \
           --ociconfig="${OCICONFIG}" \
