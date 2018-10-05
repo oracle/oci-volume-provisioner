@@ -117,10 +117,14 @@ system-test:
     - script:
       name: e2e tests
       code: |
+        export VERSION=$(cat dist/VERSION.txt)
+
         export OCICONFIG="/tmp/ociconfig"
         echo -n "${OCICONFIG_VAR}" | openssl enc -base64 -d -A > "${OCICONFIG}"
+
         export KUBECONFIG="/tmp/kubeconfig"
         echo -n "${KUBECONFIG_VAR}" | openssl enc -base64 -d -A > "${KUBECONFIG}"
+
         ginkgo \
           -v \
           -skip="fss|FSS" \
@@ -130,7 +134,7 @@ system-test:
           --subnet-id="${SUBNET_OCID}" \
           --mnt-target-id="${MNT_TARGET_OCID}" \
           --delete-namespace-on-failure=true \
-          --image="${IMAGE}:${VERSION}"
+          --image="iad.ocir.io/oracle/oci-volume-provisioner:${VERSION}"
 
 validate-test-image:
   box:
