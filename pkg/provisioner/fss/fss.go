@@ -89,7 +89,7 @@ func (fsp *filesystemProvisioner) awaitFileSystem(ctx context.Context, logger *z
 	logger.Infof("Waiting for FileSystem to be in lifecycle state %q", fss.FileSystemLifecycleStateActive)
 
 	var fs *fss.FileSystem
-	err := wait.Poll(defaultInterval, defaultTimeout, func() (bool, error) {
+	err := wait.PollImmediate(defaultInterval, defaultTimeout, func() (bool, error) {
 		logger.Debug("Polling FileSystem lifecycle state")
 
 		resp, err := fsp.client.FSS().GetFileSystem(ctx, fss.GetFileSystemRequest{
@@ -123,7 +123,7 @@ func (fsp *filesystemProvisioner) awaitMountTarget(ctx context.Context, logger *
 	logger.Infof("Waiting for MountTarget to be in lifecycle state %q", fss.MountTargetLifecycleStateActive)
 
 	var mt *fss.MountTarget
-	if err := wait.Poll(defaultInterval, defaultTimeout, func() (bool, error) {
+	if err := wait.PollImmediate(defaultInterval, defaultTimeout, func() (bool, error) {
 		logger.Debug("Polling MountTarget lifecycle state")
 
 		resp, err := fsp.client.FSS().GetMountTarget(ctx, fss.GetMountTargetRequest{MountTargetId: &id})
@@ -135,7 +135,7 @@ func (fsp *filesystemProvisioner) awaitMountTarget(ctx context.Context, logger *
 
 		switch state := resp.LifecycleState; state {
 		case fss.MountTargetLifecycleStateActive:
-			logger.Infof("Mount target is in lifecycle state %q")
+			logger.Infof("Mount target is in lifecycle state %q", state)
 			return true, nil
 		case fss.MountTargetLifecycleStateFailed,
 			fss.MountTargetLifecycleStateDeleting,
@@ -156,7 +156,7 @@ func (fsp *filesystemProvisioner) awaitExport(ctx context.Context, logger *zap.S
 	logger.Info("Waiting for Export to be in lifecycle state ACTIVE")
 
 	var export *fss.Export
-	if err := wait.Poll(defaultInterval, defaultTimeout, func() (bool, error) {
+	if err := wait.PollImmediate(defaultInterval, defaultTimeout, func() (bool, error) {
 		logger.Debug("Polling export lifecycle state")
 
 		resp, err := fsp.client.FSS().GetExport(ctx, fss.GetExportRequest{ExportId: &id})

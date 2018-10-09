@@ -23,26 +23,32 @@ import (
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/identity"
-	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest"
 
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner"
 )
 
 func TestCreateVolumeWithFSS(t *testing.T) {
-	t.Skip("needs mock filling out")
-	// test creating a volume on a file system storage
-	options := controller.VolumeOptions{
-		PVName: "dummyVolumeOptions",
-		PVC: &v1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{},
-		}}
-	ad := identity.AvailabilityDomain{Name: common.String("dummyAdName"), CompartmentId: common.String("dummyCompartmentId")}
-	fss := filesystemProvisioner{
+	fsp := filesystemProvisioner{
 		client: provisioner.NewClientProvisioner(nil, nil),
-		logger: zap.S(),
+		logger: zaptest.NewLogger(t).Sugar(),
 		region: "phx",
 	}
-	_, err := fss.Provision(options, &ad)
+	_, err := fsp.Provision(
+		controller.VolumeOptions{
+			PVName: "dummyVolumeOptions",
+			PVC: &v1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					UID: "my-uid",
+				},
+			},
+			Parameters: map[string]string{MntTargetID: "dummyMountTargetID"},
+		},
+		&identity.AvailabilityDomain{
+			Name:          common.String("dummyAdName"),
+			CompartmentId: common.String("dummyCompartmentId"),
+		},
+	)
 	if err != nil {
 		t.Fatalf("Failed to provision volume from fss storage: %v", err)
 	}

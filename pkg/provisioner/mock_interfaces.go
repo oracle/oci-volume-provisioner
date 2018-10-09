@@ -30,6 +30,7 @@ var (
 	VolumeBackupID = "dummyVolumeBackupId"
 	fileSystemID   = "dummyFileSystemId"
 	exportID       = "dummyExportID"
+	exportSetID    = "dummyExportSetID"
 	// NilListMountTargetsADID lists no mount targets for the given AD
 	NilListMountTargetsADID = "dummyNilListMountTargetsForADID"
 	mountTargetID           = "dummyMountTargetID"
@@ -37,14 +38,7 @@ var (
 	CreatedMountTargetID = "dummyCreatedMountTargetID"
 	// ServerIPs address for mount target
 	ServerIPs = []string{"dummyServerIP"}
-	// MountTargetItems retrieving during listing
-	MountTargetItems = []filestorage.MountTargetSummary{{
-		LifecycleState: filestorage.MountTargetSummaryLifecycleStateActive,
-		Id:             &mountTargetID,
-	}}
-	// EmptyMountTargetItems retrieving during listing
-	EmptyMountTargetItems = []filestorage.MountTargetSummary{}
-	privateIP             = "127.0.0.1"
+	privateIP = "127.0.0.1"
 )
 
 // MockBlockStorageClient mocks BlockStorage client implementation
@@ -75,11 +69,10 @@ func (c *MockBlockStorageClient) GetVolume(ctx context.Context, request core.Get
 	}, nil
 }
 
-// MockFileStorageClient mocks FileStorage client implementation
-type MockFileStorageClient struct {
-}
+// MockFileStorageClient mocks FileStorage client implementation.
+type MockFileStorageClient struct{}
 
-// CreateFileSystem mocks the FileStorage CreateFileSystem implementation
+// CreateFileSystem mocks the FileStorage CreateFileSystem implementation.
 func (c *MockFileStorageClient) CreateFileSystem(ctx context.Context, request filestorage.CreateFileSystemRequest) (response filestorage.CreateFileSystemResponse, err error) {
 	return filestorage.CreateFileSystemResponse{
 		FileSystem: filestorage.FileSystem{
@@ -88,11 +81,11 @@ func (c *MockFileStorageClient) CreateFileSystem(ctx context.Context, request fi
 	}, nil
 }
 
-// GetFileSystem mocks the FileStorage GetFileSystem implementation
+// GetFileSystem mocks the FileStorage GetFileSystem implementation.
 func (c *MockFileStorageClient) GetFileSystem(ctx context.Context, request filestorage.GetFileSystemRequest) (response filestorage.GetFileSystemResponse, err error) {
 	return filestorage.GetFileSystemResponse{
 		FileSystem: filestorage.FileSystem{
-			Id:             common.String(fileSystemID),
+			Id:             request.FileSystemId,
 			LifecycleState: filestorage.FileSystemLifecycleStateActive,
 		},
 	}, nil
@@ -100,7 +93,13 @@ func (c *MockFileStorageClient) GetFileSystem(ctx context.Context, request files
 
 // ListFileSystems mocks the FileStorage ListFileSystems implementation.
 func (c *MockFileStorageClient) ListFileSystems(ctx context.Context, request filestorage.ListFileSystemsRequest) (response filestorage.ListFileSystemsResponse, err error) {
-	return filestorage.ListFileSystemsResponse{}, nil
+	return filestorage.ListFileSystemsResponse{
+		Items: []filestorage.FileSystemSummary{{
+			Id:             common.String(fileSystemID),
+			DisplayName:    request.DisplayName,
+			LifecycleState: filestorage.FileSystemSummaryLifecycleStateActive,
+		}},
+	}, nil
 }
 
 // DeleteFileSystem mocks the FileStorage DeleteFileSystem implementation
@@ -119,26 +118,32 @@ func (c *MockFileStorageClient) CreateExport(ctx context.Context, request filest
 
 // GetExport mocks the FileStorage CreateExport implementation.
 func (c *MockFileStorageClient) GetExport(ctx context.Context, request filestorage.GetExportRequest) (response filestorage.GetExportResponse, err error) {
-	return filestorage.GetExportResponse{}, nil
+	return filestorage.GetExportResponse{
+		Export: filestorage.Export{
+			Id:             common.String(exportID),
+			FileSystemId:   &fileSystemID,
+			ExportSetId:    &exportSetID,
+			LifecycleState: filestorage.ExportLifecycleStateActive,
+			Path:           common.String("/" + fileSystemID),
+		},
+	}, nil
 }
 
 // ListExports mocks the FileStorage ListExports implementation.
 func (c *MockFileStorageClient) ListExports(ctx context.Context, request filestorage.ListExportsRequest) (response filestorage.ListExportsResponse, err error) {
-	return filestorage.ListExportsResponse{}, nil
+	return filestorage.ListExportsResponse{
+		Items: []filestorage.ExportSummary{{
+			Id:             common.String(exportID),
+			ExportSetId:    request.ExportSetId,
+			FileSystemId:   request.FileSystemId,
+			LifecycleState: filestorage.ExportSummaryLifecycleStateActive,
+		}},
+	}, nil
 }
 
 // DeleteExport mocks the FileStorage DeleteExport implementation
 func (c *MockFileStorageClient) DeleteExport(ctx context.Context, request filestorage.DeleteExportRequest) (response filestorage.DeleteExportResponse, err error) {
 	return filestorage.DeleteExportResponse{}, nil
-}
-
-// CreateMountTarget mocks the FileStorage CreateMountTarget implementation
-func (c *MockFileStorageClient) CreateMountTarget(ctx context.Context, request filestorage.CreateMountTargetRequest) (response filestorage.CreateMountTargetResponse, err error) {
-	return filestorage.CreateMountTargetResponse{
-		MountTarget: filestorage.MountTarget{
-			PrivateIpIds: ServerIPs,
-			Id:           &CreatedMountTargetID},
-	}, nil
 }
 
 // GetMountTarget mocks the FileStorage GetMountTarget implementation
@@ -147,16 +152,10 @@ func (c *MockFileStorageClient) GetMountTarget(ctx context.Context, request file
 		MountTarget: filestorage.MountTarget{
 			PrivateIpIds:   ServerIPs,
 			Id:             &CreatedMountTargetID,
-			LifecycleState: filestorage.MountTargetLifecycleStateActive},
+			LifecycleState: filestorage.MountTargetLifecycleStateActive,
+			ExportSetId:    &exportSetID,
+		},
 	}, nil
-}
-
-// ListMountTargets mocks the FileStorage ListMountTargets implementation
-func (c *MockFileStorageClient) ListMountTargets(ctx context.Context, request filestorage.ListMountTargetsRequest) (response filestorage.ListMountTargetsResponse, err error) {
-	if *request.AvailabilityDomain == NilListMountTargetsADID {
-		return filestorage.ListMountTargetsResponse{Items: EmptyMountTargetItems}, nil
-	}
-	return filestorage.ListMountTargetsResponse{Items: MountTargetItems}, nil
 }
 
 // MockVirtualNetworkClient mocks VirtualNetwork client implementation
@@ -165,7 +164,11 @@ type MockVirtualNetworkClient struct {
 
 // GetPrivateIp mocks the VirtualNetwork GetPrivateIp implementation
 func (c *MockVirtualNetworkClient) GetPrivateIp(ctx context.Context, request core.GetPrivateIpRequest) (response core.GetPrivateIpResponse, err error) {
-	return core.GetPrivateIpResponse{PrivateIp: core.PrivateIp{IpAddress: common.String(privateIP)}}, nil
+	return core.GetPrivateIpResponse{
+		PrivateIp: core.PrivateIp{
+			IpAddress: common.String(privateIP),
+		},
+	}, nil
 }
 
 // MockIdentityClient mocks identity client structure
