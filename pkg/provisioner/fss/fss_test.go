@@ -15,8 +15,6 @@
 package fss
 
 import (
-	"context"
-	"reflect"
 	"testing"
 
 	"k8s.io/api/core/v1"
@@ -27,49 +25,8 @@ import (
 	"github.com/oracle/oci-go-sdk/identity"
 	"go.uber.org/zap"
 
-	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner"
 )
-
-func TestGetMountTargetFromID(t *testing.T) {
-	// test retrieving a mount target from given ID
-	var ctx = context.Background()
-	fss := filesystemProvisioner{client: provisioner.NewClientProvisioner(nil, nil)}
-	resp, err := fss.getMountTargetFromID(ctx, "mtOCID")
-	if err != nil {
-		t.Fatalf("Failed to retrieve mount target from ID: %v", err)
-	}
-	if !reflect.DeepEqual(resp.PrivateIpIds, provisioner.ServerIPs) {
-		t.Fatalf("Incorrect response for retrieving mount target from ID")
-	}
-}
-
-func TestListAllMountTargets(t *testing.T) {
-	// test listing all mount targets
-	var ctx = context.Background()
-	fss := filesystemProvisioner{client: provisioner.NewClientProvisioner(nil, nil)}
-	id, err := fss.getCandidateMountTargetID(ctx, "adOCID")
-	if err != nil {
-		t.Fatalf("Failed to retrieve list mount targets: %v", err)
-	}
-	if id != "dummyMountTargetID" {
-		t.Fatalf("Incorrect response for listing mount targets")
-	}
-}
-
-func TestGetOrCreateMountTarget(t *testing.T) {
-	// test get or create mount target
-	var ctx = context.Background()
-	fss := filesystemProvisioner{client: provisioner.NewClientProvisioner(nil, nil), logger: zap.S()}
-	resp, err := fss.getOrCreateMountTarget(ctx, "", provisioner.NilListMountTargetsADID, "subnetID")
-	if err != nil {
-		t.Fatalf("Failed to retrieve or create mount target: %v", err)
-	}
-	if *resp.Id != provisioner.CreatedMountTargetID {
-		t.Fatalf("Failed to create mount target")
-	}
-
-}
 
 func TestCreateVolumeWithFSS(t *testing.T) {
 	t.Skip("needs mock filling out")
@@ -83,10 +40,8 @@ func TestCreateVolumeWithFSS(t *testing.T) {
 	fss := filesystemProvisioner{
 		client: provisioner.NewClientProvisioner(nil, nil),
 		logger: zap.S(),
-		metadata: instancemeta.NewMock(&instancemeta.InstanceMetadata{
-			CompartmentOCID: "",
-			Region:          "phx",
-		})}
+		region: "phx",
+	}
 	_, err := fss.Provision(options, &ad)
 	if err != nil {
 		t.Fatalf("Failed to provision volume from fss storage: %v", err)
