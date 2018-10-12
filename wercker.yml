@@ -1,3 +1,5 @@
+no-response-timeout: 30
+command-timeout: 30
 box: golang:1.9
 
 dev:
