@@ -1,3 +1,5 @@
+no-response-timeout: 30
+command-timeout: 30
 box: iad.ocir.io/spinnaker/oci-kube-ci:1.0.2
 
 dev:

@@ -88,6 +88,16 @@ func NewOCIProvisioner(logger *zap.SugaredLogger, kubeClient kubernetes.Interfac
 	if err != nil {
 		logger.With(zap.Error(err)).Fatal("Unable to create volume provisioner client.")
 	}
+
+	region, ok := os.LookupEnv("OCI_SHORT_REGION")
+	if !ok {
+		metadata, err := instancemeta.New().Get()
+		if err != nil {
+			return nil, err
+		}
+		region = metadata.Region
+	}
+
 	var provisioner plugin.ProvisionerPlugin
 	switch provisionerType {
 	case ProvisionerNameDefault:
@@ -95,7 +105,7 @@ func NewOCIProvisioner(logger *zap.SugaredLogger, kubeClient kubernetes.Interfac
 	case ProvisionerNameBlock:
 		provisioner = block.NewBlockProvisioner(logger, client, instancemeta.New(), volumeRoundingEnabled, minVolumeSize, time.Minute*3)
 	case ProvisionerNameFss:
-		provisioner = fss.NewFilesystemProvisioner(logger, client, instancemeta.New())
+		provisioner = fss.NewFilesystemProvisioner(logger, client, region)
 	default:
 		return nil, errors.Errorf("invalid provisioner type %q", provisionerType)
 	}

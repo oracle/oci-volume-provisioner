@@ -18,7 +18,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"os"
+	"time"
 
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,41 +28,56 @@ import (
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/core"
-	"github.com/oracle/oci-go-sdk/filestorage"
+	fss "github.com/oracle/oci-go-sdk/filestorage"
 	"github.com/oracle/oci-go-sdk/identity"
 	"github.com/pkg/errors"
 
 	"github.com/oracle/oci-volume-provisioner/pkg/oci/client"
-	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner/plugin"
+
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
 	ociVolumeID = "volume.beta.kubernetes.io/oci-volume-id"
 	ociExportID = "volume.beta.kubernetes.io/oci-export-id"
-	fsType      = "fsType"
-	// SubnetID is the name of the parameter which holds the target subnet ocid.
-	SubnetID = "subnetId"
+	// AnnotationMountTargetID configures the mount target to use when
+	// provisioning a FSS volume
+	AnnotationMountTargetID = "volume.beta.kubernetes.io/oci-mount-target-id"
+
 	// MntTargetID is the name of the parameter which hold the target mount target ocid.
 	MntTargetID = "mntTargetId"
 )
 
+const (
+	defaultTimeout  = 5 * time.Minute
+	defaultInterval = 5 * time.Second
+)
+
 // filesystemProvisioner is the internal provisioner for OCI filesystem volumes
 type filesystemProvisioner struct {
-	client   client.ProvisionerClient
-	metadata instancemeta.Interface
-	logger   *zap.SugaredLogger
+	client client.ProvisionerClient
+
+	// region is the oci region in which the kubernetes cluster is located.
+	region string
+
+	logger *zap.SugaredLogger
 }
 
 var _ plugin.ProvisionerPlugin = &filesystemProvisioner{}
 
+var (
+	errNoCandidateFound = errors.New("no candidate mount targets found")
+	errNotFound         = errors.New("not found")
+)
+
 // NewFilesystemProvisioner creates a new file system provisioner that creates
 // filesystems using OCI File System Service.
-func NewFilesystemProvisioner(logger *zap.SugaredLogger, client client.ProvisionerClient, metadata instancemeta.Interface) plugin.ProvisionerPlugin {
+func NewFilesystemProvisioner(logger *zap.SugaredLogger, client client.ProvisionerClient, region string) plugin.ProvisionerPlugin {
 	return &filesystemProvisioner{
-		client:   client,
-		metadata: metadata,
+		client: client,
+		region: region,
 		logger: logger.With(
 			"compartmentID", client.CompartmentOCID(),
 			"tenancyID", client.TenancyOCID(),
@@ -70,189 +85,314 @@ func NewFilesystemProvisioner(logger *zap.SugaredLogger, client client.Provision
 	}
 }
 
-// getMountTargetFromID retrieves mountTarget from given mountTargetID
-func (fsp *filesystemProvisioner) getMountTargetFromID(ctx context.Context, mountTargetID string) (*filestorage.MountTarget, error) {
-	ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
-	defer cancel()
+func (fsp *filesystemProvisioner) awaitFileSystem(ctx context.Context, logger *zap.SugaredLogger, id string) (*fss.FileSystem, error) {
+	logger.Infof("Waiting for FileSystem to be in lifecycle state %q", fss.FileSystemLifecycleStateActive)
 
-	resp, err := fsp.client.FSS().GetMountTarget(ctx, filestorage.GetMountTargetRequest{
-		MountTargetId: &mountTargetID,
+	var fs *fss.FileSystem
+	err := wait.PollImmediate(defaultInterval, defaultTimeout, func() (bool, error) {
+		logger.Debug("Polling FileSystem lifecycle state")
+
+		resp, err := fsp.client.FSS().GetFileSystem(ctx, fss.GetFileSystemRequest{
+			FileSystemId: &id,
+		})
+		if err != nil {
+			return false, err
+		}
+
+		fs = &resp.FileSystem
+
+		switch state := resp.LifecycleState; state {
+		case fss.FileSystemLifecycleStateActive:
+			logger.Infof("FileSystem is in lifecycle state %q", state)
+			return true, nil
+		case fss.FileSystemLifecycleStateDeleting, fss.FileSystemLifecycleStateDeleted:
+			return false, errors.Errorf("file system %q is in lifecycle state %q", *fs.Id, state)
+		default:
+			logger.Debugf("FileSystem is in lifecycle state %q", state)
+			return false, nil
+		}
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &resp.MountTarget, nil
+
+	return fs, nil
 }
 
-// listAllMountTargets retrieves all available mount targets
-func (fsp *filesystemProvisioner) listAllMountTargets(ctx context.Context, ad string) ([]filestorage.MountTargetSummary, error) {
-	var (
-		page         *string
-		mountTargets []filestorage.MountTargetSummary
-	)
-	// Check if there already is a mount target in the existing compartment
-	for {
-		ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
-		defer cancel()
-		resp, err := fsp.client.FSS().ListMountTargets(ctx, filestorage.ListMountTargetsRequest{
-			AvailabilityDomain: &ad,
+func (fsp *filesystemProvisioner) awaitMountTarget(ctx context.Context, logger *zap.SugaredLogger, id string) (*fss.MountTarget, error) {
+	logger.Infof("Waiting for MountTarget to be in lifecycle state %q", fss.MountTargetLifecycleStateActive)
+
+	var mt *fss.MountTarget
+	if err := wait.PollImmediate(defaultInterval, defaultTimeout, func() (bool, error) {
+		logger.Debug("Polling MountTarget lifecycle state")
+
+		resp, err := fsp.client.FSS().GetMountTarget(ctx, fss.GetMountTargetRequest{MountTargetId: &id})
+		if err != nil {
+			return false, err
+		}
+
+		mt = &resp.MountTarget
+
+		switch state := resp.LifecycleState; state {
+		case fss.MountTargetLifecycleStateActive:
+			logger.Infof("Mount target is in lifecycle state %q", state)
+			return true, nil
+		case fss.MountTargetLifecycleStateFailed,
+			fss.MountTargetLifecycleStateDeleting,
+			fss.MountTargetLifecycleStateDeleted:
+			logger.With("lifecycleState", state).Error("MountTarget will not become ACTIVE")
+			return false, fmt.Errorf("mount target %q is in lifecycle state %q and will not become ACTIVE", *resp.MountTarget.Id, state)
+		default:
+			logger.Debugf("Mount target is in lifecycle state %q", state)
+			return false, nil
+		}
+	}); err != nil {
+		return nil, err
+	}
+	return mt, nil
+}
+
+func (fsp *filesystemProvisioner) awaitExport(ctx context.Context, logger *zap.SugaredLogger, id string) (*fss.Export, error) {
+	logger.Info("Waiting for Export to be in lifecycle state ACTIVE")
+
+	var export *fss.Export
+	if err := wait.PollImmediate(defaultInterval, defaultTimeout, func() (bool, error) {
+		logger.Debug("Polling export lifecycle state")
+
+		resp, err := fsp.client.FSS().GetExport(ctx, fss.GetExportRequest{ExportId: &id})
+		if err != nil {
+			return false, err
+		}
+
+		export = &resp.Export
+
+		switch state := resp.LifecycleState; state {
+		case fss.ExportLifecycleStateActive:
+			logger.Infof("Export is in lifecycle state %q", state)
+			return true, nil
+		case fss.ExportLifecycleStateDeleting, fss.ExportLifecycleStateDeleted:
+			logger.Errorf("Export is in lifecycle state %q", state)
+			return false, fmt.Errorf("export %q is in lifecycle state %q", *resp.Export.Id, state)
+		default:
+			logger.Debugf("Export is in lifecycle state %q", state)
+			return false, nil
+		}
+	}); err != nil {
+		return nil, err
+	}
+	return export, nil
+}
+
+func (fsp *filesystemProvisioner) getFileSystemByDisplayName(ctx context.Context, ad, displayName string) (*fss.FileSystemSummary, error) {
+	resp, err := fsp.client.FSS().ListFileSystems(ctx, fss.ListFileSystemsRequest{
+		CompartmentId:      common.String(fsp.client.CompartmentOCID()),
+		AvailabilityDomain: &ad,
+		DisplayName:        &displayName,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	switch count := len(resp.Items); {
+	case count == 1:
+		return &resp.Items[0], nil
+	case count > 1:
+		return nil, errors.Errorf("found more than one file system with display name %q", displayName)
+	}
+
+	return nil, errNotFound
+}
+
+func (fsp *filesystemProvisioner) getOrCreateFileSystem(ctx context.Context, logger *zap.SugaredLogger, ad, displayName string) (*fss.FileSystem, error) {
+	fs, err := fsp.getFileSystemByDisplayName(ctx, ad, displayName)
+	if err != nil && err != errNotFound {
+		return nil, err
+	}
+	if fs != nil {
+		return fsp.awaitFileSystem(ctx, logger, *fs.Id)
+	}
+
+	resp, err := fsp.client.FSS().CreateFileSystem(ctx, fss.CreateFileSystemRequest{
+		CreateFileSystemDetails: fss.CreateFileSystemDetails{
 			CompartmentId:      common.String(fsp.client.CompartmentOCID()),
-			Page:               page,
+			AvailabilityDomain: &ad,
+			DisplayName:        &displayName,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	logger.With("fileSystemID", *resp.FileSystem.Id).Info("Created FileSystem")
+
+	return fsp.awaitFileSystem(ctx, logger, *resp.FileSystem.Id)
+}
+
+// findExport looks for an existing export with the same filesystem ID, export set ID, and path.
+// NOTE: No two non-'DELETED' export resources in the same export set can reference the same file system.
+func (fsp *filesystemProvisioner) findExport(ctx context.Context, fsID, exportSetID string) (*fss.ExportSummary, error) {
+	var page *string
+	for {
+		resp, err := fsp.client.FSS().ListExports(ctx, fss.ListExportsRequest{
+			CompartmentId: common.String(fsp.client.CompartmentOCID()),
+			FileSystemId:  &fsID,
+			ExportSetId:   &exportSetID,
+			Page:          page,
 		})
 		if err != nil {
 			return nil, err
 		}
-		mountTargets = append(mountTargets, resp.Items...)
+		for _, export := range resp.Items {
+			if export.LifecycleState == fss.ExportSummaryLifecycleStateCreating ||
+				export.LifecycleState == fss.ExportSummaryLifecycleStateActive {
+				return &export, nil
+			}
+		}
 		if page = resp.OpcNextPage; resp.OpcNextPage == nil {
 			break
 		}
 	}
-	return mountTargets, nil
+
+	return nil, errNotFound
 }
 
-func (fsp *filesystemProvisioner) getOrCreateMountTarget(ctx context.Context, mtID string, ad string, subnetID string) (*filestorage.MountTarget, error) {
-	if mtID != "" {
-		// Mount target already specified in the configuration file, find it in the list of mount targets
-		return fsp.getMountTargetFromID(ctx, mtID)
-	}
-	mountTargets, err := fsp.listAllMountTargets(ctx, ad)
-	if err != nil {
+func (fsp *filesystemProvisioner) getOrCreateExport(ctx context.Context, logger *zap.SugaredLogger, fsID, exportSetID string) (*fss.Export, error) {
+	export, err := fsp.findExport(ctx, fsID, exportSetID)
+	if err != nil && err != errNotFound {
 		return nil, err
 	}
-	if len(mountTargets) != 0 {
-		mntTargetSummary := mountTargets[rand.Int()%len(mountTargets)]
-		target, err := fsp.getMountTargetFromID(ctx, *mntTargetSummary.Id)
-		return target, err
+	if export != nil {
+		return fsp.awaitExport(ctx, logger, *export.Id)
 	}
-	ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
-	defer cancel()
-	mtDisplayName := common.String(fmt.Sprintf("%s%s", provisioner.GetPrefix(), "mnt"))
-	// Mount target not created, create a new one
-	fsp.logger.With("subnetId", subnetID, "mountTargetDisplayName", mtDisplayName).Info("Creating mount target.")
-	resp, err := fsp.client.FSS().CreateMountTarget(ctx, filestorage.CreateMountTargetRequest{
-		CreateMountTargetDetails: filestorage.CreateMountTargetDetails{
-			AvailabilityDomain: &ad,
-			SubnetId:           &subnetID,
-			CompartmentId:      common.String(fsp.client.CompartmentOCID()),
-			DisplayName:        mtDisplayName,
+
+	path := "/" + fsID
+
+	// If export doesn't already exist create it.
+	resp, err := fsp.client.FSS().CreateExport(ctx, fss.CreateExportRequest{
+		CreateExportDetails: fss.CreateExportDetails{
+			ExportSetId:  &exportSetID,
+			FileSystemId: &fsID,
+			Path:         &path,
 		},
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &resp.MountTarget, nil
+
+	logger.With("exportID", *resp.Export.Id).Info("Created Export")
+	return fsp.awaitExport(ctx, logger, *resp.Export.Id)
+}
+
+// getMountTargetID retrieves MountTarget OCID if provided.
+func getMountTargetID(opts controller.VolumeOptions) string {
+	if opts.PVC != nil {
+		if mtID := opts.PVC.Annotations[AnnotationMountTargetID]; mtID != "" {
+			return mtID
+		}
+	}
+	return opts.Parameters[MntTargetID]
+}
+
+// isReadOnly determines if the given slice of PersistentVolumeAccessModes
+// permits mounting as read only.
+func isReadOnly(modes []v1.PersistentVolumeAccessMode) bool {
+	for _, mode := range modes {
+		if mode == v1.ReadWriteMany || mode == v1.ReadWriteOnce {
+			return false
+		}
+	}
+	return true
 }
 
 func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad *identity.AvailabilityDomain) (*v1.PersistentVolume, error) {
 	ctx := context.Background()
-	fsDisplayName := common.String(fmt.Sprintf("%s%s", provisioner.GetPrefix(), options.PVC.Name))
+	fsDisplayName := fmt.Sprintf("%s%s", provisioner.GetPrefix(), options.PVC.UID)
 	logger := fsp.logger.With(
 		"availabilityDomain", ad,
 		"fileSystemDisplayName", fsDisplayName,
 	)
-	// Create the FileSystem.
-	logger.Info("Creating FileSystem")
-	var fsID string
-	{
-		ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
-		defer cancel()
-		resp, err := fsp.client.FSS().CreateFileSystem(ctx, filestorage.CreateFileSystemRequest{
-			CreateFileSystemDetails: filestorage.CreateFileSystemDetails{
-				AvailabilityDomain: ad.Name,
-				CompartmentId:      common.String(fsp.client.CompartmentOCID()),
-				DisplayName:        fsDisplayName,
-			},
-		})
-		if err != nil {
-			return nil, err
-		}
-		fsID = *resp.FileSystem.Id
-	}
-	logger = logger.With("fileSystemID", fsID)
 
-	target, err := fsp.getOrCreateMountTarget(ctx, options.Parameters[MntTargetID], *ad.Name, options.Parameters[SubnetID])
+	// Require that a user provides a MountTarget ID.
+	mtID := getMountTargetID(options)
+	if mtID == "" {
+		return nil, errors.New("no mount target ID provided (via PVC annotation nor StorageClass option)")
+	}
+
+	logger = logger.With("mountTargetID", mtID)
+
+	// Wait for MountTarget to be ACTIVE.
+	target, err := fsp.awaitMountTarget(ctx, logger, mtID)
 	if err != nil {
-		logger.With(zap.Error(err)).Error("Failed to retrieve mount target.")
+		logger.With(zap.Error(err)).Error("Failed to retrieve mount target")
 		return nil, err
 	}
 
-	logger.Info("Creating export set.")
-	// Create the ExportSet.
-	var exportSetID string
-	{
-		ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
-		defer cancel()
-		resp, err := fsp.client.FSS().CreateExport(ctx, filestorage.CreateExportRequest{
-			CreateExportDetails: filestorage.CreateExportDetails{
-				ExportSetId:  target.ExportSetId,
-				FileSystemId: &fsID,
-				Path:         common.String("/" + fsID),
-			},
-		})
-		if err != nil {
-			logger.With(zap.Error(err)).Error("Failed to create export.")
-			return nil, err
-		}
-		exportSetID = *resp.Export.Id
-		logger = logger.With("exportSetID", exportSetID)
-	}
-
+	// Ensure MountTarget required fields are set.
 	if len(target.PrivateIpIds) == 0 {
-		logger.With("targetID", *target.Id).Error("Could not find any Private IPs for Mount Target.")
-		return nil, errors.Errorf("failed to find server IDs associated with the Mount Target with OCID %q", *target.Id)
+		logger.Error("Failed to find private IPs associated with the Mount Target")
+		return nil, errors.Errorf("mount target has no associated private IPs")
+	}
+	if target.ExportSetId == nil {
+		logger.Error("Mount target has no export set associated with it")
+		return nil, errors.Errorf("mount target has no export set associated with it")
 	}
 
-	// Get PrivateIP.
-	var serverIP string
+	// Randomly select a MountTarget IP address to attach to.
+	var ip string
 	{
-		ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
-		defer cancel()
+
 		id := target.PrivateIpIds[rand.Int()%len(target.PrivateIpIds)]
-		getPrivateIPResponse, err := fsp.client.VCN().GetPrivateIp(ctx, core.GetPrivateIpRequest{
-			PrivateIpId: &id,
-		})
+		logger = logger.With("privateIPID", id)
+		resp, err := fsp.client.VCN().GetPrivateIp(ctx, core.GetPrivateIpRequest{PrivateIpId: &id})
 		if err != nil {
-			logger.With(zap.Error(err), "privateIPID", id).Errorf("Failed to retrieve IP address for mount target privateIpID=%q: %v", id, err)
+			logger.With(zap.Error(err)).Error("Failed to retrieve IP address for mount target")
 			return nil, err
 		}
-		serverIP = *getPrivateIPResponse.PrivateIp.IpAddress
-	}
-
-	region, ok := os.LookupEnv("OCI_SHORT_REGION")
-	if !ok {
-		metadata, err := fsp.metadata.Get()
-		if err != nil {
-			return nil, err
+		if resp.PrivateIp.IpAddress == nil {
+			logger.Error("PrivateIp has no IpAddress")
+			return nil, errors.Errorf("PrivateIp %q associated with MountTarget %q has no IpAddress", id, mtID)
 		}
-		region = metadata.Region
+		ip = *resp.PrivateIp.IpAddress
+	}
+	logger = logger.With("privateIP", ip)
+
+	logger.Info("Creating FileSystem")
+	fs, err := fsp.getOrCreateFileSystem(ctx, logger, *ad.Name, fsDisplayName)
+	if err != nil {
+		return nil, err
+	}
+	logger = logger.With("fileSystemID", *fs.Id)
+
+	logger.Info("Creating Export")
+	export, err := fsp.getOrCreateExport(ctx, logger, *fs.Id, *target.ExportSetId)
+	if err != nil {
+		logger.With(zap.Error(err)).Error("Failed to create export.")
+		return nil, err
 	}
 
-	logger.With("privateIP", serverIP).Info("Selected Mount Target Private IP.")
+	logger.With("exportID", *export.Id).Info("All OCI resources provisioned")
 
 	return &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: fsID,
+			Name: *fs.Id,
 			Annotations: map[string]string{
-				ociVolumeID: fsID,
-				ociExportID: exportSetID,
+				ociVolumeID: *fs.Id,
+				ociExportID: *export.Id,
 			},
-			Labels: map[string]string{
-				plugin.LabelZoneRegion: region,
-			},
+			Labels: map[string]string{plugin.LabelZoneRegion: fsp.region},
 		},
 		Spec: v1.PersistentVolumeSpec{
 			PersistentVolumeReclaimPolicy: options.PersistentVolumeReclaimPolicy,
 			AccessModes:                   options.PVC.Spec.AccessModes,
-			//FIXME: fs storage doesn't enforce quota, capacity is meaningless here.
+			//NOTE: fs storage doesn't enforce quota, capacity is meaningless here.
 			Capacity: v1.ResourceList{
 				v1.ResourceName(v1.ResourceStorage): options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)],
 			},
 			PersistentVolumeSource: v1.PersistentVolumeSource{
 				NFS: &v1.NFSVolumeSource{
-					// Randomnly select IP address associated with the mount target to use for attachment
-					Server:   serverIP,
-					Path:     "/" + fsID,
-					ReadOnly: false,
+					Server:   ip,
+					Path:     *export.Path,
+					ReadOnly: isReadOnly(options.PVC.Spec.AccessModes),
 				},
 			},
 			MountOptions: options.MountOptions,
@@ -260,16 +400,16 @@ func (fsp *filesystemProvisioner) Provision(options controller.VolumeOptions, ad
 	}, nil
 }
 
-// Delete destroys a OCI volume created by Provision
+// Delete terminates the OCI resources associated with the given PVC.
 func (fsp *filesystemProvisioner) Delete(volume *v1.PersistentVolume) error {
 	ctx := context.Background()
-	exportID, ok := volume.Annotations[ociExportID]
-	if !ok {
+	exportID := volume.Annotations[ociExportID]
+	if exportID == "" {
 		return errors.Errorf("%q annotation not found on PV", ociExportID)
 	}
 
-	filesystemID, ok := volume.Annotations[ociVolumeID]
-	if !ok {
+	filesystemID := volume.Annotations[ociVolumeID]
+	if filesystemID == "" {
 		return errors.Errorf("%q annotation not found on PV", ociVolumeID)
 	}
 
@@ -278,32 +418,26 @@ func (fsp *filesystemProvisioner) Delete(volume *v1.PersistentVolume) error {
 		"exportOCID", exportID,
 	)
 
-	logger.Info("Deleting export.")
-	ctx, cancel := context.WithTimeout(ctx, fsp.client.Timeout())
-	defer cancel()
-	if _, err := fsp.client.FSS().DeleteExport(ctx, filestorage.DeleteExportRequest{
+	logger.Info("Deleting export")
+	if _, err := fsp.client.FSS().DeleteExport(ctx, fss.DeleteExportRequest{
 		ExportId: &exportID,
 	}); err != nil {
 		if !provisioner.IsNotFound(err) {
-			logger.With(zap.Error(err)).Error("Failed to delete export.")
+			logger.With(zap.Error(err)).Error("Failed to delete export")
 			return err
 		}
-		logger.With(zap.Error(err)).Info("ExportID not found. Unable to delete it.")
+		logger.With(zap.Error(err)).Info("Export not found. Unable to delete it")
 	}
 
-	ctx, cancel = context.WithTimeout(ctx, fsp.client.Timeout())
-	defer cancel()
-
-	logger.Info("Deleting File System.")
-
-	_, err := fsp.client.FSS().DeleteFileSystem(ctx, filestorage.DeleteFileSystemRequest{
+	logger.Info("Deleting File System")
+	_, err := fsp.client.FSS().DeleteFileSystem(ctx, fss.DeleteFileSystemRequest{
 		FileSystemId: &filesystemID,
 	})
 	if err != nil {
 		if !provisioner.IsNotFound(err) {
 			return err
 		}
-		logger.Info("File System not found. Unable to delete it.")
+		logger.Info("FileSystem not found. Unable to delete it")
 	}
 	return nil
 }

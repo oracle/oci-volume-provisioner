@@ -15,8 +15,6 @@
 package fss
 
 import (
-	"context"
-	"reflect"
 	"testing"
 
 	"k8s.io/api/core/v1"
@@ -25,68 +23,32 @@ import (
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/oracle/oci-go-sdk/common"
 	"github.com/oracle/oci-go-sdk/identity"
-	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest"
 
-	"github.com/oracle/oci-volume-provisioner/pkg/oci/instancemeta"
 	"github.com/oracle/oci-volume-provisioner/pkg/provisioner"
 )
 
-func TestGetMountTargetFromID(t *testing.T) {
-	// test retrieving a mount target from given ID
-	var ctx = context.Background()
-	fss := filesystemProvisioner{client: provisioner.NewClientProvisioner(nil, nil)}
-	resp, err := fss.getMountTargetFromID(ctx, "mtOCID")
-	if err != nil {
-		t.Fatalf("Failed to retrieve mount target from ID: %v", err)
-	}
-	if !reflect.DeepEqual(resp.PrivateIpIds, provisioner.ServerIPs) {
-		t.Fatalf("Incorrect response for retrieving mount target from ID")
-	}
-}
-
-func TestListAllMountTargets(t *testing.T) {
-	// test listing all mount targets
-	var ctx = context.Background()
-	fss := filesystemProvisioner{client: provisioner.NewClientProvisioner(nil, nil)}
-	resp, err := fss.listAllMountTargets(ctx, "adOCID")
-	if err != nil {
-		t.Fatalf("Failed to retrieve list mount targets: %v", err)
-	}
-	if !reflect.DeepEqual(resp, provisioner.MountTargetItems) {
-		t.Fatalf("Incorrect response for listing mount targets")
-	}
-}
-
-func TestGetOrCreateMountTarget(t *testing.T) {
-	// test get or create mount target
-	var ctx = context.Background()
-	fss := filesystemProvisioner{client: provisioner.NewClientProvisioner(nil, nil), logger: zap.S()}
-	resp, err := fss.getOrCreateMountTarget(ctx, "", provisioner.NilListMountTargetsADID, "subnetID")
-	if err != nil {
-		t.Fatalf("Failed to retrieve or create mount target: %v", err)
-	}
-	if *resp.Id != provisioner.CreatedMountTargetID {
-		t.Fatalf("Failed to create mount target")
-	}
-
-}
-
 func TestCreateVolumeWithFSS(t *testing.T) {
-	// test creating a volume on a file system storage
-	options := controller.VolumeOptions{
-		PVName: "dummyVolumeOptions",
-		PVC: &v1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{},
-		}}
-	ad := identity.AvailabilityDomain{Name: common.String("dummyAdName"), CompartmentId: common.String("dummyCompartmentId")}
-	fss := filesystemProvisioner{
+	fsp := filesystemProvisioner{
 		client: provisioner.NewClientProvisioner(nil, nil),
-		logger: zap.S(),
-		metadata: instancemeta.NewMock(&instancemeta.InstanceMetadata{
-			CompartmentOCID: "",
-			Region:          "phx",
-		})}
-	_, err := fss.Provision(options, &ad)
+		logger: zaptest.NewLogger(t).Sugar(),
+		region: "phx",
+	}
+	_, err := fsp.Provision(
+		controller.VolumeOptions{
+			PVName: "dummyVolumeOptions",
+			PVC: &v1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					UID: "my-uid",
+				},
+			},
+			Parameters: map[string]string{MntTargetID: "dummyMountTargetID"},
+		},
+		&identity.AvailabilityDomain{
+			Name:          common.String("dummyAdName"),
+			CompartmentId: common.String("dummyCompartmentId"),
+		},
+	)
 	if err != nil {
 		t.Fatalf("Failed to provision volume from fss storage: %v", err)
 	}
