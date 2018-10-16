@@ -1,4 +1,4 @@
-box: golang:1.9
+box: iad.ocir.io/spinnaker/oci-kube-ci:1.0.2
 
 dev:
   steps:
@@ -14,9 +14,7 @@ build:
 
     - script:
       name: validate source code
-      code: |
-        go get -u github.com/golang/lint/golint
-        make gofmt golint govet
+      code: make gofmt golint govet
 
     - script:
       name: run unit tests
