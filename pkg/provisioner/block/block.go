@@ -167,7 +167,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 
 	if volumeRoundingEnabled(options.Parameters) {
 		if block.volumeRoundingEnabled && block.minVolumeSize.Cmp(capacity) == 1 {
-			volSizeMB = int(roundUpSize(block.minVolumeSize.Value(), 1024*1024))
+			volSizeMB = int64(roundUpSize(block.minVolumeSize.Value(), 1024*1024))
 			logger.With("roundedVolumeSize", volSizeMB).Warn("Attempted to provision volume with a capacity less than the minimum. Rounding up to ensure volume creation.")
 			capacity = block.minVolumeSize
 		}
