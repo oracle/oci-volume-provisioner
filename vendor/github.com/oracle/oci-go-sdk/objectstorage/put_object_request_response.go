@@ -24,7 +24,7 @@ type PutObjectRequest struct {
 	ObjectName *string `mandatory:"true" contributesTo:"path" name:"objectName"`
 
 	// The content length of the body.
-	ContentLength *int `mandatory:"true" contributesTo:"header" name:"Content-Length"`
+	ContentLength *int64 `mandatory:"true" contributesTo:"header" name:"Content-Length"`
 
 	// The object to upload to the object store.
 	PutObjectBody io.ReadCloser `mandatory:"true" contributesTo:"body" encoding:"binary"`
@@ -33,7 +33,7 @@ type PutObjectRequest struct {
 	// For uploading a part, this is the entity tag of the target part.
 	IfMatch *string `mandatory:"false" contributesTo:"header" name:"if-match"`
 
-	// The entity tag to avoid matching. The only valid value is ‘*’, which indicates that the request should fail if the object already exists.
+	// The entity tag to avoid matching. The only valid value is '*', which indicates that the request should fail if the object already exists.
 	// For creating and committing a multipart upload, this is the entity tag of the target object. For uploading a part, this is the entity tag of the target part.
 	IfNoneMatch *string `mandatory:"false" contributesTo:"header" name:"if-none-match"`
 

@@ -3,7 +3,7 @@
 
 // Object Storage Service API
 //
-// Common set of Object and Archive Storage APIs for managing buckets and objects.
+// The Object and Archive Storage APIs for managing buckets and objects.
 //
 
 package objectstorage
@@ -25,7 +25,7 @@ type MultipartUploadPartSummary struct {
 	Md5 *string `mandatory:"true" json:"md5"`
 
 	// The size of the part in bytes.
-	Size *int `mandatory:"true" json:"size"`
+	Size *int64 `mandatory:"true" json:"size"`
 
 	// The part number for this part.
 	PartNumber *int `mandatory:"true" json:"partNumber"`

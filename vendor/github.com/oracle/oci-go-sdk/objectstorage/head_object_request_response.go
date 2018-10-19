@@ -26,7 +26,7 @@ type HeadObjectRequest struct {
 	// For uploading a part, this is the entity tag of the target part.
 	IfMatch *string `mandatory:"false" contributesTo:"header" name:"if-match"`
 
-	// The entity tag to avoid matching. The only valid value is ‘*’, which indicates that the request should fail if the object already exists.
+	// The entity tag to avoid matching. The only valid value is '*', which indicates that the request should fail if the object already exists.
 	// For creating and committing a multipart upload, this is the entity tag of the target object. For uploading a part, this is the entity tag of the target part.
 	IfNoneMatch *string `mandatory:"false" contributesTo:"header" name:"if-none-match"`
 
@@ -72,7 +72,7 @@ type HeadObjectResponse struct {
 	OpcMeta map[string]string `presentIn:"header-collection" prefix:"opc-meta-"`
 
 	// The object size in bytes.
-	ContentLength *int `presentIn:"header" name:"content-length"`
+	ContentLength *int64 `presentIn:"header" name:"content-length"`
 
 	// Content-MD5 header, as described in RFC 2616 (https://tools.ietf.org/rfc/rfc2616), section 14.15.
 	// Unavailable for objects uploaded using multipart upload.

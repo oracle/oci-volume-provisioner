@@ -27,7 +27,7 @@ type GetObjectRequest struct {
 	// For uploading a part, this is the entity tag of the target part.
 	IfMatch *string `mandatory:"false" contributesTo:"header" name:"if-match"`
 
-	// The entity tag to avoid matching. The only valid value is ‘*’, which indicates that the request should fail if the object already exists.
+	// The entity tag to avoid matching. The only valid value is '*', which indicates that the request should fail if the object already exists.
 	// For creating and committing a multipart upload, this is the entity tag of the target object. For uploading a part, this is the entity tag of the target part.
 	IfNoneMatch *string `mandatory:"false" contributesTo:"header" name:"if-none-match"`
 
@@ -80,7 +80,7 @@ type GetObjectResponse struct {
 	OpcMeta map[string]string `presentIn:"header-collection" prefix:"opc-meta-"`
 
 	// The object size in bytes.
-	ContentLength *int `presentIn:"header" name:"content-length"`
+	ContentLength *int64 `presentIn:"header" name:"content-length"`
 
 	// Content-Range header for range requests, per RFC 7233 (https://tools.ietf.org/rfc/rfc7233), section 4.2.
 	ContentRange *string `presentIn:"header" name:"content-range"`

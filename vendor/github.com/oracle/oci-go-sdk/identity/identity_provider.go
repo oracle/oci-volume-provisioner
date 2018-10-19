@@ -58,7 +58,7 @@ type IdentityProvider interface {
 	GetLifecycleState() IdentityProviderLifecycleStateEnum
 
 	// The detailed status of INACTIVE lifecycleState.
-	GetInactiveStatus() *int
+	GetInactiveStatus() *int64
 
 	// Free-form tags for this resource. Each tag is a simple key-value pair with no predefined name, type, or namespace.
 	// For more information, see Resource Tags (https://docs.us-phoenix-1.oraclecloud.com/Content/General/Concepts/resourcetags.htm).
@@ -80,7 +80,7 @@ type identityprovider struct {
 	ProductType    *string                            `mandatory:"true" json:"productType"`
 	TimeCreated    *common.SDKTime                    `mandatory:"true" json:"timeCreated"`
 	LifecycleState IdentityProviderLifecycleStateEnum `mandatory:"true" json:"lifecycleState"`
-	InactiveStatus *int                               `mandatory:"false" json:"inactiveStatus"`
+	InactiveStatus *int64                             `mandatory:"false" json:"inactiveStatus"`
 	FreeformTags   map[string]string                  `mandatory:"false" json:"freeformTags"`
 	DefinedTags    map[string]map[string]interface{}  `mandatory:"false" json:"definedTags"`
 	Protocol       string                             `json:"protocol"`
@@ -114,6 +114,11 @@ func (m *identityprovider) UnmarshalJSON(data []byte) error {
 
 // UnmarshalPolymorphicJSON unmarshals polymorphic json
 func (m *identityprovider) UnmarshalPolymorphicJSON(data []byte) (interface{}, error) {
+
+	if data == nil || string(data) == "null" {
+		return nil, nil
+	}
+
 	var err error
 	switch m.Protocol {
 	case "SAML2":
@@ -121,7 +126,7 @@ func (m *identityprovider) UnmarshalPolymorphicJSON(data []byte) (interface{}, e
 		err = json.Unmarshal(data, &mm)
 		return mm, err
 	default:
-		return m, nil
+		return *m, nil
 	}
 }
 
@@ -161,7 +166,7 @@ func (m identityprovider) GetLifecycleState() IdentityProviderLifecycleStateEnum
 }
 
 //GetInactiveStatus returns InactiveStatus
-func (m identityprovider) GetInactiveStatus() *int {
+func (m identityprovider) GetInactiveStatus() *int64 {
 	return m.InactiveStatus
 }
 

@@ -157,7 +157,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 		return nil, fmt.Errorf("could not determine volume size for PVC")
 	}
 
-	volSizeMB := int(roundUpSize(capacity.Value(), 1024*1024))
+	volSizeMB := int64(roundUpSize(capacity.Value(), 1024*1024))
 
 	logger := block.logger.With(
 		"availabilityDomain", *ad.Name,
@@ -177,7 +177,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 		AvailabilityDomain: ad.Name,
 		CompartmentId:      common.String(block.client.CompartmentOCID()),
 		DisplayName:        common.String(fmt.Sprintf("%s%s", provisioner.GetPrefix(), options.PVC.Name)),
-		SizeInMBs:          common.Int(volSizeMB),
+		SizeInMBs:          common.Int64(volSizeMB),
 	}
 
 	if value, ok := options.PVC.Annotations[OCIVolumeBackupID]; ok {
