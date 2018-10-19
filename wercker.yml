@@ -1,6 +1,6 @@
 no-response-timeout: 30
 command-timeout: 30
-box: golang:1.9
+box: iad.ocir.io/spinnaker/oci-kube-ci:1.0.2
 
 dev:
   steps:
@@ -16,9 +16,7 @@ build:
 
     - script:
       name: validate source code
-      code: |
-        go get -u github.com/golang/lint/golint
-        make gofmt golint govet
+      code: make gofmt golint govet
 
     - script:
       name: run unit tests
@@ -114,7 +112,7 @@ push:
 system-test:
   base-path: "/go/src/github.com/oracle/oci-volume-provisioner"
   box:
-    id: iad.ocir.io/spinnaker/oci-ci-e2e:1.0.1
+    id: iad.ocir.io/spinnaker/oci-kube-ci:1.0.2
   steps:
     - script:
       name: e2e tests
@@ -136,22 +134,6 @@ system-test:
           --mnt-target-id="${MNT_TARGET_OCID}" \
           --delete-namespace-on-failure=true \
           --image="iad.ocir.io/oracle/oci-volume-provisioner:${VERSION}"
-
-validate-test-image:
-  box:
-    id: iad.ocir.io/oracle/oci-volume-provisioner-system-test:1.0.2
-  steps:
-    - script:
-      name: set ENV vars
-      code: |
-        export VERSION=$(cat dist/VERSION.txt)
-        echo "Test image version ${VERSION}"
-
-    - script:
-        name: validate test image
-        code: |
-          cd ./test/system
-          ./run-test-image.sh $VERSION
 
 release:
   box:
