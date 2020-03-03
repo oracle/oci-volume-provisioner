@@ -1,3 +1,5 @@
+#### :warning: oci-volume-provisioner is now being maintained at https://github.com/oracle/oci-cloud-controller-manager/tree/master/pkg/volume. This repository will be archived soon.
+---
 # OCI Volume Provisioner
 
 [![wercker status](https://app.wercker.com/status/0bb764451c28a60b4260d76754f02118/s/master "wercker status")](https://app.wercker.com/project/byKey/0bb764451c28a60b4260d76754f02118)
