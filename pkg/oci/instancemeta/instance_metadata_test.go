@@ -24,10 +24,10 @@ import (
 
 const exampleResponse = `{
   "availabilityDomain" : "NWuj:PHX-AD-1",
-  "compartmentId" : "ocid1.compartment.oc1..aaaaaaaa3um2atybwhder4qttfhgon4j3hcxgmsvnyvx4flfjyewkkwfzwnq",
+  "compartmentId" : "ocid1.compartment.oc1..aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "displayName" : "trjl-kb8s-master",
-  "id" : "ocid1.instance.oc1.phx.abyhqljtj775udgtbu7nddt6j2hqgxdsgrnpweepogvvsmqfppefewile5zq",
-  "image" : "ocid1.image.oc1.phx.aaaaaaaaamx6ta37uxltor6n5lxfgd5lkb3lwmoqurlpn2x4dz5ockekiuea",
+  "id" : "ocid1.instance.oc1.phx.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "image" : "ocid1.image.oc1.phx.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "metadata" : {
     "ssh_authorized_keys" : "ssh-rsa some-key-data tlangfor@tlangfor-mac\n"
   },
@@ -49,7 +49,7 @@ func TestGetMetadata(t *testing.T) {
 	}
 
 	expected := &InstanceMetadata{
-		CompartmentOCID: "ocid1.compartment.oc1..aaaaaaaa3um2atybwhder4qttfhgon4j3hcxgmsvnyvx4flfjyewkkwfzwnq",
+		CompartmentOCID: "ocid1.compartment.oc1..aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		Region:          "phx",
 	}
 
