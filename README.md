@@ -34,7 +34,7 @@ auth:
     MIIEowIBAAKCAQEUjVBnOgC4wA3j6CeTc6hIA9B3iwuJKyR8i7w...
     -----END RSA PRIVATE KEY-----
   passphrase: supersecretpassphrase
-  fingerprint: 4d:f5:ff:0e:a9:10:e8:5a:d3:52:6a:f8:1e:99:a3:47
+  fingerprint: aa:bb:cc:dd:ee:ff:gg:hh:ii:jj:kk:ll:mm:nn:oo:pp
   region: us-phoenix-1
 
 ````

@@ -223,7 +223,7 @@ func (p *MockProvisionerClient) CompartmentOCID() (compartmentOCID string) {
 
 // TenancyOCID mocks client TenancyOCID implementation
 func (p *MockProvisionerClient) TenancyOCID() string {
-	return "ocid1.tenancy.oc1..aaaaaaaatyn7scrtwtqedvgrxgr2xunzeo6uanvyhzxqblctwkrpisvke4kq"
+	return "ocid1.tenancy.oc1..aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 }
 
 // NewClientProvisioner creates an OCI client from the given configuration.

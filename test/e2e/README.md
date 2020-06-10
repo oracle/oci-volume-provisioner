@@ -6,8 +6,8 @@ E2E tests.
 ## Running
 
 ```bash
-export SUBNET_OCID=ocid1.subnet.oc1.phx.aaaaaaaanlsnbcixkkchz6n6eznusplxui3xwgb7bsaeucqy4zpehohcb3ra
-export MNT_TARGET_OCID=ocid1.mounttarget.oc1.phx.aaaaaa4np2snlxveobuhqllqojxwiotqnb4c2ylefuzaaaaa
+export SUBNET_OCID=ocid1.subnet.oc1.phx.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+export MNT_TARGET_OCID=ocid1.mounttarget.oc1.phx.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 export IMAGE=iad.ocir.io/oracle/oci-volume-provisioner
 export VERSION="<version under test>"
 export OCICONFIG=$(pwd)/oci-config.yaml
