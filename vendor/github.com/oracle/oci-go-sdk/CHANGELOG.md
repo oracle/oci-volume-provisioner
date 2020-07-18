@@ -4,6 +4,134 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 
+## 2.6.0 - 2018-10-04
+### Added
+- Support for trusted partner images through application listings and subscriptions in the Compute service
+- Support for object lifecycle policies in the Object Storage service
+- Support for copying objects across regions in the Object Storage service
+- Support for network address translation (NAT) gateways in the Networking service
+
+## 2.5.0 - 2018-09-27
+### Added
+- Support for paravirtualized launch mode when importing images in the Compute service
+- Support for Key Management service
+- Support for encrypting the contents of an Object Storage bucket using a Key Management service key
+- Support for specifying a Key Management service key when launching a compute instance in the Compute service
+- Support for specifying a Key Management service key when backing up or restoring a block storage volume in the Block Volume service
+
+## 2.4.0 - 2018-09-06
+### Added
+- Added support for updating metadata fields on an instance in the Compute service
+
+## 2.3.0 - 2018-08-23
+### Added
+- Support for fault domain in the Identity Service
+- Support for Autonomous Data Warehouse and Autonomous Transaction Processing in the Database service
+- Support for resizing an offline volume in the Block Storage service
+- Nil interface when polymorphic json response object is null
+
+## 2.2.0 - 2018-07-26
+### Added
+- Support for fault domains in the Compute service
+- A sample showing how to use Search service from the SDK is available on [Github](https://github.com/oracle/oci-go-sdk/tree/master/example/example_resourcesearch_test.go)
+
+## 2.1.0 - 2018-07-26
+### Added
+- Support for the OCI Search service
+- Support for specifying a backup policy when creating a boot volume in the Block Storage service
+
+### Fixed
+- OCI error is missing opc-request-id value [Github Issue 120](https://github.com/oracle/oci-go-sdk/issues/120)
+- Include raw http response when service error occurred
+
+## 2.0.0 - 2018-07-12
+### Added
+- Support for tagging Load Balancers in the Load Balancing service
+- Support for export options in the File Storage service
+- Support for retrieving compartment name and user name as part of events in the Audit service
+
+### Fixed
+- CreateKubeconfig function should not close http reponse body [Github Issue 116](https://github.com/oracle/oci-go-sdk/issues/116)
+
+### Breaking changes
+- Datatype changed from *int to *int64 for several request/response structs. Here is sample code that shows how to update your code to incorporate this change. 
+
+    - Before
+
+    ```golang
+    // Update the impacted properties from common.Int to common.Int64.
+    // Here is the updates for CreateBootVolumeDetails
+    details := core.CreateBootVolumeDetails{
+        SizeInGBs: common.Int(10),
+    }
+    ```
+
+    - After
+
+    ```golang
+    details := core.CreateBootVolumeDetails{
+        SizeInGBs: common.Int64(10),
+    }
+    ```
+
+- Impacted packages and structs
+    - core
+        - BootVolume.(SizeInGBs, SizeInMBs)
+        - BootVolumeBackup.(SizeInGBs, UniqueSizeInGBs)
+        - CreateBootVolumeDetails.SizeInGBs
+        - CreateVolumeDetails.(SizeInGBs, SizeInMBs)
+        - Image.SizeInMBs
+        - InstanceSourceViaImageDetails.BootVolumeSizeInGBs
+        - Volume.(SizeInGBs, SizeInMBs)
+        - VolumeBackup.(SizeInGBs, SizeInMBs, UniqueSizeInGBs, UniqueSizeInMbs)
+        - VolumeGroup.(SizeInMBs, SizeInGBs)
+        - VolumeGroupBackup.(SizeInMBs, SizeInGBs, UniqueSizeInMbs, UniqueSizeInGbs)
+    - dns
+        - GetDomainRecordsRequest.Limit
+        - GetRRSetRequest.Limit
+        - GetZoneRecordsRequest.Limit
+        - ListZonesRequest.Limit
+        - Zone.Serial
+        - ZoneSummary.Serial
+    - filestorage
+        - ExportSet.(MaxFsStatBytes, MaxFsStatFiles)
+        - FileSystem.MeteredBytes
+        - FileSystemSummary.MeteredBytes
+        - UpdateExportSetDetails.(MaxFsStatBytes, MaxFsStatFiles)
+    - identity
+        - ApiKey.InactiveStatus
+        - AuthToken.InactiveStatus
+        - Compartment.InactiveStatus
+        - CustomerSecretKey.InactiveStatus
+        - CustomerSecretKeySummary.InactiveStatus
+        - DynamicGroup.InactiveStatus
+        - Group.InactiveStatus
+        - IdentityProvider.InactiveStatus
+        - IdpGroupMapping.InactiveStatus
+        - Policy.InactiveStatus
+        - Saml2IdentityProvider.InactiveStatus
+        - SmtpCredential.InactiveStatus
+        - SmtpCredentialSummary.InactiveStatus
+        - SwiftPassword.InactiveStatus
+        - UiPassword.InactiveStatus
+        - User.InactiveStatus
+        - UserGroupMembership.InactiveStatus
+    - loadbalancer
+        - ConnectionConfiguration.IdleTimeout
+        - ListLoadBalancerHealthsRequest.Limit
+        - ListLoadBalancersRequest.Limit
+        - ListPoliciesRequest 
+        - ListProtocolsRequest.Limit
+        - ListShapesRequest.Limit
+        - ListWorkRequestsRequest.Limit
+    - objectstorage
+        - GetObjectResponse.ContentLength
+        - HeadObjectResponse.ContentLength
+        - MultipartUploadPartSummary.Size
+        - ObjectSummary.Size
+        - PutObjectRequest.ContentLength
+        - UploadPartRequest.ContentLength
+
 ## 1.8.0 - 2018-06-28
 ### Added
 - Support for service gateway management in the Networking service

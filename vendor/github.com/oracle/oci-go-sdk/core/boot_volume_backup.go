@@ -19,6 +19,8 @@ import (
 // If you're not authorized, talk to an administrator. If you're an administrator
 // who needs to write policies to give users access, see Getting Started with
 // Policies (https://docs.us-phoenix-1.oraclecloud.com/Content/Identity/Concepts/policygetstarted.htm).
+// **Warning:** Oracle recommends that you avoid using any confidential information when you
+// supply string values using the API.
 type BootVolumeBackup struct {
 
 	// The OCID of the compartment that contains the boot volume backup.
@@ -63,7 +65,7 @@ type BootVolumeBackup struct {
 	ImageId *string `mandatory:"false" json:"imageId"`
 
 	// The size of the boot volume, in GBs.
-	SizeInGBs *int `mandatory:"false" json:"sizeInGBs"`
+	SizeInGBs *int64 `mandatory:"false" json:"sizeInGBs"`
 
 	// Specifies whether the backup was created manually, or via scheduled backup policy.
 	SourceType BootVolumeBackupSourceTypeEnum `mandatory:"false" json:"sourceType,omitempty"`
@@ -76,7 +78,7 @@ type BootVolumeBackup struct {
 
 	// The size used by the backup, in GBs. It is typically smaller than sizeInGBs, depending on the space
 	// consumed on the boot volume and whether the backup is full or incremental.
-	UniqueSizeInGBs *int `mandatory:"false" json:"uniqueSizeInGBs"`
+	UniqueSizeInGBs *int64 `mandatory:"false" json:"uniqueSizeInGBs"`
 }
 
 func (m BootVolumeBackup) String() string {

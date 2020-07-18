@@ -17,6 +17,8 @@ import (
 // To use any of the API operations, you must be authorized in an IAM policy. If you're not authorized,
 // talk to an administrator. If you're an administrator who needs to write policies to give users access, see
 // Getting Started with Policies (https://docs.us-phoenix-1.oraclecloud.com/Content/Identity/Concepts/policygetstarted.htm).
+// **Warning:** Oracle recommends that you avoid using any confidential information when you
+// supply string values using the API.
 type VolumeGroupBackup struct {
 
 	// The OCID of the compartment that contains the volume group backup.
@@ -53,10 +55,10 @@ type VolumeGroupBackup struct {
 	FreeformTags map[string]string `mandatory:"false" json:"freeformTags"`
 
 	// The aggregate size of the volume group backup, in MBs.
-	SizeInMBs *int `mandatory:"false" json:"sizeInMBs"`
+	SizeInMBs *int64 `mandatory:"false" json:"sizeInMBs"`
 
 	// The aggregate size of the volume group backup, in GBs.
-	SizeInGBs *int `mandatory:"false" json:"sizeInGBs"`
+	SizeInGBs *int64 `mandatory:"false" json:"sizeInGBs"`
 
 	// The date and time the request to create the volume group backup was received. Format defined by RFC3339.
 	TimeRequestReceived *common.SDKTime `mandatory:"false" json:"timeRequestReceived"`
@@ -64,12 +66,12 @@ type VolumeGroupBackup struct {
 	// The aggregate size used by the volume group backup, in MBs.
 	// It is typically smaller than sizeInMBs, depending on the space
 	// consumed on the volume group and whether the volume backup is full or incremental.
-	UniqueSizeInMbs *int `mandatory:"false" json:"uniqueSizeInMbs"`
+	UniqueSizeInMbs *int64 `mandatory:"false" json:"uniqueSizeInMbs"`
 
 	// The aggregate size used by the volume group backup, in GBs.
 	// It is typically smaller than sizeInGBs, depending on the space
 	// consumed on the volume group and whether the volume backup is full or incremental.
-	UniqueSizeInGbs *int `mandatory:"false" json:"uniqueSizeInGbs"`
+	UniqueSizeInGbs *int64 `mandatory:"false" json:"uniqueSizeInGbs"`
 
 	// The OCID of the source volume group.
 	VolumeGroupId *string `mandatory:"false" json:"volumeGroupId"`

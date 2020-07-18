@@ -20,7 +20,10 @@ type InstanceSourceViaImageDetails struct {
 	ImageId *string `mandatory:"true" json:"imageId"`
 
 	// The size of the boot volume in GBs. Minimum value is 50 GB and maximum value is 16384 GB (16TB).
-	BootVolumeSizeInGBs *int `mandatory:"false" json:"bootVolumeSizeInGBs"`
+	BootVolumeSizeInGBs *int64 `mandatory:"false" json:"bootVolumeSizeInGBs"`
+
+	// The OCID of the KMS key to be used as the master encryption key for the boot volume.
+	KmsKeyId *string `mandatory:"false" json:"kmsKeyId"`
 }
 
 func (m InstanceSourceViaImageDetails) String() string {

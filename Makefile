@@ -17,11 +17,11 @@ GO_SRC := $(shell find . -name "*.go")
 # Else just equal the build (git hash)
 BUILD := $(shell git describe --tags --dirty --always)
 ifeq ($(DEV_BUILD), true)
-	# If DEV_BUILD is set, use the dev format.
 	VERSION ?= ${BUILD}-${USER}-dev
 else
 	VERSION ?= ${BUILD}
 endif
+
 DIR := dist
 BIN := oci-volume-provisioner
 REGISTRY ?= iad.ocir.io
@@ -38,6 +38,9 @@ SRC_DIRS := cmd pkg # directories which hold app source (not vendored)
 
 .PHONY: all
 all: gofmt golint govet test build
+
+deps:
+	dep ensure -v
 
 .PHONY: gofmt
 gofmt:
@@ -112,10 +115,10 @@ endif
 .PHONY: system-test
 system-test: system-test-config
 	docker run -it ${DOCKER_OPTIONS} \
-        -e KUBECONFIG=$(KUBECONFIG) \
-        -v $(KUBECONFIG):$(KUBECONFIG) \
-        -e HTTPS_PROXY=$$HTTPS_PROXY \
-        ${TEST_IMAGE}:${VERSION} ${TEST_IMAGE_ARGS}
+	-e KUBECONFIG=$(KUBECONFIG) \
+	-v $(KUBECONFIG):$(KUBECONFIG) \
+	-e HTTPS_PROXY=$$HTTPS_PROXY \
+	${TEST_IMAGE}:${VERSION} ${TEST_IMAGE_ARGS}
 
 .PHONY: clean
 clean:

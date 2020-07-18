@@ -157,7 +157,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 		return nil, fmt.Errorf("could not determine volume size for PVC")
 	}
 
-	volSizeMB := int(roundUpSize(capacity.Value(), 1024*1024))
+	volSizeMB := int64(roundUpSize(capacity.Value(), 1024*1024))
 
 	logger := block.logger.With(
 		"availabilityDomain", *ad.Name,
@@ -167,7 +167,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 
 	if volumeRoundingEnabled(options.Parameters) {
 		if block.volumeRoundingEnabled && block.minVolumeSize.Cmp(capacity) == 1 {
-			volSizeMB = int(roundUpSize(block.minVolumeSize.Value(), 1024*1024))
+			volSizeMB = int64(roundUpSize(block.minVolumeSize.Value(), 1024*1024))
 			logger.With("roundedVolumeSize", volSizeMB).Warn("Attempted to provision volume with a capacity less than the minimum. Rounding up to ensure volume creation.")
 			capacity = block.minVolumeSize
 		}
@@ -177,7 +177,7 @@ func (block *blockProvisioner) Provision(options controller.VolumeOptions, ad *i
 		AvailabilityDomain: ad.Name,
 		CompartmentId:      common.String(block.client.CompartmentOCID()),
 		DisplayName:        common.String(fmt.Sprintf("%s%s", provisioner.GetPrefix(), options.PVC.Name)),
-		SizeInMBs:          common.Int(volSizeMB),
+		SizeInMBs:          common.Int64(volSizeMB),
 	}
 
 	if value, ok := options.PVC.Annotations[OCIVolumeBackupID]; ok {

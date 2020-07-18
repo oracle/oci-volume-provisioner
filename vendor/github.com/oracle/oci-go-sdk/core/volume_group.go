@@ -13,7 +13,10 @@ import (
 	"github.com/oracle/oci-go-sdk/common"
 )
 
-// VolumeGroup Specifies a volume group which is a collection of volumes. For more information, see Volume Groups (https://docs.us-phoenix-1.oraclecloud.com/Content/Block/Concepts/volumegroups.htm).
+// VolumeGroup Specifies a volume group which is a collection of
+// volumes. For more information, see Volume Groups (https://docs.us-phoenix-1.oraclecloud.com/Content/Block/Concepts/volumegroups.htm).
+// **Warning:** Oracle recommends that you avoid using any confidential information when you
+// supply string values using the API.
 type VolumeGroup struct {
 
 	// The availability domain of the volume group.
@@ -29,7 +32,7 @@ type VolumeGroup struct {
 	Id *string `mandatory:"true" json:"id"`
 
 	// The aggregate size of the volume group in MBs.
-	SizeInMBs *int `mandatory:"true" json:"sizeInMBs"`
+	SizeInMBs *int64 `mandatory:"true" json:"sizeInMBs"`
 
 	// The date and time the volume group was created. Format defined by RFC3339.
 	TimeCreated *common.SDKTime `mandatory:"true" json:"timeCreated"`
@@ -52,11 +55,14 @@ type VolumeGroup struct {
 	LifecycleState VolumeGroupLifecycleStateEnum `mandatory:"false" json:"lifecycleState,omitempty"`
 
 	// The aggregate size of the volume group in GBs.
-	SizeInGBs *int `mandatory:"false" json:"sizeInGBs"`
+	SizeInGBs *int64 `mandatory:"false" json:"sizeInGBs"`
 
 	// The volume group source. The source is either another a list of
 	// volume IDs in the same availability domain, another volume group, or a volume group backup.
 	SourceDetails VolumeGroupSourceDetails `mandatory:"false" json:"sourceDetails"`
+
+	// Specifies whether the newly created cloned volume group's data has finished copying from the source volume group or backup.
+	IsHydrated *bool `mandatory:"false" json:"isHydrated"`
 }
 
 func (m VolumeGroup) String() string {
@@ -69,13 +75,14 @@ func (m *VolumeGroup) UnmarshalJSON(data []byte) (e error) {
 		DefinedTags        map[string]map[string]interface{} `json:"definedTags"`
 		FreeformTags       map[string]string                 `json:"freeformTags"`
 		LifecycleState     VolumeGroupLifecycleStateEnum     `json:"lifecycleState"`
-		SizeInGBs          *int                              `json:"sizeInGBs"`
+		SizeInGBs          *int64                            `json:"sizeInGBs"`
 		SourceDetails      volumegroupsourcedetails          `json:"sourceDetails"`
+		IsHydrated         *bool                             `json:"isHydrated"`
 		AvailabilityDomain *string                           `json:"availabilityDomain"`
 		CompartmentId      *string                           `json:"compartmentId"`
 		DisplayName        *string                           `json:"displayName"`
 		Id                 *string                           `json:"id"`
-		SizeInMBs          *int                              `json:"sizeInMBs"`
+		SizeInMBs          *int64                            `json:"sizeInMBs"`
 		TimeCreated        *common.SDKTime                   `json:"timeCreated"`
 		VolumeIds          []string                          `json:"volumeIds"`
 	}{}
@@ -92,7 +99,12 @@ func (m *VolumeGroup) UnmarshalJSON(data []byte) (e error) {
 	if e != nil {
 		return
 	}
-	m.SourceDetails = nn.(VolumeGroupSourceDetails)
+	if nn != nil {
+		m.SourceDetails = nn.(VolumeGroupSourceDetails)
+	} else {
+		m.SourceDetails = nil
+	}
+	m.IsHydrated = model.IsHydrated
 	m.AvailabilityDomain = model.AvailabilityDomain
 	m.CompartmentId = model.CompartmentId
 	m.DisplayName = model.DisplayName
